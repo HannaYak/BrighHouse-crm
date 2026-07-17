@@ -1,3 +1,4 @@
+"use client";
 import React, { useState } from 'react';
 
 // Демо-данные меток для карты на сегодня (Варшава)
