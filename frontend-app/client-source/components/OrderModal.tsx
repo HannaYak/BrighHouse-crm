@@ -74,28 +74,23 @@ export default function OrderModal({ isOpen, onClose, onSave, initialData }: Ord
     setPrice(service.price);
   }, [selectedServiceId, cleaner1Id, cleaner2Id, startTime]);
 
-  // 2. Эффект умной фильтрации клинеров (Наш ИИ-помощник)
+  // 2. Эффект умной фильтрации клинеров
   useEffect(() => {
     const service = servicesDict.find(s => s.id === selectedServiceId);
     const serviceType = service ? service.type : 'maintenance';
 
-    // Функция-фильтр
     const runFilter = (alreadySelectedId: number | 'none') => {
       return cleanersDatabase.filter(cleaner => {
-        // Проверка черного списка клиента
         if (currentClient.blacklistIds.includes(cleaner.id)) return false;
 
-        // Ограничение по типу уборки (без генералок)
         if ((serviceType === 'general' || serviceType === 'post_construction') && cleaner.tags.includes('только_поддерживающая')) {
           return false;
         }
 
-        // Аллергия на животных
-        if (hasPets && cleaner.tags.includes('allergy_to_pets')) {
+        if (hasPets && cleaner.tags.includes('аллергия_на_животных')) {
           return false;
         }
 
-        // Несовместимость напарников
         if (alreadySelectedId !== 'none') {
           const selectedCleaner = cleanersDatabase.find(c => c.id === alreadySelectedId);
           if (selectedCleaner?.incompatibleIds.includes(cleaner.id)) return false;
@@ -106,7 +101,6 @@ export default function OrderModal({ isOpen, onClose, onSave, initialData }: Ord
       });
     };
 
-    // Обновляем списки доступных сотрудников на лету
     setFilteredCleaners1(runFilter(cleaner2Id));
     setFilteredCleaners2(runFilter(cleaner1Id));
 
@@ -116,9 +110,15 @@ export default function OrderModal({ isOpen, onClose, onSave, initialData }: Ord
     e.preventDefault();
     onSave({
       clientName,
+      phone,
       address,
       startTime,
       endTime,
+      price,
+      needsVacuum,
+      hasPets,
+      keysAction,
+      instructions,
       cleaners: [cleaner1Id, cleaner2Id].filter(id => id !== 'none')
     });
     onClose();
@@ -149,7 +149,7 @@ export default function OrderModal({ isOpen, onClose, onSave, initialData }: Ord
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Тип уборки</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Typ уборки</label>
               <select value={selectedServiceId} onChange={(e) => setSelectedServiceId(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg">
                 {servicesDict.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -167,7 +167,7 @@ export default function OrderModal({ isOpen, onClose, onSave, initialData }: Ord
           {/* Параметры */}
           <div className="flex space-x-4 bg-amber-50/40 p-3 rounded-lg border border-amber-100">
             <label className="flex items-center space-x-2 cursor-pointer">
-              <input type="checkbox" checked={hasPets} onChange={(e) => setHasPets(e.target.checked)} className="w-4 h-4 text-indigo-600" />
+              <input type="checkbox" checked={hasPets} onChange={(e) => setHasPets(e.target.checked)} className="w-4 h-4 text-indigo-600 border-slate-300 rounded" />
               <span className="text-xs font-medium text-slate-700">🐾 Дома есть животные (Включить проверку аллергии)</span>
             </label>
           </div>
@@ -209,6 +209,48 @@ export default function OrderModal({ isOpen, onClose, onSave, initialData }: Ord
             <p className="text-[10px] text-indigo-600/80">💡 База клиентов заблокировала "Светлану П.". Она автоматически скрыта из выпадающих списков.</p>
           </div>
 
+          {/* Блок ТЗ от клиента */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">📋 Техническое задание / Комментарий к заказу</label>
+            <textarea 
+              rows={3} 
+              value={instructions} 
+              onChange={(e) => setInstructions(e.target.value)} 
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" 
+              placeholder="Детали уборки..." 
+            />
+          </div>
+
+          {/* БЛОК: Быстрые ответы */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">⚡ Быстрые ответы клиенту (Шаблоны):</label>
+            <div className="flex flex-wrap gap-2">
+              <button 
+                type="button"
+                onClick={() => setInstructions("Привет! Стоимость поддерживающей уборки составит 250 PLN. В неё входит: влажная уборка полов, протирка пыли, мытье сантехники. Подскажите, какая дата вас интересует?")}
+                className="text-xs bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
+              >
+                📋 Прайс поддерживающей
+              </button>
+              <button 
+                type="button"
+                onClick={() => setInstructions("Здравствуйте! Для расчета генеральной уборки уточните, пожалуйста: сколько комнат, какая общая площадь и нужно ли мыть окна/внутри техники?")}
+                className="text-xs bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
+              >
+                ❓ Вопросы для Генеральной
+              </button>
+              <button 
+                type="button"
+                onClick={() => setInstructions("Заказ подтвержден! К вам приедет наш лучший клинер. Пожалуйста, обеспечьте доступ к воде. Наш пылесос мы привезём с собой.")}
+                className="text-xs bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
+              >
+                ✅ Подтверждение заказа
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">При клике шаблон автоматически вставляется в текстовое поле ТЗ.</p>
+          </div>
+
+          {/* Кнопки управления формой */}
           <div className="pt-4 border-t border-slate-100 flex justify-end space-x-3">
             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Отмена</button>
             <button type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-sm transition">Сохранить</button>
