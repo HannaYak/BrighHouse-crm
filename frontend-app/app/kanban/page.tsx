@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
-type Status = 'new' | 'processing' | 'selecting' | 'assigned' | 'completed' | 'cancelled';
+type Status = 'NEW' | 'PROCESSING' | 'SELECTING' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED';
 
 interface Order extends OrderDetail {
   urgency: 'urgent' | 'today' | 'confirmed' | 'normal';
@@ -10,21 +10,20 @@ interface Order extends OrderDetail {
 }
 
 const columns: { key: Status; title: string }[] = [
-  { key: 'new', title: 'Новая заявка' },
-  { key: 'processing', title: 'В обработке' },
-  { key: 'selecting', title: 'Подбор клинера' },
-  { key: 'assigned', title: 'Назначен' },
-  { key: 'completed', title: 'Выполнен / Закрыт' },
-  { key: 'cancelled', title: 'Отмена' },
+  { key: 'NEW', title: 'Новая заявка' },
+  { key: 'PROCESSING', title: 'В обработке' },
+  { key: 'SELECTING', title: 'Подбор клинера' },
+  { key: 'ASSIGNED', title: 'Назначен' },
+  { key: 'COMPLETED', title: 'Выполнен' },
+  { key: 'CANCELLED', title: 'Отмена' },
 ];
 
 export default function KanbanPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Загрузка заказов из базы данных
   const fetchOrders = async () => {
     try {
       setLoading(true);
@@ -32,21 +31,38 @@ export default function KanbanPage() {
       if (res.ok) {
         const data = await res.json();
         const formatted: Order[] = data.map((item: any) => ({
-          id: item.orderNumber || item.id,
-          time: item.timeSlot || '10:00 — 14:00',
-          date: new Date(item.date).toLocaleDateString('ru-RU'),
+          id: item.id,
+          orderNumber: item.orderNumber,
+          timeSlot: item.timeSlot || '10:00 — 14:00',
+          date: new Date(item.date).toISOString().split('T')[0],
+          serviceType: item.serviceType || 'STANDARD',
+          areaM2: item.areaM2 || 45,
+          roomsCount: item.roomsCount || 1,
+          bathroomsCount: item.bathroomsCount || 1,
+          windowsCount: item.windowsCount || 0,
+          hasOven: item.hasOven || false,
+          hasFridge: item.hasFridge || false,
+          hasMicrowave: item.hasMicrowave || false,
+          hasBalcony: item.hasBalcony || false,
+          hasDishes: item.hasDishes || false,
+          hasIroning: item.hasIroning || false,
+          hasVacuum: item.hasVacuum || false,
+          hasPets: item.hasPets || false,
+          hasKeys: item.hasKeys || false,
           clientName: item.clientName,
           clientPhone: item.clientPhone,
           addressLine1: item.addressLine1,
           addressLine2: item.addressLine2 || '',
           price: item.price,
-          cleanersCount: item.cleanersCount,
-          assignedCleaners: item.assignedCleaners?.map((ac: any) => ac.cleaner.name) || [],
-          tags: { vacuum: item.hasVacuum, pets: item.hasPets, keys: item.hasKeys },
-          urgency: item.urgency.toLowerCase(),
-          status: item.status.toLowerCase(),
-          serviceType: 'Стандартная',
-          clientNotes: item.notes || '',
+          cleanersCount: item.cleanersCount || 1,
+          assignedCleaners: item.assignedCleaners?.map((ac: any) => ({
+            id: ac.cleaner.id,
+            name: ac.cleaner.name,
+            phone: ac.cleaner.phone,
+          })) || [],
+          urgency: (item.urgency || 'NORMAL').toLowerCase(),
+          status: item.status || 'NEW',
+          notes: item.notes || '',
         }));
         setOrders(formatted);
       }
@@ -61,47 +77,30 @@ export default function KanbanPage() {
     fetchOrders();
   }, []);
 
-  // Быстрое создание тестового заказа в базе
-  const handleCreateTestOrder = async () => {
-    const newOrderPayload = {
-      date: new Date().toISOString(),
-      time: '11:00 — 15:00',
-      clientName: 'Новый Клиент',
-      clientPhone: '+48 500 600 700',
-      addressLine1: 'ul. Prosta 20',
-      addressLine2: 'кв. 15',
-      price: 320,
-      cleanersCount: 1,
-      tags: { vacuum: true, pets: false, keys: true },
-      urgency: 'TODAY',
-      status: 'NEW',
-      clientNotes: 'Помыть балкон и окна.',
-    };
+  const openCreateModal = () => {
+    setSelectedOrder(null);
+    setIsModalOpen(true);
+  };
 
+  const openEditModal = (order: Order) => {
+    setSelectedOrder(order);
+    setIsModalOpen(true);
+  };
+
+  const handleSaveOrder = async (saved: OrderDetail) => {
     try {
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newOrderPayload),
+        body: JSON.stringify(saved),
       });
 
       if (res.ok) {
         fetchOrders();
       }
     } catch (e) {
-      console.error('Ошибка создания заказа:', e);
+      console.error('Ошибка сохранения заказа:', e);
     }
-  };
-
-  const openOrder = (order: Order) => {
-    setSelectedOrder(order);
-    setIsModalOpen(true);
-  };
-
-  const handleSaveOrder = (updated: OrderDetail) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
-    );
   };
 
   return (
@@ -114,10 +113,10 @@ export default function KanbanPage() {
           </p>
         </div>
         <button
-          onClick={handleCreateTestOrder}
+          onClick={openCreateModal}
           className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition"
         >
-          + Создать тестовый заказ
+          + Создать заказ
         </button>
       </div>
 
@@ -141,15 +140,15 @@ export default function KanbanPage() {
               <div className="flex flex-col gap-2.5 overflow-y-auto pr-0.5">
                 {colOrders.map((order) => (
                   <div
-                    key={order.id}
-                    onClick={() => openOrder(order)}
+                    key={order.id || order.orderNumber}
+                    onClick={() => openEditModal(order)}
                     className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm hover:border-brand-500 hover:shadow-md transition cursor-pointer flex flex-col gap-2"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                        ⏱️ {order.time}
+                        ⏱️ {order.timeSlot}
                       </span>
-                      <span className="text-[11px] font-mono text-slate-400">{order.id}</span>
+                      <span className="text-[11px] font-mono text-slate-400">{order.orderNumber}</span>
                     </div>
 
                     <div className="font-semibold text-sm text-slate-900 leading-tight">
@@ -158,15 +157,36 @@ export default function KanbanPage() {
 
                     <div className="text-xs text-slate-500 leading-snug">
                       <div>📍 {order.addressLine1}</div>
-                      <div className="text-slate-400 pl-4">{order.addressLine2}</div>
+                      {order.addressLine2 && <div className="text-slate-400 pl-4">{order.addressLine2}</div>}
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 mt-0.5">
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded font-medium">
+                        {order.areaM2} $м^2$
+                      </span>
+                      {order.hasPets && (
+                        <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded">
+                          🐾 Животные
+                        </span>
+                      )}
+                      {order.hasVacuum && (
+                        <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded">
+                          🔌 Пылесос
+                        </span>
+                      )}
+                      {order.hasKeys && (
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded">
+                          🔑 Ключи
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
                       <span className="text-sm font-bold text-slate-800">{order.price} zł</span>
-                      <span className="text-xs text-brand-600 font-semibold">
-                        {order.assignedCleaners.length > 0
-                          ? `🙋‍♀️ ${order.assignedCleaners[0]}`
-                          : 'Без клинера'}
+                      <span className="text-xs text-brand-600 font-semibold truncate max-w-[140px] text-right">
+                        {order.assignedCleaners && order.assignedCleaners.length > 0
+                          ? `👥 ${order.assignedCleaners.map((c) => c.name).join(', ')}`
+                          : 'Клинер не выбран'}
                       </span>
                     </div>
                   </div>
