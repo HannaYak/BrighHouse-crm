@@ -23,6 +23,13 @@ enum UrgencyLevel {
   CONFIRMED
 }
 
+enum ServiceType {
+  STANDARD
+  STANDARD_PLUS
+  GENERAL
+  AFTER_REPAIR
+}
+
 model Client {
   id               Int      @id @default(autoincrement())
   name             String
@@ -39,18 +46,12 @@ model Cleaner {
   name         String
   phone        String         @unique
   district     String
+  telegramChatId String?      @unique
+  authCode     String?        @unique
   tags         String[]
   status       String         @default("active")
   assignments  OrderCleaner[]
   createdAt    DateTime       @default(now())
-}
-
-model Service {
-  id           Int      @id @default(autoincrement())
-  title        String
-  baseManHours Float
-  basePrice    Float
-  createdAt    DateTime @default(now())
 }
 
 model Order {
@@ -58,15 +59,31 @@ model Order {
   orderNumber      String         @unique
   date             DateTime
   timeSlot         String
+  serviceType      ServiceType    @default(STANDARD)
+  areaM2           Int            @default(45)
+  roomsCount       Int            @default(1)
+  bathroomsCount   Int            @default(1)
+  windowsCount     Int            @default(0)
+  
+  // Чекбоксы допов
+  hasOven          Boolean        @default(false)
+  hasFridge        Boolean        @default(false)
+  hasMicrowave     Boolean        @default(false)
+  hasBalcony       Boolean        @default(false)
+  hasDishes        Boolean        @default(false)
+  hasIroning       Boolean        @default(false)
+  hasVacuum        Boolean        @default(false)
+  hasPets          Boolean        @default(false)
+  hasKeys          Boolean        @default(false)
+
   clientName       String
   clientPhone      String
   addressLine1     String
   addressLine2     String?
+  latitude         Float?
+  longitude        Float?
   price            Float
   cleanersCount    Int            @default(1)
-  hasVacuum        Boolean        @default(false)
-  hasPets          Boolean        @default(false)
-  hasKeys          Boolean        @default(false)
   notes            String?
   urgency          UrgencyLevel   @default(NORMAL)
   status           OrderStatus    @default(NEW)
