@@ -1,262 +1,269 @@
-import React, { useState, useEffect } from 'react';
+"use client";
+import React, { useState } from 'react';
 
-// Демо-справочник клинеров с их ограничениями (для симуляции фильтра)
-const cleanersDatabase = [
-  { id: 101, name: 'Мария Сидорова (⭐ Любимчик)', tags: ['аллергия_на_кошек'], incompatibleIds: [103] },
-  { id: 102, name: 'Анна Ковальчук', tags: [], incompatibleIds: [] },
-  { id: 103, name: 'Светлана Петрова', tags: ['только_поддерживающая'], incompatibleIds: [101] },
-  { id: 104, name: 'Екатерина Дмитриева', tags: ['аллергия_на_животных'], incompatibleIds: [] }
-];
-
-// Клиент с его черным списком (Светлана Петрова заблокирована)
-const currentClient = {
-  id: 501,
-  name: 'Алина Полякова',
-  blacklistIds: [103], // Светлану нанимать нельзя!
-  favoriteIds: [101]  // Мария — любимчик
-};
-
-const servicesDict = [
-  { id: '1', name: 'Поддерживающая (1-2 ком)', baseTimeMinutes: 180, price: 250, type: 'maintenance' },
-  { id: '2', name: 'Поддерживающая (3-4 ком)', baseTimeMinutes: 240, price: 350, type: 'maintenance' },
-  { id: '3', name: 'Генеральная (1-2 ком)', baseTimeMinutes: 360, price: 500, type: 'general' },
-  { id: '4', name: 'После ремонта (1-2 ком)', baseTimeMinutes: 480, price: 700, type: 'post_construction' }
-];
-
-interface OrderModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (orderData: any) => void;
-  initialData?: any;
+export interface OrderDetail {
+  id: string;
+  time: string;
+  date: string;
+  clientName: string;
+  clientPhone: string;
+  addressLine1: string;
+  addressLine2: string;
+  price: number;
+  cleanersCount: number;
+  assignedCleaners: string[];
+  tags: { vacuum: boolean; pets: boolean; keys: boolean };
+  clientNotes: string;
+  serviceType: string;
 }
 
-export default function OrderModal({ isOpen, onClose, onSave, initialData }: OrderModalProps) {
-  if (!isOpen) return null;
+interface OrderModalProps {
+  order: OrderDetail | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (updated: OrderDetail) => void;
+}
 
-  const [clientName, setClientName] = useState(initialData?.clientName || currentClient.name);
-  const [phone, setPhone] = useState(initialData?.phone || '+48 123 456 789');
-  const [address, setAddress] = useState(initialData?.address || '');
-  
-  const [selectedServiceId, setSelectedServiceId] = useState(servicesDict[0].id);
-  const [date, setDate] = useState(initialData?.date || new Date().toISOString().split('T')[0]);
-  const [startTime, setStartTime] = useState(initialData?.startTime || '10:00');
-  const [endTime, setEndTime] = useState('13:00');
-  const [price, setPrice] = useState(servicesDict[0].price);
+const availableCleaners = [
+  { id: '1', name: 'Мария Сидорова', rating: 4.9 },
+  { id: '2', name: 'Анна Ковальчук', rating: 4.8 },
+  { id: '3', name: 'Елена Демченко', rating: 4.7 },
+];
 
-  const [needsVacuum, setNeedsVacuum] = useState(initialData?.needsVacuum || false);
-  const [hasPets, setHasPets] = useState(initialData?.hasPets || false);
-  const [keysAction, setKeysAction] = useState(initialData?.keysAction || '');
-  const [instructions, setInstructions] = useState(initialData?.instructions || '');
+export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
+  if (!isOpen || !order) return null;
 
-  // Выбранные клинеры
-  const [cleaner1Id, setCleaner1Id] = useState<number | 'none'>('none');
-  const [cleaner2Id, setCleaner2Id] = useState<number | 'none'>('none');
+  const [formData, setFormData] = useState<OrderDetail>(order);
 
-  // Списки клинеров, доступных для выбора (после фильтрации)
-  const [filteredCleaners1, setFilteredCleaners1] = useState(cleanersDatabase);
-  const [filteredCleaners2, setFilteredCleaners2] = useState(cleanersDatabase);
+  const toggleTag = (key: keyof typeof formData.tags) => {
+    setFormData((prev) => ({
+      ...prev,
+      tags: { ...prev.tags, [key]: !prev.tags[key] },
+    }));
+  };
 
-  // 1. Эффект для автоматического пересчета времени окончания
-  useEffect(() => {
-    const service = servicesDict.find(s => s.id === selectedServiceId);
-    if (!service) return;
-
-    const activeCleanersCount = [cleaner1Id, cleaner2Id].filter(id => id !== 'none').length || 1;
-    const rawDuration = service.baseTimeMinutes / activeCleanersCount;
-    const durationMinutesOnSite = Math.ceil(rawDuration / 30) * 30;
-
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const startObj = new Date();
-    startObj.setHours(hours, minutes, 0, 0);
-    const endObj = new Date(startObj.getTime() + durationMinutesOnSite * 60 * 1000);
-    
-    setEndTime(`${String(endObj.getHours()).padStart(2, '0')}:${String(endObj.getMinutes()).padStart(2, '0')}`);
-    setPrice(service.price);
-  }, [selectedServiceId, cleaner1Id, cleaner2Id, startTime]);
-
-  // 2. Эффект умной фильтрации клинеров
-  useEffect(() => {
-    const service = servicesDict.find(s => s.id === selectedServiceId);
-    const serviceType = service ? service.type : 'maintenance';
-
-    const runFilter = (alreadySelectedId: number | 'none') => {
-      return cleanersDatabase.filter(cleaner => {
-        if (currentClient.blacklistIds.includes(cleaner.id)) return false;
-
-        if ((serviceType === 'general' || serviceType === 'post_construction') && cleaner.tags.includes('только_поддерживающая')) {
-          return false;
-        }
-
-        if (hasPets && cleaner.tags.includes('аллергия_на_животных')) {
-          return false;
-        }
-
-        if (alreadySelectedId !== 'none') {
-          const selectedCleaner = cleanersDatabase.find(c => c.id === alreadySelectedId);
-          if (selectedCleaner?.incompatibleIds.includes(cleaner.id)) return false;
-          if (cleaner.incompatibleIds.includes(Number(alreadySelectedId))) return false;
-        }
-
-        return true;
-      });
-    };
-
-    setFilteredCleaners1(runFilter(cleaner2Id));
-    setFilteredCleaners2(runFilter(cleaner1Id));
-
-  }, [selectedServiceId, hasPets, cleaner1Id, cleaner2Id]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      clientName,
-      phone,
-      address,
-      startTime,
-      endTime,
-      price,
-      needsVacuum,
-      hasPets,
-      keysAction,
-      instructions,
-      cleaners: [cleaner1Id, cleaner2Id].filter(id => id !== 'none')
+  const toggleCleaner = (name: string) => {
+    setFormData((prev) => {
+      const exists = prev.assignedCleaners.includes(name);
+      return {
+        ...prev,
+        assignedCleaners: exists
+          ? prev.assignedCleaners.filter((c) => c !== name)
+          : [...prev.assignedCleaners, name],
+      };
     });
-    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex justify-center items-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden border border-slate-200 font-sans">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-5xl h-[85vh] max-h-[750px] flex flex-col overflow-hidden">
         
-        <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-slate-800">🛡️ Назначение заказа с Умным Фильтром</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+        {/* Верхняя панель модалки */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs font-bold text-slate-400 bg-white border border-slate-200 px-2 py-1 rounded">
+              {formData.id}
+            </span>
+            <h2 className="text-base font-bold text-slate-800">
+              Карточка заказа: {formData.clientName}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 flex items-center justify-center transition"
+          >
+            ✕
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[85vh] overflow-y-auto text-sm text-slate-700">
+        {/* Двухколоночный контент */}
+        <div className="flex-1 flex overflow-hidden">
           
-          {/* Клиент */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Имя Клиента</label>
-              <input type="text" required value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Адрес уборки</label>
-              <input type="text" required value={address} onChange={(e) => setAddress(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg" placeholder="ул. Коперника 14" />
-            </div>
-          </div>
+          {/* Левая колонка (60%) */}
+          <div className="w-[60%] p-6 border-r border-slate-100 flex flex-col justify-between overflow-y-auto">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Клиент
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.clientName}
+                    onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:bg-white focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Телефон
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.clientPhone}
+                    onChange={(e) => setFormData({ ...formData, clientPhone: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:bg-white focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Typ уборки</label>
-              <select value={selectedServiceId} onChange={(e) => setSelectedServiceId(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg">
-                {servicesDict.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Старт</label>
-              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-1">🏁 Финиш (Авто)</label>
-              <div className="px-2.5 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold rounded-lg">{endTime}</div>
-            </div>
-          </div>
-
-          {/* Параметры */}
-          <div className="flex space-x-4 bg-amber-50/40 p-3 rounded-lg border border-amber-100">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input type="checkbox" checked={hasPets} onChange={(e) => setHasPets(e.target.checked)} className="w-4 h-4 text-indigo-600 border-slate-300 rounded" />
-              <span className="text-xs font-medium text-slate-700">🐾 Дома есть животные (Включить проверку аллергии)</span>
-            </label>
-          </div>
-
-          {/* Умный подбор персонала */}
-          <div className="border border-indigo-100 bg-indigo-50/20 p-4 rounded-xl space-y-3">
-            <h4 className="text-xs font-bold text-indigo-800 uppercase tracking-wider">👩‍💼 Назначение исполнителей (Система защиты от накладок)</h4>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Клинер №1</label>
-                <select 
-                  value={cleaner1Id} 
-                  onChange={(e) => setCleaner1Id(e.target.value === 'none' ? 'none' : Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="none">-- Выберите клинера --</option>
-                  {filteredCleaners1.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Дата
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.date}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:bg-white focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Время
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.time}
+                    onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:bg-white focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                    Стоимость (zł)
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 focus:bg-white focus:border-brand-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Клинер №2 (Опционально)</label>
-                <select 
-                  value={cleaner2Id} 
-                  disabled={cleaner1Id === 'none'}
-                  onChange={(e) => setCleaner2Id(e.target.value === 'none' ? 'none' : Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  <option value="none">-- Выберите клинера --</option>
-                  {filteredCleaners2.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                  Адрес выполнения
+                </label>
+                <input
+                  type="text"
+                  value={formData.addressLine1}
+                  onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
+                  placeholder="Улица, дом"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium mb-2 focus:bg-white focus:border-brand-500 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  value={formData.addressLine2}
+                  onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
+                  placeholder="Квартира, этаж, домофон"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 focus:bg-white focus:border-brand-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Схема локации */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                  Локация на карте
+                </label>
+                <div className="h-32 w-full bg-slate-100 border border-slate-200 rounded-xl flex items-center justify-center text-xs text-slate-400 font-medium">
+                  🗺️ Интерактивная метка: {formData.addressLine1}
+                </div>
               </div>
             </div>
-            <p className="text-[10px] text-indigo-600/80">💡 База клиентов заблокировала "Светлану П.". Она автоматически скрыта из выпадающих списков.</p>
           </div>
 
-          {/* Блок ТЗ от клиента */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">📋 Техническое задание / Комментарий к заказу</label>
-            <textarea 
-              rows={3} 
-              value={instructions} 
-              onChange={(e) => setInstructions(e.target.value)} 
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" 
-              placeholder="Детали уборки..." 
-            />
-          </div>
+          {/* Правая колонка (40%) */}
+          <div className="w-[40%] p-6 flex flex-col justify-between bg-slate-50/30 overflow-y-auto space-y-4">
+            <div className="space-y-4">
+              
+              {/* Чекбоксы условий */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                  Параметры и Оборудование
+                </label>
+                <div className="flex flex-col gap-2">
+                  {[
+                    { key: 'vacuum', label: '🔌 Нужен пылесос' },
+                    { key: 'pets', label: '🐾 Есть животные' },
+                    { key: 'keys', label: '🔑 Забрать/отдать ключи' },
+                  ].map(({ key, label }) => (
+                    <button
+                      type="button"
+                      key={key}
+                      onClick={() => toggleTag(key as keyof typeof formData.tags)}
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-between border transition ${
+                        formData.tags[key as keyof typeof formData.tags]
+                          ? 'bg-blue-50 border-brand-500 text-brand-700'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <span>{formData.tags[key as keyof typeof formData.tags] ? '✓' : ''}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* БЛОК: Быстрые ответы */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">⚡ Быстрые ответы клиенту (Шаблоны):</label>
-            <div className="flex flex-wrap gap-2">
-              <button 
+              {/* Назначение клинеров */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                  Назначить клинеров ({formData.assignedCleaners.length})
+                </label>
+                <div className="space-y-1.5">
+                  {availableCleaners.map((cleaner) => {
+                    const isSelected = formData.assignedCleaners.includes(cleaner.name);
+                    return (
+                      <button
+                        type="button"
+                        key={cleaner.id}
+                        onClick={() => toggleCleaner(cleaner.name)}
+                        className={`w-full px-3 py-2 rounded-lg text-xs flex items-center justify-between border transition ${
+                          isSelected
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-semibold'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>🙋‍♀️ {cleaner.name}</span>
+                        <span className="text-[10px] text-slate-400">⭐ {cleaner.rating}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ТЗ и примечания от клиента */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                  ТЗ / Пожелания клиента
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.clientNotes}
+                  onChange={(e) => setFormData({ ...formData, clientNotes: e.target.value })}
+                  placeholder="Особые пожелания, код от подъезда, зоны внимания..."
+                  className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700 focus:border-brand-500 focus:outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Кнопка сохранения */}
+            <div className="pt-2">
+              <button
                 type="button"
-                onClick={() => setInstructions("Привет! Стоимость поддерживающей уборки составит 250 PLN. В неё входит: влажная уборка полов, протирка пыли, мытье сантехники. Подскажите, какая дата вас интересует?")}
-                className="text-xs bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
+                onClick={() => {
+                  onSave(formData);
+                  onClose();
+                }}
+                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 px-4 rounded-xl text-xs shadow-md transition"
               >
-                📋 Прайс поддерживающей
-              </button>
-              <button 
-                type="button"
-                onClick={() => setInstructions("Здравствуйте! Для расчета генеральной уборки уточните, пожалуйста: сколько комнат, какая общая площадь и нужно ли мыть окна/внутри техники?")}
-                className="text-xs bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
-              >
-                ❓ Вопросы для Генеральной
-              </button>
-              <button 
-                type="button"
-                onClick={() => setInstructions("Заказ подтвержден! К вам приедет наш лучший клинер. Пожалуйста, обеспечьте доступ к воде. Наш пылесос мы привезём с собой.")}
-                className="text-xs bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium transition"
-              >
-                ✅ Подтверждение заказа
+                Сохранить изменения
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">При клике шаблон автоматически вставляется в текстовое поле ТЗ.</p>
           </div>
-
-          {/* Кнопки управления формой */}
-          <div className="pt-4 border-t border-slate-100 flex justify-end space-x-3">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Отмена</button>
-            <button type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-sm transition">Сохранить</button>
-          </div>
-
-        </form>
+        </div>
       </div>
     </div>
   );
