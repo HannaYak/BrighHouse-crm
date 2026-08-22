@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
+import { sendTelegramOrderNotification } from '../../../lib/telegram';
 
 export async function GET() {
   try {
@@ -20,9 +21,11 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const orderNumber = `ORD-${Math.floor(100 + Math.random() * 900)}`;
+
     const newOrder = await prisma.order.create({
       data: {
-        orderNumber: `ORD-${Math.floor(100 + Math.random() * 900)}`,
+        orderNumber,
         date: new Date(body.date),
         timeSlot: body.time,
         clientName: body.clientName,
@@ -39,6 +42,22 @@ export async function POST(request: Request) {
         urgency: body.urgency || 'NORMAL',
       },
     });
+
+    // Фоновая отправка в Telegram
+    await sendTelegramOrderNotification({
+      orderNumber,
+      date: new Date(body.date).toLocaleDateString('ru-RU'),
+      timeSlot: body.time,
+      address: `${body.addressLine1}${body.addressLine2 ? ', ' + body.addressLine2 : ''}`,
+      price: Number(body.price),
+      tags: {
+        vacuum: Boolean(body.tags?.vacuum),
+        pets: Boolean(body.tags?.pets),
+        keys: Boolean(body.tags?.keys),
+      },
+      notes: body.clientNotes,
+    });
+
     return NextResponse.json(newOrder, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: 'Ошибка создания заказа' }, { status: 500 });
