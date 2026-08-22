@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
 type Status = 'new' | 'processing' | 'selecting' | 'assigned' | 'completed' | 'cancelled';
@@ -8,43 +8,6 @@ interface Order extends OrderDetail {
   urgency: 'urgent' | 'today' | 'confirmed' | 'normal';
   status: Status;
 }
-
-const initialOrders: Order[] = [
-  {
-    id: 'ORD-101',
-    time: '10:00 — 14:00',
-    date: '17.07.2026',
-    clientName: 'Алина Полякова',
-    clientPhone: '+48 123 456 789',
-    addressLine1: 'ул. Коперника 14',
-    addressLine2: 'кв. 12, подъезд 2',
-    price: 250,
-    cleanersCount: 1,
-    assignedCleaners: ['Мария Сидорова'],
-    tags: { vacuum: true, pets: true, keys: true },
-    urgency: 'today',
-    status: 'new',
-    serviceType: 'Генеральная',
-    clientNotes: 'Помыть внутри духовки и протереть люстру в гостиной.',
-  },
-  {
-    id: 'ORD-102',
-    time: '12:00 — 18:00',
-    date: '17.07.2026',
-    clientName: 'Ян Ковальский',
-    clientPhone: '+48 987 654 321',
-    addressLine1: 'al. Jerozolimskie 85',
-    addressLine2: 'офис 402',
-    price: 450,
-    cleanersCount: 2,
-    assignedCleaners: ['Анна Ковальчук'],
-    tags: { vacuum: true, pets: false, keys: false },
-    urgency: 'confirmed',
-    status: 'selecting',
-    serviceType: 'Поддерживающая',
-    clientNotes: 'Ключи у консьержа, оплата по безналу.',
-  },
-];
 
 const columns: { key: Status; title: string }[] = [
   { key: 'new', title: 'Новая заявка' },
@@ -56,9 +19,79 @@ const columns: { key: Status; title: string }[] = [
 ];
 
 export default function KanbanPage() {
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Загрузка заказов из базы данных
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/orders');
+      if (res.ok) {
+        const data = await res.json();
+        const formatted: Order[] = data.map((item: any) => ({
+          id: item.orderNumber || item.id,
+          time: item.timeSlot || '10:00 — 14:00',
+          date: new Date(item.date).toLocaleDateString('ru-RU'),
+          clientName: item.clientName,
+          clientPhone: item.clientPhone,
+          addressLine1: item.addressLine1,
+          addressLine2: item.addressLine2 || '',
+          price: item.price,
+          cleanersCount: item.cleanersCount,
+          assignedCleaners: item.assignedCleaners?.map((ac: any) => ac.cleaner.name) || [],
+          tags: { vacuum: item.hasVacuum, pets: item.hasPets, keys: item.hasKeys },
+          urgency: item.urgency.toLowerCase(),
+          status: item.status.toLowerCase(),
+          serviceType: 'Стандартная',
+          clientNotes: item.notes || '',
+        }));
+        setOrders(formatted);
+      }
+    } catch (e) {
+      console.error('Ошибка загрузки заказов:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  // Быстрое создание тестового заказа в базе
+  const handleCreateTestOrder = async () => {
+    const newOrderPayload = {
+      date: new Date().toISOString(),
+      time: '11:00 — 15:00',
+      clientName: 'Новый Клиент',
+      clientPhone: '+48 500 600 700',
+      addressLine1: 'ul. Prosta 20',
+      addressLine2: 'кв. 15',
+      price: 320,
+      cleanersCount: 1,
+      tags: { vacuum: true, pets: false, keys: true },
+      urgency: 'TODAY',
+      status: 'NEW',
+      clientNotes: 'Помыть балкон и окна.',
+    };
+
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newOrderPayload),
+      });
+
+      if (res.ok) {
+        fetchOrders();
+      }
+    } catch (e) {
+      console.error('Ошибка создания заказа:', e);
+    }
+  };
 
   const openOrder = (order: Order) => {
     setSelectedOrder(order);
@@ -76,8 +109,16 @@ export default function KanbanPage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Канбан-доска заказов</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Кликните на карточку для открытия ТЗ и назначения клинеров</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {loading ? 'Синхронизация с базой...' : `Всего заказов: ${orders.length}`}
+          </p>
         </div>
+        <button
+          onClick={handleCreateTestOrder}
+          className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition"
+        >
+          + Создать тестовый заказ
+        </button>
       </div>
 
       <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-start">
