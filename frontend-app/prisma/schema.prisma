@@ -1,0 +1,87 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum OrderStatus {
+  NEW
+  PROCESSING
+  SELECTING
+  ASSIGNED
+  COMPLETED
+  CANCELLED
+}
+
+enum UrgencyLevel {
+  NORMAL
+  TODAY
+  URGENT
+  CONFIRMED
+}
+
+model Client {
+  id               Int      @id @default(autoincrement())
+  name             String
+  phone            String   @unique
+  address          String
+  favoriteCleaner  String?
+  blacklistCleaner String?
+  orders           Order[]
+  createdAt        DateTime @default(now())
+}
+
+model Cleaner {
+  id           Int            @id @default(autoincrement())
+  name         String
+  phone        String         @unique
+  district     String
+  tags         String[]
+  status       String         @default("active")
+  assignments  OrderCleaner[]
+  createdAt    DateTime       @default(now())
+}
+
+model Service {
+  id           Int      @id @default(autoincrement())
+  title        String
+  baseManHours Float
+  basePrice    Float
+  createdAt    DateTime @default(now())
+}
+
+model Order {
+  id               String         @id @default(cuid())
+  orderNumber      String         @unique
+  date             DateTime
+  timeSlot         String
+  clientName       String
+  clientPhone      String
+  addressLine1     String
+  addressLine2     String?
+  price            Float
+  cleanersCount    Int            @default(1)
+  hasVacuum        Boolean        @default(false)
+  hasPets          Boolean        @default(false)
+  hasKeys          Boolean        @default(false)
+  notes            String?
+  urgency          UrgencyLevel   @default(NORMAL)
+  status           OrderStatus    @default(NEW)
+  clientId         Int?
+  client           Client?        @relation(fields: [clientId], references: [id])
+  assignedCleaners OrderCleaner[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model OrderCleaner {
+  orderId   String
+  cleanerId Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cleaner   Cleaner @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, cleanerId])
+}
