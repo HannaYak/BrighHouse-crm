@@ -1,13 +1,15 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface CleanerItem {
   id: number;
   name: string;
   phone: string;
   district: string;
+  telegramChatId?: string | null;
+  authCode?: string | null;
   tags: string[];
-  status: 'active' | 'inactive';
+  status: string;
 }
 
 interface ClientItem {
@@ -15,171 +17,302 @@ interface ClientItem {
   name: string;
   phone: string;
   address: string;
-  favoriteCleaner: string;
-  blacklistCleaner: string;
+  favoriteCleaner?: string | null;
+  blacklistCleaner?: string | null;
 }
-
-interface ServiceItem {
-  id: number;
-  title: string;
-  baseManHours: number;
-  basePrice: number;
-}
-
-const initialCleaners: CleanerItem[] = [
-  { id: 1, name: 'Мария Сидорова', phone: '+48 555 111 222', district: 'Mokotów', tags: ['аллергия_на_кошек', 'только_поддерживающая'], status: 'active' },
-  { id: 2, name: 'Анна Ковальчук', phone: '+48 555 333 444', district: 'Wola', tags: ['опыт_генералок', 'без_высоты'], status: 'active' },
-  { id: 3, name: 'Елена Демченко', phone: '+48 555 777 888', district: 'Praga', tags: ['химчистка', 'окна'], status: 'active' },
-];
-
-const initialClients: ClientItem[] = [
-  { id: 1, name: 'Алина Полякова', phone: '+48 123 456 789', address: 'ул. Коперника 14', favoriteCleaner: 'Мария Сидорова', blacklistCleaner: 'Светлана П.' },
-  { id: 2, name: 'Ян Ковальский', phone: '+48 987 654 321', address: 'al. Jerozolimskie 85', favoriteCleaner: 'Анна Ковальчук', blacklistCleaner: '—' },
-];
-
-const initialServices: ServiceItem[] = [
-  { id: 1, title: 'Поддерживающая уборка', baseManHours: 3.5, basePrice: 180 },
-  { id: 2, title: 'Генеральная уборка', baseManHours: 6.0, basePrice: 350 },
-  { id: 3, title: 'Уборка после ремонта', baseManHours: 8.0, basePrice: 500 },
-];
 
 export default function DirectoriesPage() {
-  const [activeTab, setActiveTab] = useState<'cleaners' | 'clients' | 'services'>('cleaners');
-  const [cleaners] = useState<CleanerItem[]>(initialCleaners);
-  const [clients] = useState<ClientItem[]>(initialClients);
-  const [services] = useState<ServiceItem[]>(initialServices);
+  const [activeTab, setActiveTab] = useState<'cleaners' | 'clients'>('cleaners');
+  const [cleaners, setCleaners] = useState<CleanerItem[]>([]);
+  const [clients, setClients] = useState<ClientItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Формы создания
+  const [newCleanerName, setNewCleanerName] = useState('');
+  const [newCleanerPhone, setNewCleanerPhone] = useState('');
+  const [newCleanerDistrict, setNewCleanerDistrict] = useState('');
+
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientAddress, setNewClientAddress] = useState('');
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [cleanersRes, clientsRes] = await Promise.all([
+        fetch('/api/cleaners'),
+        fetch('/api/clients'),
+      ]);
+      if (cleanersRes.ok) setCleaners(await cleanersRes.json());
+      if (clientsRes.ok) setClients(await clientsRes.json());
+    } catch (e) {
+      console.error('Ошибка загрузки данных:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Генерация PIN-кода для связки с Telegram
+  const handleGeneratePin = async (cleanerId: number) => {
+    try {
+      const res = await fetch('/api/cleaners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate_pin', cleanerId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCleaners((prev) =>
+          prev.map((c) => (c.id === cleanerId ? { ...c, authCode: data.authCode } : c))
+        );
+      }
+    } catch (e) {
+      console.error('Ошибка генерации PIN:', e);
+    }
+  };
+
+  // Добавление клинера
+  const handleAddCleaner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCleanerName || !newCleanerPhone) return;
+
+    try {
+      const res = await fetch('/api/cleaners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newCleanerName,
+          phone: newCleanerPhone,
+          district: newCleanerDistrict || 'Центр',
+          tags: ['стандарт', 'генеральная'],
+        }),
+      });
+      if (res.ok) {
+        setNewCleanerName('');
+        setNewCleanerPhone('');
+        setNewCleanerDistrict('');
+        loadData();
+      }
+    } catch (e) {
+      console.error('Ошибка добавления клинера:', e);
+    }
+  };
+
+  // Добавление клиента
+  const handleAddClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClientName || !newClientPhone) return;
+
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newClientName,
+          phone: newClientPhone,
+          address: newClientAddress,
+        }),
+      });
+      if (res.ok) {
+        setNewClientName('');
+        setNewClientPhone('');
+        setNewClientAddress('');
+        loadData();
+      }
+    } catch (e) {
+      console.error('Ошибка добавления клиента:', e);
+    }
+  };
 
   return (
     <div className="flex flex-col space-y-6">
-      {/* Заголовок */}
       <div>
-        <h1 className="text-xl font-bold text-slate-800">🗄️ Справочники и Настройки</h1>
-        <p className="text-xs text-slate-500 mt-0.5">Управление персоналом, клиентской базой и тарификацией услуг</p>
+        <h1 className="text-xl font-bold text-slate-800">🗄️ Справочники и Персонал</h1>
+        <p className="text-xs text-slate-500 mt-0.5">Управление клинерами, генерация кодов для Telegram и база клиентов</p>
       </div>
 
-      {/* Переключатель вкладок */}
-      <div className="flex space-x-2 border-b border-slate-200">
+      <div className="flex space-x-3 border-b border-slate-200">
         <button
           onClick={() => setActiveTab('cleaners')}
-          className={`pb-3 px-3 text-xs font-semibold border-b-2 transition ${
+          className={`pb-3 px-2 text-xs font-bold border-b-2 transition ${
             activeTab === 'cleaners'
               ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              : 'border-transparent text-slate-400 hover:text-slate-700'
           }`}
         >
           🙋‍♀️ Клинеры ({cleaners.length})
         </button>
         <button
           onClick={() => setActiveTab('clients')}
-          className={`pb-3 px-3 text-xs font-semibold border-b-2 transition ${
+          className={`pb-3 px-2 text-xs font-bold border-b-2 transition ${
             activeTab === 'clients'
               ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
+              : 'border-transparent text-slate-400 hover:text-slate-700'
           }`}
         >
           👥 Клиенты ({clients.length})
         </button>
-        <button
-          onClick={() => setActiveTab('services')}
-          className={`pb-3 px-3 text-xs font-semibold border-b-2 transition ${
-            activeTab === 'services'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          🧹 Услуги и Тарифы ({services.length})
-        </button>
       </div>
 
-      {/* Таблица клинеров */}
       {activeTab === 'cleaners' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-left">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Имя</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Телефон</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Район базы</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Теги / Ограничения</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Статус</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {cleaners.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50/60 transition">
-                  <td className="px-4 py-3 font-semibold text-slate-900">{c.name}</td>
-                  <td className="px-4 py-3 text-slate-500 font-mono">{c.phone}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.district}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {c.tags.map((t, idx) => (
-                        <span key={idx} className="bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold px-2 py-0.5 rounded">
-                          ⚠️ {t.replace('_', ' ')}
+        <div className="space-y-6">
+          {/* Форма быстрого добавления клинера */}
+          <form onSubmit={handleAddCleaner} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex gap-3 items-end">
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">ФИО Клинера</label>
+              <input
+                type="text"
+                placeholder="Анна Ковальчук"
+                value={newCleanerName}
+                onChange={(e) => setNewCleanerName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-medium"
+              />
+            </div>
+            <div className="w-48">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Телефон</label>
+              <input
+                type="text"
+                placeholder="+48 000 000 000"
+                value={newCleanerPhone}
+                onChange={(e) => setNewCleanerPhone(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-medium"
+              />
+            </div>
+            <div className="w-48">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Район проживания</label>
+              <input
+                type="text"
+                placeholder="Mokotów / Центр"
+                value={newCleanerDistrict}
+                onChange={(e) => setNewCleanerDistrict(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-medium"
+              />
+            </div>
+            <button
+              type="submit"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs px-5 py-2.5 rounded-lg transition"
+            >
+              + Добавить
+            </button>
+          </form>
+
+          {/* Список клинеров */}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <table className="min-w-full divide-y divide-slate-200 text-left">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Клинер</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Телефон</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Район</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Telegram-бот</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase text-right">PIN-код</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {cleaners.map((c) => (
+                  <tr key={c.id} className="hover:bg-slate-50/60 transition">
+                    <td className="px-4 py-3 font-bold text-slate-800">🙋‍♀️ {c.name}</td>
+                    <td className="px-4 py-3 font-mono text-slate-500">{c.phone}</td>
+                    <td className="px-4 py-3 text-slate-600">📍 {c.district}</td>
+                    <td className="px-4 py-3">
+                      {c.telegramChatId ? (
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[11px] font-bold">
+                          ✅ Подключен
                         </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded">
-                      Активен
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      ) : (
+                        <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[11px]">
+                          Не привязан
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {c.authCode ? (
+                        <span className="font-mono bg-amber-50 text-amber-800 border border-amber-300 font-bold px-2 py-1 rounded text-xs">
+                          {c.authCode}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleGeneratePin(c.id)}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1 rounded text-[11px] transition"
+                        >
+                          Сгенерировать PIN
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* Таблица клиентов */}
       {activeTab === 'clients' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-left">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Имя</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Телефон</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Основной адрес</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Любимый клинер</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Чёрный список</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {clients.map((client) => (
-                <tr key={client.id} className="hover:bg-slate-50/60 transition">
-                  <td className="px-4 py-3 font-semibold text-slate-900">{client.name}</td>
-                  <td className="px-4 py-3 text-slate-500 font-mono">{client.phone}</td>
-                  <td className="px-4 py-3 text-slate-600">{client.address}</td>
-                  <td className="px-4 py-3 text-emerald-700 font-medium">💖 {client.favoriteCleaner}</td>
-                  <td className="px-4 py-3 text-red-600 font-medium">🚫 {client.blacklistCleaner}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        <div className="space-y-6">
+          <form onSubmit={handleAddClient} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex gap-3 items-end">
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">ФИО Клиента</label>
+              <input
+                type="text"
+                placeholder="Иван Петров"
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-medium"
+              />
+            </div>
+            <div className="w-48">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Телефон</label>
+              <input
+                type="text"
+                placeholder="+48 000 000 000"
+                value={newClientPhone}
+                onChange={(e) => setNewClientPhone(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-medium"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Адрес</label>
+              <input
+                type="text"
+                placeholder="ul. Marszałkowska 10, кв. 5"
+                value={newClientAddress}
+                onChange={(e) => setNewClientAddress(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-medium"
+              />
+            </div>
+            <button
+              type="submit"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs px-5 py-2.5 rounded-lg transition"
+            >
+              + Добавить
+            </button>
+          </form>
 
-      {/* Таблица услуг */}
-      {activeTab === 'services' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-left">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Название услуги</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Базовое время (чел/час)</th>
-                <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Базовая цена</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {services.map((service) => (
-                <tr key={service.id} className="hover:bg-slate-50/60 transition">
-                  <td className="px-4 py-3 font-semibold text-slate-900">{service.title}</td>
-                  <td className="px-4 py-3 text-slate-600">{service.baseManHours} ч.</td>
-                  <td className="px-4 py-3 font-bold text-slate-800">{service.basePrice} zł</td>
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <table className="min-w-full divide-y divide-slate-200 text-left">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Имя</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Телефон</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold text-slate-400 uppercase">Адрес</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {clients.map((client) => (
+                  <tr key={client.id} className="hover:bg-slate-50/60 transition">
+                    <td className="px-4 py-3 font-bold text-slate-800">👤 {client.name}</td>
+                    <td className="px-4 py-3 font-mono text-slate-500">{client.phone}</td>
+                    <td className="px-4 py-3 text-slate-600">📍 {client.address}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
