@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
-import { sendTelegramOrderNotification } from '../../../lib/telegram';
+import { sendPersonalOrderNotification } from '../../../lib/telegram';
 
 export async function GET() {
   try {
@@ -27,39 +27,76 @@ export async function POST(request: Request) {
       data: {
         orderNumber,
         date: new Date(body.date),
-        timeSlot: body.time,
-        clientName: body.clientName,
-        clientPhone: body.clientPhone,
-        addressLine1: body.addressLine1,
+        timeSlot: body.timeSlot || '10:00 — 14:00',
+        serviceType: body.serviceType || 'STANDARD',
+        areaM2: Number(body.areaM2) || 45,
+        roomsCount: Number(body.roomsCount) || 1,
+        bathroomsCount: Number(body.bathroomsCount) || 1,
+        windowsCount: Number(body.windowsCount) || 0,
+        
+        hasOven: Boolean(body.hasOven),
+        hasFridge: Boolean(body.hasFridge),
+        hasMicrowave: Boolean(body.hasMicrowave),
+        hasBalcony: Boolean(body.hasBalcony),
+        hasDishes: Boolean(body.hasDishes),
+        hasIroning: Boolean(body.hasIroning),
+        hasVacuum: Boolean(body.hasVacuum),
+        hasPets: Boolean(body.hasPets),
+        hasKeys: Boolean(body.hasKeys),
+
+        clientName: body.clientName || 'Новый Клиент',
+        clientPhone: body.clientPhone || '',
+        addressLine1: body.addressLine1 || '',
         addressLine2: body.addressLine2 || '',
         price: Number(body.price),
         cleanersCount: Number(body.cleanersCount) || 1,
-        hasVacuum: Boolean(body.tags?.vacuum),
-        hasPets: Boolean(body.tags?.pets),
-        hasKeys: Boolean(body.tags?.keys),
-        notes: body.clientNotes || '',
-        status: body.status || 'NEW',
-        urgency: body.urgency || 'NORMAL',
+        notes: body.notes || '',
+        status: 'NEW',
+        urgency: 'NORMAL',
+        assignedCleaners: {
+          create: (body.assignedCleaners || []).map((c: { id: number }) => ({
+            cleanerId: c.id,
+          })),
+        },
+      },
+      include: {
+        assignedCleaners: {
+          include: { cleaner: true },
+        },
       },
     });
 
-    // Фоновая отправка в Telegram
-    await sendTelegramOrderNotification({
+    // Персональная отправка напарникам в Telegram
+    await sendPersonalOrderNotification({
       orderNumber,
       date: new Date(body.date).toLocaleDateString('ru-RU'),
-      timeSlot: body.time,
-      address: `${body.addressLine1}${body.addressLine2 ? ', ' + body.addressLine2 : ''}`,
+      timeSlot: body.timeSlot || '10:00 — 14:00',
+      serviceType: body.serviceType || 'Стандартная',
+      areaM2: Number(body.areaM2) || 45,
+      roomsCount: Number(body.roomsCount) || 1,
+      bathroomsCount: Number(body.bathroomsCount) || 1,
+      windowsCount: Number(body.windowsCount) || 0,
+      addressLine1: body.addressLine1,
+      addressLine2: body.addressLine2,
       price: Number(body.price),
+      assignedCleaners: body.assignedCleaners || [],
       tags: {
-        vacuum: Boolean(body.tags?.vacuum),
-        pets: Boolean(body.tags?.pets),
-        keys: Boolean(body.tags?.keys),
+        oven: body.hasOven,
+        fridge: body.hasFridge,
+        microwave: body.hasMicrowave,
+        balcony: body.hasBalcony,
+        dishes: body.hasDishes,
+        ironing: body.hasIroning,
+        vacuum: body.hasVacuum,
+        pets: body.hasPets,
+        keys: body.hasKeys,
       },
-      notes: body.clientNotes,
+      notes: body.notes,
     });
 
     return NextResponse.json(newOrder, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Ошибка создания заказа' }, { status: 500 });
+    console.error('Ошибка сохранения заказа:', error);
+    return NextResponse.json({ error: 'Ошибка сохранения заказа' }, { status: 500 });
   }
 }
