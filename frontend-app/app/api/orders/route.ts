@@ -102,6 +102,11 @@ export async function POST(request: Request) {
 
 
     // Создание события в Google Календаре
+   const assignedIds = (body.assignedCleaners || []).map((c: any) => c.id);
+    const selectedCleaners = await prisma.cleaner.findMany({
+      where: { id: { in: assignedIds } },
+    });
+
     const [startH, startM] = (body.startTime || '10:00').split(':').map(Number);
     const [endH, endM] = (body.endTime || '14:00').split(':').map(Number);
     
@@ -111,20 +116,21 @@ export async function POST(request: Request) {
     const endIso = new Date(body.date);
     endIso.setHours(endH || 14, endM || 0, 0, 0);
 
-    await createGoogleCalendarEvent({
-      summary: `🧹 ${body.serviceType || 'Уборка'} — ${body.clientName}`,
-      location: `${body.addressLine1}${body.addressLine2 ? ', ' + body.addressLine2 : ''}`,
-      description: `Заказ ${orderNumber}\nСумма: ${body.price} zł\nТЗ: ${body.notes || 'Стандарт'}\nБригада: ${(body.assignedCleaners || []).map((c: any) => c.name).join(', ')}`,
-      startDateTime: startIso.toISOString(),
-      endDateTime: endIso.toISOString(),
-    });
-    
-    return NextResponse.json(newOrder, { status: 201 });
-  } catch (error) {
-    console.error('Ошибка сохранения заказа:', error);
-    return NextResponse.json({ error: 'Ошибка сохранения заказа' }, { status: 500 });
-  }
-}
+    const fullAddress = `${body.addressLine1}${body.addressLine2 ? ', ' + body.addressLine2 : ''}`;
+    const teammatesList = selectedCleaners.map((c) => c.name).join(' + ');
+
+    for (const cleaner of selectedCleaners) {
+      if (cleaner.calendarEmail) {
+        await createGoogleCalendarEvent({
+          calendarId: cleaner.calendarEmail,
+          summary: `🧹 ${body.serviceType || 'Уборка'} — ${body.clientName}`,
+          location: fullAddress,
+          description: `Заказ: ${orderNumber}\nСумма: ${body.price} zł\nБригада: ${teammatesList}\nТЗ: ${body.notes || 'Стандартная уборка'}`,
+          startDateTime: startIso.toISOString(),
+          endDateTime: endIso.toISOString(),
+        });
+      }
+    }
 
 // 3. Обновление статуса (Drag-and-Drop)
 export async function PATCH(request: Request) {
