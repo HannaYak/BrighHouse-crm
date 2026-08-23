@@ -77,6 +77,23 @@ export async function POST(request: Request) {
         },
       });
     } else {
+      // Запрашиваем реальные координаты через OpenStreetMap (Nominatim API)
+    let lat = null;
+    let lng = null;
+    if (body.addressLine1) {
+      try {
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(body.addressLine1)}&limit=1`, {
+          headers: { 'User-Agent': 'BrightHouse-CRM/1.0' }
+        });
+        const geoData = await geoRes.json();
+        if (geoData && geoData.length > 0) {
+          lat = parseFloat(geoData[0].lat);
+          lng = parseFloat(geoData[0].lon);
+        }
+      } catch (e) {
+        console.warn('Geocoding failed:', e);
+      }
+    }
       // Создание нового заказа
       order = await prisma.order.create({
         data: {
