@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'BrightHouse CRM',
-  description: 'Панель управления клинингом',
+  description: 'CRM-система для клининга BrightHouse',
 };
 
 export default function RootLayout({
@@ -14,44 +14,56 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru">
-      <body className="min-h-screen flex flex-col font-sans">
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+      <body className="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans antialiased">
+        {/* Верхняя навигационная панель */}
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
+          <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+            {/* Логотип */}
+            <div className="flex items-center gap-2">
               <span className="text-xl">✨</span>
-              <span className="font-bold tracking-tight text-slate-800">
-                BrightHouse <span className="text-brand-600 font-semibold text-xs bg-brand-50 border border-brand-100 px-2 py-0.5 rounded">CRM</span>
+              <span className="font-extrabold text-sm tracking-tight text-slate-900">
+                Bright<span className="text-brand-600">House</span> CRM
               </span>
             </div>
 
-            <nav className="flex items-center space-x-1">
-              <Link href="/kanban" className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-brand-600 hover:bg-slate-100 rounded-md transition-colors">
-                Канбан
+            {/* Меню навигации */}
+            <nav className="flex items-center gap-1">
+              <Link
+                href="/schedule"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                📅 Журнал смен
               </Link>
-              <Link href="/map" className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-brand-600 hover:bg-slate-100 rounded-md transition-colors">
-                Карта дня
+              <Link
+                href="/map"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                🗺️ Карта дня
               </Link>
-              <Link href="/clients" className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-brand-600 hover:bg-slate-100 rounded-md transition-colors">
-                Клиенты
+              <Link
+                href="/kanban"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                📋 Канбан
               </Link>
-              <Link href="/cleaners" className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-brand-600 hover:bg-slate-100 rounded-md transition-colors">
-                Клинеры
-              </Link>
-              <Link href="/directories" className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-brand-600 hover:bg-slate-100 rounded-md transition-colors">
-                Справочники
+              <Link
+                href="/directories"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                📁 Справочники
               </Link>
             </nav>
 
-            <div className="flex items-center space-x-2 text-xs font-semibold text-slate-500">
-              <span>Admin</span>
-              <div className="w-7 h-7 rounded-full bg-brand-600 text-white flex items-center justify-center">
-                A
-              </div>
+            {/* Статус системы */}
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-[11px] font-semibold text-slate-500">Система активна</span>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 max-w-7xl w-full mx-auto p-6">
+        {/* Основная рабочая область */}
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4">
           {children}
         </main>
       </body>
