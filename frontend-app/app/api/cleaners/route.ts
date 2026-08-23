@@ -4,40 +4,29 @@ import { prisma } from '../../../lib/prisma';
 export async function GET() {
   try {
     const cleaners = await prisma.cleaner.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: { id: 'asc' },
     });
     return NextResponse.json(cleaners);
   } catch (error) {
-    return NextResponse.json({ error: 'Ошибка получения клинеров' }, { status: 500 });
+    return NextResponse.json({ error: 'Ошибка загрузки клинеров' }, { status: 500 });
   }
 }
 
-export async function POST(request: Request) {
+export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    
-    // Если запрос на генерацию PIN-кода для клинера
-    if (body.action === 'generate_pin') {
-      const pin = Math.floor(100000 + Math.random() * 900000).toString();
-      const updated = await prisma.cleaner.update({
-        where: { id: Number(body.cleanerId) },
-        data: { authCode: pin },
-      });
-      return NextResponse.json({ authCode: updated.authCode });
-    }
+    const { id, authCode, status } = body;
 
-    // Создание нового клинера
-    const newCleaner = await prisma.cleaner.create({
+    const updated = await prisma.cleaner.update({
+      where: { id: Number(id) },
       data: {
-        name: body.name,
-        phone: body.phone,
-        district: body.district || 'Центр',
-        tags: body.tags || [],
-        authCode: Math.floor(100000 + Math.random() * 900000).toString(),
+        ...(authCode !== undefined ? { authCode } : {}),
+        ...(status !== undefined ? { status } : {}),
       },
     });
-    return NextResponse.json(newCleaner, { status: 201 });
+
+    return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Ошибка сохранения клинера' }, { status: 500 });
+    return NextResponse.json({ error: 'Ошибка обновления клинера' }, { status: 500 });
   }
 }
