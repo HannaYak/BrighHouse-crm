@@ -47,12 +47,24 @@ export default function RootLayout({
                 📋 Канбан
               </Link>
               <Link
+                hre<Link
                 href="/directories"
                 className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
               >
                 📁 Справочники
               </Link>
+              <Link
+                href="/settings"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                ⚙️ Настройки
+              </Link>f="/directories"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                📁 Справочники
+              </Link>
             </nav>
+            
 
             {/* Статус системы */}
             <div className="flex items-center gap-2">
