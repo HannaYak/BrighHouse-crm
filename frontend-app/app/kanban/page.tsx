@@ -24,6 +24,7 @@ export default function KanbanPage() {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isQuickResponsesOpen, setIsQuickResponsesOpen] = useState(false);
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
 
   const fetchOrders = async () => {
@@ -36,6 +37,8 @@ export default function KanbanPage() {
           id: item.id,
           orderNumber: item.orderNumber,
           timeSlot: item.timeSlot || '10:00 — 14:00',
+          startTime: item.timeSlot ? item.timeSlot.split(' — ')[0] : '10:00',
+          endTime: item.timeSlot ? item.timeSlot.split(' — ')[1] : '14:00',
           date: new Date(item.date).toISOString().split('T')[0],
           serviceType: item.serviceType || 'STANDARD',
           areaM2: item.areaM2 || 45,
@@ -44,13 +47,22 @@ export default function KanbanPage() {
           windowsCount: item.windowsCount || 0,
           hasOven: item.hasOven || false,
           hasFridge: item.hasFridge || false,
+          hasFridgeFreeze: item.hasFridgeFreeze || false,
           hasMicrowave: item.hasMicrowave || false,
           hasBalcony: item.hasBalcony || false,
-          hasDishes: item.hasDishes || false,
-          hasIroning: item.hasIroning || false,
+          hasKitchenClosets: item.hasKitchenClosets || false,
+          hasStairs: item.hasStairs || false,
+          hasSteamer: item.hasSteamer || false,
+          hasDishesHours: item.hasDishesHours || 0,
+          hasIroningHours: item.hasIroningHours || 0,
           hasVacuum: item.hasVacuum || false,
           hasPets: item.hasPets || false,
           hasKeys: item.hasKeys || false,
+          drySofa2: item.drySofa2 || 0,
+          drySofa3: item.drySofa3 || 0,
+          drySofaCorner4: item.drySofaCorner4 || 0,
+          dryArmchair: item.dryArmchair || 0,
+          dryMattressSide: item.dryMattressSide || 0,
           clientName: item.clientName,
           clientPhone: item.clientPhone,
           addressLine1: item.addressLine1,
@@ -91,7 +103,6 @@ export default function KanbanPage() {
   const handleDrop = async (newStatus: Status) => {
     if (!draggedOrderId) return;
 
-    // Оптимистичное обновление UI
     setOrders((prev) =>
       prev.map((o) => (o.id === draggedOrderId ? { ...o, status: newStatus } : o))
     );
@@ -145,12 +156,23 @@ export default function KanbanPage() {
             {loading ? 'Синхронизация с базой...' : `Всего заказов: ${orders.length} (Перетаскивай карточки между колонками)`}
           </p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition"
-        >
-          + Создать заказ
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsQuickResponsesOpen(true)}
+            className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-lg shadow-2xs transition flex items-center gap-1.5"
+          >
+            <span>⚡</span>
+            <span>Быстрые ответы</span>
+          </button>
+
+          <button
+            onClick={openCreateModal}
+            className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition"
+          >
+            + Создать заказ
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-start">
@@ -218,7 +240,7 @@ export default function KanbanPage() {
                       )}
                     </div>
 
-                  <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
                       <span className="text-sm font-bold text-slate-800">{order.price} zł</span>
                       <div className="text-right">
                         {order.assignedCleaners && order.assignedCleaners.length > 0 ? (
@@ -254,6 +276,11 @@ export default function KanbanPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveOrder}
+      />
+
+      <QuickResponsesModal
+        isOpen={isQuickResponsesOpen}
+        onClose={() => setIsQuickResponsesOpen(false)}
       />
     </div>
   );
