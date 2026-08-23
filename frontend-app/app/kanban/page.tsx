@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
+import QuickResponsesModal from '../../components/QuickResponsesModal';
 
 type Status = 'NEW' | 'PROCESSING' | 'SELECTING' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED';
 
