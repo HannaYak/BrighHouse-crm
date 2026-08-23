@@ -23,6 +23,7 @@ export default function KanbanPage() {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
 
   const fetchOrders = async () => {
     try {
@@ -77,6 +78,36 @@ export default function KanbanPage() {
     fetchOrders();
   }, []);
 
+  const handleDragStart = (id: string) => {
+    setDraggedOrderId(id);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (newStatus: Status) => {
+    if (!draggedOrderId) return;
+
+    // Оптимистичное обновление UI
+    setOrders((prev) =>
+      prev.map((o) => (o.id === draggedOrderId ? { ...o, status: newStatus } : o))
+    );
+
+    try {
+      await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draggedOrderId, status: newStatus }),
+      });
+    } catch (e) {
+      console.error('Ошибка обновления статуса:', e);
+      fetchOrders();
+    } finally {
+      setDraggedOrderId(null);
+    }
+  };
+
   const openCreateModal = () => {
     setSelectedOrder(null);
     setIsModalOpen(true);
@@ -109,7 +140,7 @@ export default function KanbanPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">Канбан-доска заказов</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            {loading ? 'Синхронизация с базой...' : `Всего заказов: ${orders.length}`}
+            {loading ? 'Синхронизация с базой...' : `Всего заказов: ${orders.length} (Перетаскивай карточки между колонками)`}
           </p>
         </div>
         <button
@@ -126,7 +157,9 @@ export default function KanbanPage() {
           return (
             <div
               key={col.key}
-              className="w-80 flex-shrink-0 bg-slate-100/70 border border-slate-200/80 rounded-xl p-3 flex flex-col max-h-full"
+              onDragOver={handleDragOver}
+              onDrop={() => handleDrop(col.key)}
+              className="w-80 flex-shrink-0 bg-slate-100/70 border border-slate-200/80 rounded-xl p-3 flex flex-col max-h-full min-h-[400px] transition-colors"
             >
               <div className="flex items-center justify-between mb-3 px-1">
                 <span className="font-semibold text-xs text-slate-700 uppercase tracking-wide">
@@ -137,12 +170,14 @@ export default function KanbanPage() {
                 </span>
               </div>
 
-              <div className="flex flex-col gap-2.5 overflow-y-auto pr-0.5">
+              <div className="flex flex-col gap-2.5 overflow-y-auto pr-0.5 flex-1">
                 {colOrders.map((order) => (
                   <div
                     key={order.id || order.orderNumber}
+                    draggable
+                    onDragStart={() => handleDragStart(order.id!)}
                     onClick={() => openEditModal(order)}
-                    className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm hover:border-brand-500 hover:shadow-md transition cursor-pointer flex flex-col gap-2"
+                    className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm hover:border-brand-500 hover:shadow-md active:cursor-grabbing transition cursor-grab flex flex-col gap-2"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
@@ -162,7 +197,7 @@ export default function KanbanPage() {
 
                     <div className="flex flex-wrap gap-1 mt-0.5">
                       <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded font-medium">
-                        {order.areaM2} $м^2$
+                        {order.areaM2} м²
                       </span>
                       {order.hasPets && (
                         <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded">
