@@ -43,18 +43,19 @@ model Client {
 }
 
 model Cleaner {
-  id              Int            @id @default(autoincrement())
-  name            String
-  phone           String         @unique
-  telegramHandle  String?
-  district        String         @default("Центр")
-  telegramChatId  String?        @unique
-  authCode        String?        @unique
-  tags            String[]       // ["аллергия_на_животных", "только_поддерживающая", "без_стремянки"]
+  id               Int            @id @default(autoincrement())
+  name             String
+  phone            String         @unique
+  telegramHandle   String?
+  district         String         @default("Центр")
+  telegramChatId   String?        @unique
+  authCode         String?        @unique
+  calendarEmail    String?        // Google-почта клинера (напр. anna.clean@gmail.com)
+  tags             String[]       // ["аллергия_на_животных", "только_поддерживающая", "без_стремянки"]
   incompatibleWith String[]      // Имена клинеров, с кем не может работать
-  status          String         @default("active") // "active", "busy", "dayoff"
-  assignments     OrderCleaner[]
-  createdAt       DateTime       @default(now())
+  status           String         @default("active") // "active", "busy", "dayoff"
+  assignments      OrderCleaner[]
+  createdAt        DateTime       @default(now())
 }
 
 model ServiceTariff {
