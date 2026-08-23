@@ -60,6 +60,7 @@ export default function KanbanPage() {
             id: ac.cleaner.id,
             name: ac.cleaner.name,
             phone: ac.cleaner.phone,
+            isAccepted: ac.isAccepted || false,
           })) || [],
           urgency: (item.urgency || 'NORMAL').toLowerCase(),
           status: item.status || 'NEW',
@@ -216,13 +217,28 @@ export default function KanbanPage() {
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
                       <span className="text-sm font-bold text-slate-800">{order.price} zł</span>
-                      <span className="text-xs text-brand-600 font-semibold truncate max-w-[140px] text-right">
-                        {order.assignedCleaners && order.assignedCleaners.length > 0
-                          ? `👥 ${order.assignedCleaners.map((c) => c.name).join(', ')}`
-                          : 'Клинер не выбран'}
-                      </span>
+                      <div className="text-right">
+                        {order.assignedCleaners && order.assignedCleaners.length > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-xs text-brand-600 font-semibold truncate max-w-[150px]">
+                              👥 {order.assignedCleaners.map((c: any) => c.name).join(', ')}
+                            </span>
+                            {order.assignedCleaners.every((c: any) => c.isAccepted) ? (
+                              <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                ✅ Все приняли
+                              </span>
+                            ) : order.assignedCleaners.some((c: any) => c.isAccepted) ? (
+                              <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                ⏳ Частично принят
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-medium">Клинер не выбран</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
