@@ -70,7 +70,9 @@ export async function POST(request: Request) {
     });
 
     // Персональная отправка клинерам в Telegram
+// Персональная отправка клинерам в Telegram
     await sendPersonalOrderNotification({
+      orderId: newOrder.id,
       orderNumber,
       date: new Date(body.date).toLocaleDateString('ru-RU'),
       timeSlot: body.timeSlot || '10:00 — 14:00',
