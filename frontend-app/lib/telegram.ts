@@ -105,3 +105,38 @@ ${order.notes ? `\n📝 *ТЗ / Заметки:* ${order.notes}` : ''}
 
   return { success: true };
 }
+
+// Отправка входящего лида в общий чат администратора
+export async function sendAdminLeadNotification(lead: {
+  orderNumber: string;
+  source: string;
+  clientName: string;
+  clientPhone: string;
+  notes: string;
+}) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return { success: false };
+
+  const messageText = `⚡ *НОВЫЙ ВХОДЯЩИЙ ЛИД: ${lead.orderNumber}*
+📡 *Источник:* ${lead.source}
+👤 *Клиент:* ${lead.clientName}
+📞 *Телефон:* ${lead.clientPhone}
+📝 *Сообщение:* ${lead.notes}`;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: messageText,
+        parse_mode: 'Markdown',
+      }),
+    });
+    return { success: true };
+  } catch (err) {
+    console.error('Ошибка отправки лида админу в Telegram:', err);
+    return { success: false, err };
+  }
+}
