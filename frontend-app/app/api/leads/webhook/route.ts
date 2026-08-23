@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../../lib/prisma';
-import { sendTelegramOrderNotification } from '../../../../lib/telegram';
+import { sendAdminLeadNotification } from '../../../../lib/telegram';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // 1. Парсинг входящего лида из любого источника (Инстаграм, Сайт, Oferteo, WhatsApp)
     const clientName = body.clientName || body.name || body.senderName || 'Новый Лид';
     const clientPhone = body.clientPhone || body.phone || body.from || '+48000000000';
     const address = body.address || body.location || 'Уточняется в переписке';
@@ -15,7 +14,6 @@ export async function POST(request: Request) {
 
     const orderNumber = `LEAD-${Math.floor(100 + Math.random() * 900)}`;
 
-    // 2. Создаем заказ со статусом NEW
     const newOrder = await prisma.order.create({
       data: {
         orderNumber,
@@ -37,15 +35,12 @@ export async function POST(request: Request) {
       },
     });
 
-    // 3. Уведомление администратора в рабочий чат о новом лиде
-    await sendTelegramOrderNotification({
+    await sendAdminLeadNotification({
       orderNumber,
-      date: new Date().toLocaleDateString('ru-RU'),
-      timeSlot: 'Срочно / Не согласовано',
-      address,
-      price: 200,
-      tags: {},
-      notes: `⚡ ВХОДЯЩИЙ ЛИД (${source}): ${notes} | Тел: ${clientPhone}`,
+      source,
+      clientName,
+      clientPhone,
+      notes,
     });
 
     return NextResponse.json({ success: true, orderId: newOrder.id, orderNumber }, { status: 201 });
