@@ -1,11 +1,10 @@
-import { PrismaClient, ServiceType } from '@prisma/client';
-
+const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Начало сидинга базы данных BrightHouse...');
+  console.log('Начало сидинга базы данных BrightHouse с полным прейскурантом химчистки...');
 
-  // 1. Полный список клинеров и специалистов по химчистке (15 человек)
+  // 1. Полный список сотрудников и специалистов по химчистке (15 человек)
   const cleanersData = [
     { name: 'Анастасия', telegramHandle: '@shchetynina_a', phone: '+48000000001', district: 'Mokotów', tags: ['стандарт', 'генеральная'] },
     { name: 'Кукуруза', telegramHandle: '@annkks', phone: '+48000000002', district: 'Wola', tags: ['стандарт', 'генеральная'] },
@@ -20,7 +19,7 @@ async function main() {
     { name: 'Юлия Работяга', telegramHandle: null, phone: '+375295720840', district: 'Śródmieście', tags: ['стандарт', 'генеральная', 'после_ремонта'] },
     { name: 'Амида', telegramHandle: null, phone: '+48532688407', district: 'Wola', tags: ['стандарт', 'генеральная'] },
     { name: 'Татьяна 2', telegramHandle: '@tatyanka1002', phone: '+48000000013', district: 'Mokotów', tags: ['стандарт', 'генеральная'] },
-    { name: 'Батя', telegramHandle: '@RabbitInHole', phone: '+48000000014', district: 'Центр', tags: ['химчистка', 'диваны', 'ковры'] },
+    { name: 'Батя', telegramHandle: '@RabbitInHole', phone: '+48000000014', district: 'Центр', tags: ['химчистка', 'диваны', 'ковры', 'матрасы'] },
     { name: 'Евгений', telegramHandle: '@White_Lotus_Polska', phone: '+48000000015', district: 'Центр', tags: ['химчистка', 'диваны', 'ковры', 'матрасы'] },
   ];
 
@@ -35,39 +34,39 @@ async function main() {
     });
   }
 
-  // 2. Сетка тарифов прейскуранта
+  // 2. Сетка тарифов
   const tariffs = [
     // СТАНДАРТ
-    { type: ServiceType.STANDARD, roomsCount: 1, bathroomsCount: 1, maxAreaM2: 25, price: 160, baseDurationMins: 180 },
-    { type: ServiceType.STANDARD, roomsCount: 1, bathroomsCount: 1, maxAreaM2: 34, price: 170, baseDurationMins: 180 },
-    { type: ServiceType.STANDARD, roomsCount: 2, bathroomsCount: 1, maxAreaM2: 50, price: 200, baseDurationMins: 240 },
-    { type: ServiceType.STANDARD, roomsCount: 3, bathroomsCount: 1, maxAreaM2: 80, price: 240, baseDurationMins: 300 },
-    { type: ServiceType.STANDARD, roomsCount: 3, bathroomsCount: 2, maxAreaM2: 80, price: 290, baseDurationMins: 360 },
-    { type: ServiceType.STANDARD, roomsCount: 4, bathroomsCount: 1, maxAreaM2: 100, price: 290, baseDurationMins: 360 },
-    { type: ServiceType.STANDARD, roomsCount: 4, bathroomsCount: 2, maxAreaM2: 100, price: 340, baseDurationMins: 420 },
-    { type: ServiceType.STANDARD, roomsCount: 5, bathroomsCount: 1, maxAreaM2: 125, price: 330, baseDurationMins: 420 },
-    { type: ServiceType.STANDARD, roomsCount: 5, bathroomsCount: 2, maxAreaM2: 125, price: 380, baseDurationMins: 480 },
+    { type: 'STANDARD', roomsCount: 1, bathroomsCount: 1, maxAreaM2: 25, price: 160, baseDurationMins: 180 },
+    { type: 'STANDARD', roomsCount: 1, bathroomsCount: 1, maxAreaM2: 34, price: 170, baseDurationMins: 180 },
+    { type: 'STANDARD', roomsCount: 2, bathroomsCount: 1, maxAreaM2: 50, price: 200, baseDurationMins: 240 },
+    { type: 'STANDARD', roomsCount: 3, bathroomsCount: 1, maxAreaM2: 80, price: 240, baseDurationMins: 300 },
+    { type: 'STANDARD', roomsCount: 3, bathroomsCount: 2, maxAreaM2: 80, price: 290, baseDurationMins: 360 },
+    { type: 'STANDARD', roomsCount: 4, bathroomsCount: 1, maxAreaM2: 100, price: 290, baseDurationMins: 360 },
+    { type: 'STANDARD', roomsCount: 4, bathroomsCount: 2, maxAreaM2: 100, price: 340, baseDurationMins: 420 },
+    { type: 'STANDARD', roomsCount: 5, bathroomsCount: 1, maxAreaM2: 125, price: 330, baseDurationMins: 420 },
+    { type: 'STANDARD', roomsCount: 5, bathroomsCount: 2, maxAreaM2: 125, price: 380, baseDurationMins: 480 },
 
     // СТАНДАРТ+
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 1, bathroomsCount: 1, maxAreaM2: 34, price: 240, baseDurationMins: 240 },
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 2, bathroomsCount: 1, maxAreaM2: 50, price: 300, baseDurationMins: 360 },
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 3, bathroomsCount: 1, maxAreaM2: 80, price: 360, baseDurationMins: 420 },
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 3, bathroomsCount: 2, maxAreaM2: 80, price: 425, baseDurationMins: 500 },
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 4, bathroomsCount: 1, maxAreaM2: 100, price: 420, baseDurationMins: 480 },
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 4, bathroomsCount: 2, maxAreaM2: 100, price: 485, baseDurationMins: 560 },
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 5, bathroomsCount: 1, maxAreaM2: 120, price: 480, baseDurationMins: 540 },
-    { type: ServiceType.STANDARD_PLUS, roomsCount: 5, bathroomsCount: 2, maxAreaM2: 120, price: 545, baseDurationMins: 620 },
+    { type: 'STANDARD_PLUS', roomsCount: 1, bathroomsCount: 1, maxAreaM2: 34, price: 240, baseDurationMins: 240 },
+    { type: 'STANDARD_PLUS', roomsCount: 2, bathroomsCount: 1, maxAreaM2: 50, price: 300, baseDurationMins: 360 },
+    { type: 'STANDARD_PLUS', roomsCount: 3, bathroomsCount: 1, maxAreaM2: 80, price: 360, baseDurationMins: 420 },
+    { type: 'STANDARD_PLUS', roomsCount: 3, bathroomsCount: 2, maxAreaM2: 80, price: 425, baseDurationMins: 500 },
+    { type: 'STANDARD_PLUS', roomsCount: 4, bathroomsCount: 1, maxAreaM2: 100, price: 420, baseDurationMins: 480 },
+    { type: 'STANDARD_PLUS', roomsCount: 4, bathroomsCount: 2, maxAreaM2: 100, price: 485, baseDurationMins: 560 },
+    { type: 'STANDARD_PLUS', roomsCount: 5, bathroomsCount: 1, maxAreaM2: 120, price: 480, baseDurationMins: 540 },
+    { type: 'STANDARD_PLUS', roomsCount: 5, bathroomsCount: 2, maxAreaM2: 120, price: 545, baseDurationMins: 620 },
 
-    // ГЕНЕРАЛЬНАЯ / ПОСЛЕ РЕМОНТА
-    { type: ServiceType.GENERAL, roomsCount: 1, bathroomsCount: 1, maxAreaM2: 25, price: 510, baseDurationMins: 540 },
-    { type: ServiceType.GENERAL, roomsCount: 1, bathroomsCount: 1, maxAreaM2: 34, price: 535, baseDurationMins: 540 },
-    { type: ServiceType.GENERAL, roomsCount: 2, bathroomsCount: 1, maxAreaM2: 50, price: 650, baseDurationMins: 720 },
-    { type: ServiceType.GENERAL, roomsCount: 3, bathroomsCount: 1, maxAreaM2: 80, price: 800, baseDurationMins: 900 },
-    { type: ServiceType.GENERAL, roomsCount: 3, bathroomsCount: 2, maxAreaM2: 80, price: 890, baseDurationMins: 1110 },
-    { type: ServiceType.GENERAL, roomsCount: 4, bathroomsCount: 1, maxAreaM2: 100, price: 1020, baseDurationMins: 1080 },
-    { type: ServiceType.GENERAL, roomsCount: 4, bathroomsCount: 2, maxAreaM2: 100, price: 1110, baseDurationMins: 1290 },
-    { type: ServiceType.GENERAL, roomsCount: 5, bathroomsCount: 1, maxAreaM2: 125, price: 1100, baseDurationMins: 1200 },
-    { type: ServiceType.GENERAL, roomsCount: 5, bathroomsCount: 2, maxAreaM2: 125, price: 1190, baseDurationMins: 1410 },
+    // ГЕНЕРАЛЬНАЯ
+    { type: 'GENERAL', roomsCount: 1, bathroomsCount: 1, maxAreaM2: 25, price: 510, baseDurationMins: 540 },
+    { type: 'GENERAL', roomsCount: 1, bathroomsCount: 1, maxAreaM2: 34, price: 535, baseDurationMins: 540 },
+    { type: 'GENERAL', roomsCount: 2, bathroomsCount: 1, maxAreaM2: 50, price: 650, baseDurationMins: 720 },
+    { type: 'GENERAL', roomsCount: 3, bathroomsCount: 1, maxAreaM2: 80, price: 800, baseDurationMins: 900 },
+    { type: 'GENERAL', roomsCount: 3, bathroomsCount: 2, maxAreaM2: 80, price: 890, baseDurationMins: 1110 },
+    { type: 'GENERAL', roomsCount: 4, bathroomsCount: 1, maxAreaM2: 100, price: 1020, baseDurationMins: 1080 },
+    { type: 'GENERAL', roomsCount: 4, bathroomsCount: 2, maxAreaM2: 100, price: 1110, baseDurationMins: 1290 },
+    { type: 'GENERAL', roomsCount: 5, bathroomsCount: 1, maxAreaM2: 125, price: 1100, baseDurationMins: 1200 },
+    { type: 'GENERAL', roomsCount: 5, bathroomsCount: 2, maxAreaM2: 125, price: 1190, baseDurationMins: 1410 },
   ];
 
   await prisma.serviceTariff.deleteMany({});
@@ -75,8 +74,9 @@ async function main() {
     await prisma.serviceTariff.create({ data: t });
   }
 
-  // 3. Дополнительные услуги и химчистка
+  // 3. Дополнительные услуги + Полная сетка химчистки
   const addOns = [
+    // Уборка и допы
     { code: 'window', title: 'Мойка окна', price: 35, durationMins: 30, unit: 'шт' },
     { code: 'balcony', title: 'Уборка балкона', price: 35, durationMins: 30, unit: 'шт' },
     { code: 'closet', title: 'Уборка в шкафах', price: 50, durationMins: 45, unit: 'шт' },
@@ -92,8 +92,20 @@ async function main() {
     { code: 'litter_box', title: 'Мойка кошачьего лотка', price: 20, durationMins: 15, unit: 'шт' },
     { code: 'ironing', title: 'Глажка', price: 50, durationMins: 60, unit: 'час' },
     { code: 'steamer', title: 'Пароочиститель', price: 75, durationMins: 45, unit: 'шт' },
-    { code: 'dry_clean_sofa', title: 'Химчистка дивана', price: 180, durationMins: 90, unit: 'шт' },
-    { code: 'dry_clean_carpet', title: 'Химчистка ковра', price: 120, durationMins: 60, unit: 'шт' },
+    { code: 'vacuum', title: 'Наша доставка пылесоса', price: 30, durationMins: 0, unit: 'шт' },
+
+    // ХИМЧИСТКА
+    { code: 'dry_sofa_2', title: 'Химчистка дивана (2-местный)', price: 180, durationMins: 60, unit: 'шт' },
+    { code: 'dry_sofa_3', title: 'Химчистка дивана (3-местный)', price: 200, durationMins: 75, unit: 'шт' },
+    { code: 'dry_sofa_corner_4', title: 'Химчистка дивана (угловой / 4-местный)', price: 220, durationMins: 90, unit: 'шт' },
+    { code: 'dry_sofa_corner_5', title: 'Химчистка дивана (угловой на 5 персон)', price: 240, durationMins: 105, unit: 'шт' },
+    { code: 'dry_sofa_corner_big', title: 'Химчистка большого углового дивана', price: 260, durationMins: 120, unit: 'шт' },
+    { code: 'dry_pillow', title: 'Химчистка подушки', price: 10, durationMins: 10, unit: 'шт' },
+    { code: 'dry_armchair', title: 'Химчистка кресла', price: 60, durationMins: 30, unit: 'шт' },
+    { code: 'dry_chair', title: 'Химчистка стула', price: 15, durationMins: 15, unit: 'шт' },
+    { code: 'dry_carpet_m2', title: 'Химчистка ковра (за м²)', price: 15, durationMins: 15, unit: 'м2' },
+    { code: 'dry_headboard', title: 'Химчистка изголовья кровати', price: 60, durationMins: 30, unit: 'шт' },
+    { code: 'dry_mattress_side', title: 'Химчистка матраса (1 сторона)', price: 90, durationMins: 45, unit: 'шт' },
   ];
 
   for (const a of addOns) {
@@ -104,7 +116,7 @@ async function main() {
     });
   }
 
-  // 4. Клиенты с индивидуальными пометками
+  // 4. Постоянные клиенты
   const clientsData = [
     { name: 'Алиса', phone: '+48538300008', address: 'Przejazd 8', notes: 'Большой дом' },
     { name: 'Евгений', phone: '+48798888447', address: 'Gieldowa 4E/64', notes: 'Постоянный клиент, нужен пылесос' },
@@ -124,7 +136,7 @@ async function main() {
     });
   }
 
-  console.log('✅ Сидинг базы успешно завершен!');
+  console.log('✅ База данных успешно наполнена тарифами, химчисткой и персоналом!');
 }
 
 main()
