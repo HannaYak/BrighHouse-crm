@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 import { sendPersonalOrderNotification } from '../../../lib/telegram';
+import { createGoogleCalendarEvent } from '../../../lib/googleCalendar';
 
 // 1. Получение всех заказов
 export async function GET() {
@@ -99,6 +100,25 @@ export async function POST(request: Request) {
       notes: body.notes,
     });
 
+
+    // Создание события в Google Календаре
+    const [startH, startM] = (body.startTime || '10:00').split(':').map(Number);
+    const [endH, endM] = (body.endTime || '14:00').split(':').map(Number);
+    
+    const startIso = new Date(body.date);
+    startIso.setHours(startH || 10, startM || 0, 0, 0);
+
+    const endIso = new Date(body.date);
+    endIso.setHours(endH || 14, endM || 0, 0, 0);
+
+    await createGoogleCalendarEvent({
+      summary: `🧹 ${body.serviceType || 'Уборка'} — ${body.clientName}`,
+      location: `${body.addressLine1}${body.addressLine2 ? ', ' + body.addressLine2 : ''}`,
+      description: `Заказ ${orderNumber}\nСумма: ${body.price} zł\nТЗ: ${body.notes || 'Стандарт'}\nБригада: ${(body.assignedCleaners || []).map((c: any) => c.name).join(', ')}`,
+      startDateTime: startIso.toISOString(),
+      endDateTime: endIso.toISOString(),
+    });
+    
     return NextResponse.json(newOrder, { status: 201 });
   } catch (error) {
     console.error('Ошибка сохранения заказа:', error);
