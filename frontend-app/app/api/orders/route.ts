@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 import { sendPersonalOrderNotification } from '../../../lib/telegram';
 
+// 1. Получение всех заказов
 export async function GET() {
   try {
     const orders = await prisma.order.findMany({
@@ -14,10 +15,12 @@ export async function GET() {
     });
     return NextResponse.json(orders);
   } catch (error) {
+    console.error('Ошибка получения заказов:', error);
     return NextResponse.json({ error: 'Ошибка получения заказов' }, { status: 500 });
   }
 }
 
+// 2. Создание нового заказа
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -33,7 +36,7 @@ export async function POST(request: Request) {
         roomsCount: Number(body.roomsCount) || 1,
         bathroomsCount: Number(body.bathroomsCount) || 1,
         windowsCount: Number(body.windowsCount) || 0,
-        
+
         hasOven: Boolean(body.hasOven),
         hasFridge: Boolean(body.hasFridge),
         hasMicrowave: Boolean(body.hasMicrowave),
@@ -51,8 +54,8 @@ export async function POST(request: Request) {
         price: Number(body.price),
         cleanersCount: Number(body.cleanersCount) || 1,
         notes: body.notes || '',
-        status: 'NEW',
-        urgency: 'NORMAL',
+        status: body.status || 'NEW',
+        urgency: body.urgency || 'NORMAL',
         assignedCleaners: {
           create: (body.assignedCleaners || []).map((c: { id: number }) => ({
             cleanerId: c.id,
@@ -66,24 +69,7 @@ export async function POST(request: Request) {
       },
     });
 
-export async function PATCH(request: Request) {
-  try {
-    const body = await request.json();
-    const { id, status } = body;
-
-    const updated = await prisma.order.update({
-      where: { id },
-      data: { status },
-    });
-
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error('Ошибка смены статуса заказа:', error);
-    return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 });
-  }
-}
-    
-    // Персональная отправка напарникам в Telegram
+    // Персональная отправка клинерам в Telegram
     await sendPersonalOrderNotification({
       orderNumber,
       date: new Date(body.date).toLocaleDateString('ru-RU'),
@@ -115,5 +101,26 @@ export async function PATCH(request: Request) {
   } catch (error) {
     console.error('Ошибка сохранения заказа:', error);
     return NextResponse.json({ error: 'Ошибка сохранения заказа' }, { status: 500 });
+  }
+}
+
+// 3. Обновление статуса (Drag-and-Drop)
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, status, cancelReason } = body;
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: {
+        status,
+        ...(cancelReason ? { cancelReason } : {}),
+      },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Ошибка обновления статуса заказа:', error);
+    return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 });
   }
 }
