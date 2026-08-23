@@ -66,6 +66,23 @@ export async function POST(request: Request) {
       },
     });
 
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, status } = body;
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { status },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Ошибка смены статуса заказа:', error);
+    return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 });
+  }
+}
+    
     // Персональная отправка напарникам в Telegram
     await sendPersonalOrderNotification({
       orderNumber,
