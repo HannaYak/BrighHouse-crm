@@ -513,8 +513,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 />
               </div>
             </div>
-
-            {/* Итоговая стоимость и кнопка сохранения */}
+{/* Итоговая стоимость и кнопки */}
             <div className="border-t border-slate-200 pt-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 font-medium">Итоговая стоимость:</span>
@@ -529,19 +528,44 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  onSave({
-                    ...form,
-                    timeSlot: `${form.startTime} — ${form.endTime}`,
-                  });
-                  onClose();
-                }}
-                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
-              >
-                💾 Сохранить и передать клинерам
-              </button>
+              <div className="flex items-center gap-2 pt-2">
+                {form.id && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const reason = prompt('Укажите причину отмены заказа:');
+                      if (reason !== null) {
+                        await fetch('/api/orders', {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ id: form.id, status: 'CANCELLED', cancelReason: reason }),
+                        });
+                        onClose();
+                        window.location.reload();
+                      }
+                    }}
+                    className="w-1/3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold py-3 rounded-xl text-xs transition"
+                  >
+                    ❌ Отменить
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSave({
+                      ...form,
+                      timeSlot: `${form.startTime} — ${form.endTime}`,
+                    });
+                    onClose();
+                  }}
+                  className={`bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition ${
+                    form.id ? 'w-2/3' : 'w-full'
+                  }`}
+                >
+                  💾 Сохранить заказ
+                </button>
+              </div>
             </div>
           </div>
         </div>
