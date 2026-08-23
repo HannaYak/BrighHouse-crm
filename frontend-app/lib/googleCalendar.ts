@@ -1,30 +1,56 @@
+import { google } from 'googleapis';
+
 export interface CalendarEventPayload {
   summary: string;
   description: string;
   location: string;
-  startDateTime: string; // ISO 8601 string
-  endDateTime: string;   // ISO 8601 string
-  attendeeEmail?: string;
+  startDateTime: string;
+  endDateTime: string;
+  calendarId?: string; // Email клинера (его Google-аккаунт)
 }
 
 export async function createGoogleCalendarEvent(event: CalendarEventPayload) {
-  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
 
-  if (!serviceAccountKey) {
-    // Если ключи API еще не добавлены в Environment, мягко пропускаем без падения API
-    return { success: false, reason: 'GOOGLE_SERVICE_ACCOUNT_KEY missing' };
+  if (!serviceAccountJson) {
+    console.warn('GOOGLE_SERVICE_ACCOUNT_KEY не задан в Environment');
+    return { success: false, reason: 'Credentials missing' };
   }
 
   try {
-    // Базовая структура запроса к Google Calendar REST API v3
-    const tokenUrl = 'https://oauth2.googleapis.com/token';
-    // Для боевого режима используется JWT токен сервисного аккаунта Google Cloud
-    console.log(`[Google Calendar] Создание события ${event.summary} для ${event.location} на ${event.startDateTime}`);
-    
-    return { success: true };
+    const credentials = JSON.parse(serviceAccountJson);
+
+    const auth = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: ['https://www.googleapis.com/auth/calendar.events'],
+    });
+
+    const calendar = google.calendar({ version: 'v3', auth });
+
+    // Если у клинера передан его email — шлем в его календарь, иначе в primary
+    const targetCalendarId = event.calendarId || 'primary';
+
+    const response = await calendar.events.insert({
+      calendarId: targetCalendarId,
+      requestBody: {
+        summary: event.summary,
+        description: event.description,
+        location: event.location,
+        start: {
+          dateTime: event.startDateTime,
+          timeZone: 'Europe/Warsaw',
+        },
+        end: {
+          dateTime: event.endDateTime,
+          timeZone: 'Europe/Warsaw',
+        },
+      },
+    });
+
+    return { success: true, eventId: response.data.id };
   } catch (error) {
-    console.error('Ошибка создания события в Google Calendar:', error);
+    console.error('Ошибка записи в Google Calendar:', error);
     return { success: false, error };
   }
 }
