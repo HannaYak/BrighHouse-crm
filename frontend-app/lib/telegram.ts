@@ -1,6 +1,7 @@
 import { prisma } from './prisma';
 
 export interface TelegramOrderPayload {
+  orderId?: string;
   orderNumber: string;
   date: string;
   timeSlot: string;
@@ -31,7 +32,6 @@ export async function sendPersonalOrderNotification(order: TelegramOrderPayload)
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return { success: false, reason: 'TELEGRAM_BOT_TOKEN missing' };
 
-  // Получаем всех назначенных клинеров с их telegramChatId
   const cleanerIds = order.assignedCleaners.map((c) => c.id);
   const cleaners = await prisma.cleaner.findMany({
     where: { id: { in: cleanerIds } },
@@ -52,7 +52,6 @@ export async function sendPersonalOrderNotification(order: TelegramOrderPayload)
     order.tags.keys ? '🔑 Забрать/отдать ключи' : null,
   ].filter(Boolean).join('\n• ');
 
-  // Отправляем каждому клинеру персонализированное сообщение
   for (const cleaner of cleaners) {
     if (!cleaner.telegramChatId) continue;
 
@@ -65,7 +64,7 @@ export async function sendPersonalOrderNotification(order: TelegramOrderPayload)
 
 📅 *Дата:* ${order.date}
 ⏱️ *Время:* ${order.timeSlot}
-🧹 *Тип:* ${order.serviceType} (${order.areaM2} м², ${order.roomsCount} комн., ${order.bathroomsCount} с/у, ${order.windowsCount} окон)
+🧹 *Тариф:* ${order.serviceType} (${order.areaM2} м², ${order.roomsCount} комн., ${order.bathroomsCount} с/у, ${order.windowsCount} окон)
 
 📍 *Адрес:* [${fullAddress}](${mapLink})
 
@@ -76,6 +75,17 @@ ${order.notes ? `\n📝 *ТЗ / Заметки:* ${order.notes}` : ''}
 
 💰 *Сумма заказа:* ${order.price} zł`;
 
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          {
+            text: '✅ Приняла заказ',
+            callback_data: `accept_${order.orderId || order.orderNumber}_${cleaner.id}`,
+          },
+        ],
+      ],
+    };
+
     try {
       await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
@@ -84,6 +94,7 @@ ${order.notes ? `\n📝 *ТЗ / Заметки:* ${order.notes}` : ''}
           chat_id: cleaner.telegramChatId,
           text: messageText,
           parse_mode: 'Markdown',
+          reply_markup: replyMarkup,
           disable_web_page_preview: false,
         }),
       });
