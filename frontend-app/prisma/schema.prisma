@@ -35,6 +35,7 @@ model Client {
   name             String
   phone            String   @unique
   address          String
+  notes            String?  // Спец-пометки: "кровати не трогать", "код s1111" и т.д.
   favoriteCleaner  String?
   blacklistCleaner String?
   orders           Order[]
@@ -42,16 +43,37 @@ model Client {
 }
 
 model Cleaner {
-  id           Int            @id @default(autoincrement())
-  name         String
-  phone        String         @unique
-  district     String
-  telegramChatId String?      @unique
-  authCode     String?        @unique
-  tags         String[]
-  status       String         @default("active")
-  assignments  OrderCleaner[]
-  createdAt    DateTime       @default(now())
+  id              Int            @id @default(autoincrement())
+  name            String
+  phone           String         @unique
+  telegramHandle  String?
+  district        String         @default("Центр")
+  telegramChatId  String?        @unique
+  authCode        String?        @unique
+  tags            String[]       // ["аллергия_на_животных", "только_поддерживающая", "без_стремянки"]
+  incompatibleWith String[]      // Имена клинеров, с кем не может работать
+  status          String         @default("active") // "active", "busy", "dayoff"
+  assignments     OrderCleaner[]
+  createdAt       DateTime       @default(now())
+}
+
+model ServiceTariff {
+  id               Int         @id @default(autoincrement())
+  type             ServiceType
+  roomsCount       Int
+  bathroomsCount   Int         @default(1)
+  maxAreaM2        Int
+  price            Float
+  baseDurationMins Int         // Время в минутах на 1 клинера
+}
+
+model AddOnService {
+  id               Int     @id @default(autoincrement())
+  code             String  @unique
+  title            String
+  price            Float
+  durationMins     Int     // Добавочное время в минутах
+  unit             String  @default("шт") // "шт", "час", "м2"
 }
 
 model Order {
@@ -85,6 +107,7 @@ model Order {
   price            Float
   cleanersCount    Int            @default(1)
   notes            String?
+  cancelReason     String?
   urgency          UrgencyLevel   @default(NORMAL)
   status           OrderStatus    @default(NEW)
   clientId         Int?
@@ -97,6 +120,7 @@ model Order {
 model OrderCleaner {
   orderId   String
   cleanerId Int
+  isAccepted Boolean @default(false)
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   cleaner   Cleaner @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
 
