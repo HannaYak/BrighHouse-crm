@@ -51,60 +51,26 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   const baths = Math.max(1, input.bathroomsCount);
   const area = input.areaM2 || 45;
 
-  // 1. БАЗОВАЯ СЕТКА ПО ТИПУ УБОРКИ
+  // 1. БАЗОВАЯ СЕТКА ПО ТИПУ УБОРКИ (Обновленная логика санузлов)
   if (input.serviceType === 'STANDARD') {
-    if (rooms === 1) {
-      price = area <= 25 ? 160 : 170;
-      durationMins = 180; // 3 ч
-    } else if (rooms === 2) {
-      price = 200;
-      durationMins = 240; // 4 ч
-    } else if (rooms === 3) {
-      price = baths >= 2 ? 290 : 240;
-      durationMins = baths >= 2 ? 360 : 300; // 6 ч или 5 ч
-    } else if (rooms === 4) {
-      price = baths >= 2 ? 340 : 290;
-      durationMins = baths >= 2 ? 420 : 360; // 7 ч или 6 ч
-    } else {
-      // 5 комнат и более
-      price = 330 + (rooms - 5) * 40 + (baths >= 2 ? 50 : 0);
-      durationMins = 420 + (rooms - 5) * 40 + (baths >= 2 ? 60 : 0);
-    }
+    const basePrice = rooms === 1 ? (area <= 25 ? 160 : 170) :
+                      rooms === 2 ? 200 :
+                      rooms === 3 ? 240 :
+                      rooms === 4 ? 290 : 330 + (rooms - 5) * 40;
+    
+    price = basePrice + (baths >= 2 ? 50 : 0); // +50 за 2-й санузел
+    durationMins = (rooms === 1 ? 180 : rooms === 2 ? 240 : rooms === 3 ? 300 : rooms === 4 ? 360 : 420 + (rooms - 5) * 40) + (baths >= 2 ? 60 : 0);
   } else if (input.serviceType === 'STANDARD_PLUS') {
-    if (rooms === 1) {
-      price = 240;
-      durationMins = 240; // 4 ч
-    } else if (rooms === 2) {
-      price = 300;
-      durationMins = 360; // 6 ч
-    } else if (rooms === 3) {
-      price = baths >= 2 ? 425 : 360;
-      durationMins = baths >= 2 ? 500 : 420;
-    } else if (rooms === 4) {
-      price = baths >= 2 ? 485 : 420;
-      durationMins = baths >= 2 ? 560 : 480;
-    } else {
-      price = 480 + (rooms - 5) * 50 + (baths >= 2 ? 65 : 0);
-      durationMins = 540 + (rooms - 5) * 60 + (baths >= 2 ? 80 : 0);
-    }
+    const basePrice = rooms === 1 ? 240 : rooms === 2 ? 300 : rooms === 3 ? 360 : rooms === 4 ? 420 : 480 + (rooms - 5) * 50;
+    
+    price = basePrice + (baths >= 2 ? 65 : 0); // +65 за 2-й санузел
+    durationMins = (rooms === 1 ? 240 : rooms === 2 ? 360 : rooms === 3 ? 420 : rooms === 4 ? 480 : 540 + (rooms - 5) * 60) + (baths >= 2 ? 80 : 0);
   } else {
     // GENERAL & AFTER_REPAIR
-    if (rooms === 1) {
-      price = area <= 25 ? 510 : 535;
-      durationMins = 540; // 9 ч
-    } else if (rooms === 2) {
-      price = 650;
-      durationMins = 720; // 12 ч
-    } else if (rooms === 3) {
-      price = baths >= 2 ? 890 : 800;
-      durationMins = baths >= 2 ? 1110 : 900;
-    } else if (rooms === 4) {
-      price = baths >= 2 ? 1110 : 1020;
-      durationMins = baths >= 2 ? 1290 : 1080;
-    } else {
-      price = 1100 + (rooms - 5) * 60 + (baths >= 2 ? 90 : 0);
-      durationMins = 1200 + (rooms - 5) * 150 + (baths >= 2 ? 210 : 0);
-    }
+    const basePrice = rooms === 1 ? (area <= 25 ? 510 : 535) : rooms === 2 ? 650 : rooms === 3 ? 800 : rooms === 4 ? 1020 : 1100 + (rooms - 5) * 60;
+    
+    price = basePrice + (baths >= 2 ? 90 : 0); // +90 за 2-й санузел
+    durationMins = (rooms === 1 ? 540 : rooms === 2 ? 720 : rooms === 3 ? 900 : rooms === 4 ? 1080 : 1200 + (rooms - 5) * 150) + (baths >= 2 ? 210 : 0);
   }
 
   // 2. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ
