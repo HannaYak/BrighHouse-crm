@@ -53,6 +53,12 @@ export default function RootLayout({
                 📁 Справочники
               </Link>
               <Link
+                href="/analytics"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                📈 Аналитика
+              </Link>
+              <Link
                 href="/settings"
                 className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
               >
