@@ -11,7 +11,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Имя и телефон обязательны' }, { status: 400 });
     }
 
-    // 1. Ищем или создаем клиента по номеру телефона
+    // 1. Ищем или создаем клиента по номеру телефона (только разрешенные поля)
     let client = await prisma.client.findFirst({
       where: { phone },
     });
@@ -21,7 +21,6 @@ export async function POST(request: Request) {
         data: {
           name,
           phone,
-          addressLine1: address || 'Адрес не указан',
         },
       });
     }
@@ -42,7 +41,7 @@ export async function POST(request: Request) {
         addressLine1: address || 'Адрес не указан',
         date: date ? new Date(date) : new Date(),
         timeSlot: timeSlot || '10:00 — 14:00',
-        price: price ? parseFloat(price) : 250, // Дефолтная цена, если калькулятор на сайте не посчитал
+        price: price ? parseFloat(price) : 250,
         notes: notes || 'Заявка с сайта',
       },
     });
