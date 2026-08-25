@@ -44,13 +44,13 @@ export async function POST(request: Request) {
         const orderId = data.replace('start_order_', '');
         await prisma.order.update({
           where: { id: orderId },
-          data: { status: 'IN_WORK' },
+          data: { status: 'CONFIRMED' }, // Либо статус из твоей схемы
         });
 
-        await answerCallbackQuery(callback.id, 'Статус обновлен: В работе!');
+        await answerCallbackQuery(callback.id, 'Статус обновлен!');
         await sendMessage(
           chatId,
-          `🚗 <b>Вы начали выполнение заказа!</b>\nСтатус в CRM переведен в «В работе». Удачной уборки! ✨`,
+          `🚗 <b>Вы начали выполнение заказа!</b>\nУдачной уборки! ✨`,
           {
             inline_keyboard: [
               [{ text: '✅ Завершить уборку', callback_data: `done_order_${orderId}` }]
