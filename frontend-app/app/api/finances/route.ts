@@ -39,8 +39,10 @@ export async function GET(request: Request) {
 
       const totalEarned = completedForCleaner.reduce((sum, order) => {
         const orderPrice = order.price || 0;
-        // Базовая ставка: если указана дробью (0.4 = 40%) или дефолтные 40%
-        const rate = cleaner.hourlyRate && cleaner.hourlyRate <= 1 ? cleaner.hourlyRate : 0.4;
+        // Базовая ставка 40% от суммы заказа
+        const rate = (cleaner as any).hourlyRate && (cleaner as any).hourlyRate <= 1 
+          ? (cleaner as any).hourlyRate 
+          : 0.4;
         return sum + (orderPrice * rate);
       }, 0);
 
