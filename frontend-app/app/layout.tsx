@@ -53,6 +53,12 @@ export default function RootLayout({
   <Link href="/chat" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
     💬 Чаты
   </Link>
+  <Link
+  href="/schedule"
+  className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+>
+  🗓 Календарь
+</Link>           
              <Link
   href="/clients"
   className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
