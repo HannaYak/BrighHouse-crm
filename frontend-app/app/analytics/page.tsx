@@ -11,7 +11,7 @@ export default function AnalyticsPage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Стейты для фильтра (по умолчанию текущий месяц и год)
+  // Стейты для фильтра
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -40,10 +40,31 @@ export default function AnalyticsPage() {
     return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
   });
 
-  // 2. Базовая экономика за период
+  // 2. Расчет базовой экономики по реальным часам
   const totalRevenue = filteredOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-  const salaryFund = totalRevenue * 0.50; // 50% на ЗП
-  const materialsCost = totalRevenue * 0.10; // 10% на химию
+  
+  let salaryFund = 0;
+  filteredOrders.forEach(o => {
+    let durationHours = 0;
+    if (o.timeSlot) {
+      const parts = o.timeSlot.split(/[-—]/);
+      if (parts.length === 2) {
+        const [startH, startM] = parts[0].trim().split(':').map(Number);
+        const [endH, endM] = parts[1].trim().split(':').map(Number);
+        let diff = (endH + endM / 60) - (startH + startM / 60);
+        if (diff < 0) diff += 24; // Если переходит через полночь
+        durationHours = diff;
+      }
+    }
+    // Определяем ставку
+    const rate = (o.serviceType === 'GENERAL' || o.serviceType === 'AFTER_REPAIR') ? 35 : 30;
+    const brigadeSize = o.assignedCleaners?.length || 1;
+    
+    // Сумма ЗП за этот заказ на всю бригаду
+    salaryFund += (durationHours * rate) * brigadeSize;
+  });
+
+  const materialsCost = totalRevenue * 0.10; // 10% на химию от выручки
   const netProfit = totalRevenue - salaryFund - materialsCost;
 
   // 3. Статистика по клинерам за период
@@ -54,39 +75,59 @@ export default function AnalyticsPage() {
     
     let earnedForCompany = 0;
     let personalSalary = 0;
+    let hoursWorked = 0;
 
     cleanerOrders.forEach(o => {
       const brigadeSize = o.assignedCleaners?.length || 1;
+      // Вклад в компанию (выручка делится на количество человек в бригаде)
       earnedForCompany += (o.price || 0) / brigadeSize;
-      personalSalary += ((o.price || 0) * 0.50) / brigadeSize;
+
+      // Расчет часов для конкретного клинера
+      let durationHours = 0;
+      if (o.timeSlot) {
+        const parts = o.timeSlot.split(/[-—]/);
+        if (parts.length === 2) {
+          const [startH, startM] = parts[0].trim().split(':').map(Number);
+          const [endH, endM] = parts[1].trim().split(':').map(Number);
+          let diff = (endH + endM / 60) - (startH + startM / 60);
+          if (diff < 0) diff += 24;
+          durationHours = diff;
+        }
+      }
+      
+      hoursWorked += durationHours;
+      const rate = (o.serviceType === 'GENERAL' || o.serviceType === 'AFTER_REPAIR') ? 35 : 30;
+      personalSalary += durationHours * rate;
     });
 
     return {
       ...cleaner,
       ordersCount: cleanerOrders.length,
       earnedForCompany,
-      personalSalary
+      personalSalary,
+      hoursWorked
     };
   }).sort((a, b) => b.earnedForCompany - a.earnedForCompany);
 
   // 4. Функция выгрузки в CSV (Excel)
   const exportToCSV = () => {
-    const headers = ['Имя сотрудника', 'Выполнено заказов', 'Принес выручки (zl)', 'Зарплата к выплате (zl)'];
+    const headers = ['Имя сотрудника', 'Выполнено заказов', 'Отработано часов', 'Принес выручки (zl)', 'Зарплата к выплате (zl)'];
     const rows = cleanerStats
       .filter(c => c.ordersCount > 0)
       .map(c => [
         c.name, 
         c.ordersCount, 
+        c.hoursWorked.toFixed(1),
         c.earnedForCompany.toFixed(2), 
         c.personalSalary.toFixed(2)
       ]);
 
     const csvContent = [
-      headers.join(';'), // Используем ; для Excel
+      headers.join(';'), // Разделитель для Excel
       ...rows.map(r => r.join(';'))
     ].join('\n');
 
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }); // \uFEFF для поддержки кириллицы
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -96,7 +137,6 @@ export default function AnalyticsPage() {
     document.body.removeChild(link);
   };
 
-  // Генерация списка годов (от 2024 до текущего + 1)
   const currentYear = new Date().getFullYear();
   const years = Array.from({length: 5}, (_, i) => currentYear - 2 + i);
 
@@ -146,9 +186,9 @@ export default function AnalyticsPage() {
         </div>
         
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 mb-1">Зарплатный фонд (50%)</div>
+          <div className="text-xs font-bold text-slate-500 mb-1">Зарплатный фонд (Почасовая)</div>
           <div className="text-2xl font-extrabold text-indigo-600">{salaryFund.toFixed(0)} zł</div>
-          <div className="text-[10px] font-semibold text-slate-400 mt-2">Выплаты исполнителям</div>
+          <div className="text-[10px] font-semibold text-slate-400 mt-2">Выплаты исполнителям (30-35 zł/ч)</div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
@@ -158,7 +198,7 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="bg-brand-600 p-5 rounded-2xl border border-brand-700 shadow-sm text-white">
-          <div className="text-xs font-bold text-brand-100 mb-1">Чистая прибыль (40%)</div>
+          <div className="text-xs font-bold text-brand-100 mb-1">Чистая прибыль</div>
           <div className="text-2xl font-extrabold">{netProfit.toFixed(0)} zł</div>
           <div className="text-[10px] font-semibold text-brand-200 mt-2">Net Profit за {MONTHS[selectedMonth]}</div>
         </div>
@@ -173,7 +213,8 @@ export default function AnalyticsPage() {
           <thead className="bg-slate-50/50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
             <tr>
               <th className="p-3.5 pl-5">Сотрудник</th>
-              <th className="p-3.5 text-center">Заказов выполнено</th>
+              <th className="p-3.5 text-center">Заказов</th>
+              <th className="p-3.5 text-center">Часов</th>
               <th className="p-3.5 text-right">Принес компании (zł)</th>
               <th className="p-3.5 text-right pr-5">ЗП к выплате (zł)</th>
             </tr>
@@ -189,13 +230,14 @@ export default function AnalyticsPage() {
                   <div className="text-[10px] text-slate-400 mt-0.5 ml-6">{cleaner.district}</div>
                 </td>
                 <td className="p-3.5 text-center font-extrabold text-slate-700">{cleaner.ordersCount}</td>
+                <td className="p-3.5 text-center font-bold text-blue-600">{cleaner.hoursWorked.toFixed(1)} ч</td>
                 <td className="p-3.5 text-right font-bold text-emerald-600">{cleaner.earnedForCompany.toFixed(0)} zł</td>
                 <td className="p-3.5 text-right pr-5 font-bold text-indigo-600">{cleaner.personalSalary.toFixed(0)} zł</td>
               </tr>
             ))}
             {cleanerStats.filter(c => c.ordersCount === 0).length > 0 && (
               <tr>
-                <td colSpan={4} className="p-3.5 text-center text-slate-400 text-[10px] bg-slate-50/50">
+                <td colSpan={5} className="p-3.5 text-center text-slate-400 text-[10px] bg-slate-50/50">
                   Остальные {cleanerStats.filter(c => c.ordersCount === 0).length} сотрудников без заказов в этом месяце
                 </td>
               </tr>
