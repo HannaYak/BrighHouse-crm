@@ -41,7 +41,7 @@ const QUICK_RESPONSES = [
 export default function KanbanPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Состояния для модалки заказа
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
@@ -68,23 +68,39 @@ export default function KanbanPage() {
     loadOrders();
   }, []);
 
+  // --- ОТПРАВКА НАРЯДА КЛИНЕРАМ В TELEGRAM ---
+  const sendToCleaner = async (orderId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/orders/${orderId}/send-to-cleaner`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ Наряд успешно отправлен в Telegram (клинеров: ${data.sentTo})`);
+      } else {
+        alert(`⚠️ Ошибка: ${data.error || 'Не удалось отправить'}`);
+      }
+    } catch (err) {
+      alert('Ошибка соединения с сервером');
+    }
+  };
+
   // --- ЛОГИКА DRAG & DROP ---
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('orderId', id);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); // Обязательно, чтобы разрешить drop
+    e.preventDefault();
   };
 
   const handleDrop = async (e: React.DragEvent, newStatus: string) => {
     e.preventDefault();
     const orderId = e.dataTransfer.getData('orderId');
-    
-    // Оптимистичное обновление UI (чтобы карточка прыгнула сразу)
+
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
 
-    // Отправка на сервер
     try {
       await fetch('/api/orders', {
         method: 'PATCH',
@@ -93,7 +109,7 @@ export default function KanbanPage() {
       });
     } catch (err) {
       console.error('Ошибка при перемещении карточки:', err);
-      loadOrders(); // Откат, если ошибка
+      loadOrders();
     }
   };
 
@@ -106,7 +122,7 @@ export default function KanbanPage() {
         body: JSON.stringify(savedOrder),
       });
       setIsModalOpen(false);
-      loadOrders(); // Перезагружаем доску
+      loadOrders();
     } catch (e) {
       console.error(e);
       alert('Ошибка при сохранении заказа');
@@ -149,14 +165,13 @@ export default function KanbanPage() {
       </div>
 
       <div className="flex gap-4 h-full overflow-hidden relative">
-        
         {/* Колонки Канбана */}
         <div className="flex gap-4 h-full overflow-x-auto pb-4 flex-1">
           {COLUMNS.map(col => {
             const columnOrders = orders.filter(o => (o.status || 'NEW') === col.id);
             return (
-              <div 
-                key={col.id} 
+              <div
+                key={col.id}
                 className={`flex-shrink-0 w-80 flex flex-col rounded-2xl border ${col.borderColor} ${col.color}`}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, col.id)}
@@ -167,7 +182,7 @@ export default function KanbanPage() {
                     {columnOrders.length}
                   </span>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
                   {columnOrders.map(order => (
                     <div
@@ -188,7 +203,7 @@ export default function KanbanPage() {
                           {order.price} zł
                         </span>
                       </div>
-                      
+
                       <div className="font-bold text-sm text-slate-900 mb-0.5">
                         {order.clientName || 'Без имени'}
                       </div>
@@ -210,6 +225,14 @@ export default function KanbanPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* Кнопка быстрой отправки наряда */}
+                      <button
+                        onClick={(e) => sendToCleaner(order.id, e)}
+                        className="w-full mt-2.5 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-[11px] font-bold py-1.5 px-2 rounded-lg transition border border-slate-200 flex items-center justify-center gap-1.5"
+                      >
+                        ✈️ Отправить наряд клинерам
+                      </button>
                     </div>
                   ))}
                   {columnOrders.length === 0 && (
@@ -230,7 +253,7 @@ export default function KanbanPage() {
               <h3 className="font-bold text-sm text-amber-900">⚡ Быстрые ответы</h3>
               <button onClick={() => setIsTemplatesOpen(false)} className="text-amber-700 hover:bg-amber-100 p-1 rounded">✕</button>
             </div>
-            
+
             {copyFeedback && (
               <div className="bg-emerald-500 text-white text-[10px] font-bold text-center py-1.5">
                 {copyFeedback}
@@ -242,7 +265,7 @@ export default function KanbanPage() {
                 <div key={idx} className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl hover:border-amber-300 transition group relative">
                   <div className="font-bold text-xs text-slate-800 mb-1">{tmpl.title}</div>
                   <div className="text-[10px] text-slate-500 line-clamp-2">{tmpl.text}</div>
-                  <button 
+                  <button
                     onClick={() => copyToClipboard(tmpl.text, tmpl.title)}
                     className="absolute inset-0 w-full h-full bg-white/90 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-bold text-amber-600 rounded-xl backdrop-blur-sm"
                   >
@@ -253,7 +276,6 @@ export default function KanbanPage() {
             </div>
           </div>
         )}
-
       </div>
 
       {/* Вызов единого окна создания/редактирования */}
