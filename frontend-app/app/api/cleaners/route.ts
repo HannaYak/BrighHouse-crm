@@ -4,11 +4,6 @@ import { prisma } from '../../../lib/prisma';
 export async function GET() {
   try {
     const cleaners = await prisma.cleaner.findMany({
-      include: {
-        assignedOrders: {
-          include: { order: true },
-        },
-      },
       orderBy: { name: 'asc' },
     });
     return NextResponse.json(cleaners);
