@@ -1,121 +1,62 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma';
+import { prisma } from '../../../../../lib/prisma';
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+// Функция для отправки ответа пользователю
+async function sendMessage(chatId: number, text: string) {
+  if (!TELEGRAM_BOT_TOKEN) return;
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+  });
+}
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const update = await request.json();
 
-    // 1. ОБРАБОТКА НАЖАТИЯ КНОПКИ «✅ Приняла заказ»
-    if (body.callback_query) {
-      const cq = body.callback_query;
-      const data = cq.data; // Формат: accept_ORDERID_CLEANERID
-      const chatId = cq.message?.chat?.id;
-      const messageId = cq.message?.message_id;
+    // Если это обычное текстовое сообщение
+    if (update.message && update.message.text) {
+      const chatId = update.message.chat.id;
+      const text = update.message.text.trim();
+      const username = update.message.from.username ? `@${update.message.from.username}` : null;
 
-      if (data && data.startsWith('accept_')) {
-        const parts = data.split('_');
-        const orderIdentifier = parts[1];
-        const cleanerId = parseInt(parts[2], 10);
-
-        // Ищем заказ
-        const order = await prisma.order.findFirst({
-          where: {
-            OR: [{ id: orderIdentifier }, { orderNumber: orderIdentifier }],
-          },
+      // Если клинер отправил 6-значный PIN-код
+      if (/^\d{6}$/.test(text)) {
+        // Ищем сотрудника с таким PIN
+        const cleaner = await prisma.cleaner.findFirst({
+          where: { authCode: text },
         });
 
-        if (order) {
-          // Отмечаем принятие в связке OrderCleaner
-          await prisma.orderCleaner.updateMany({
-            where: {
-              orderId: order.id,
-              cleanerId: cleanerId,
-            },
+        if (cleaner) {
+          // Привязываем Telegram к профилю и удаляем разовый PIN
+          await prisma.cleaner.update({
+            where: { id: cleaner.id },
             data: {
-              isAccepted: true,
+              telegramChatId: chatId.toString(),
+              telegramHandle: username || cleaner.telegramHandle,
+              authCode: null, // Сбрасываем пин
             },
           });
 
-          // Ответ Telegram всплывающим уведомлением
-          await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              callback_query_id: cq.id,
-              text: 'Заказ успешно подтверждён! 🎉',
-              show_alert: false,
-            }),
-          });
-
-          // Редактируем сообщение, убирая кнопку и добавляя галочку
-          const originalText = cq.message.text || '';
-          await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              message_id: messageId,
-              text: `${originalText}\n\n✅ *ВЫ ПОДТВЕРДИЛИ ПРИНЯТИЕ ЗАКАЗА*`,
-              parse_mode: 'Markdown',
-            }),
-          });
+          await sendMessage(chatId, `✅ <b>${cleaner.name}</b>, ваш аккаунт успешно привязан к BrightHouse CRM!\n\nСюда будут приходить новые заказы и расписание.`);
+        } else {
+          await sendMessage(chatId, `❌ Неверный или устаревший PIN-код. Запросите новый код у администратора.`);
         }
+      } 
+      else if (text === '/start') {
+        await sendMessage(chatId, `👋 Привет! Я бот BrightHouse CRM.\n\nПожалуйста, отправьте мне <b>6-значный PIN-код</b>, который вам выдал администратор, чтобы привязать ваш аккаунт.`);
       }
-
-      return NextResponse.json({ ok: true });
-    }
-
-    // 2. ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ И PIN-КОДОВ
-    const message = body.message;
-    if (!message || !message.text) {
-      return NextResponse.json({ ok: true });
-    }
-
-    const chatId = message.chat.id.toString();
-    const text = message.text.trim();
-
-    const sendMessage = async (reply: string) => {
-      if (!token) return;
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: reply, parse_mode: 'Markdown' }),
-      });
-    };
-
-    let pinCandidate = text;
-    if (text.startsWith('/start')) {
-      const parts = text.split(' ');
-      if (parts.length > 1) {
-        pinCandidate = parts[1].trim();
-      } else {
-        await sendMessage('👋 Привет! Отправь мне свой **6-значный PIN-код** из CRM BrightHouse, чтобы привязать профиль.');
-        return NextResponse.json({ ok: true });
+      else {
+        await sendMessage(chatId, `Я понимаю только PIN-коды из 6 цифр. Отправьте код для привязки аккаунта.`);
       }
-    }
-
-    const cleaner = await prisma.cleaner.findFirst({
-      where: { authCode: pinCandidate },
-    });
-
-    if (cleaner) {
-      await prisma.cleaner.update({
-        where: { id: cleaner.id },
-        data: {
-          telegramChatId: chatId,
-          authCode: null,
-        },
-      });
-
-      await sendMessage(`✅ *Успешно привязано!*\n\nПривет, ${cleaner.name}! Теперь сюда будут приходить твои заказы с кнопкой подтверждения, адресами и навигацией.`);
-    } else {
-      await sendMessage('❌ Код не найден или устарел. Сгенерируй новый PIN-код в CRM во вкладке «Справочники».');
     }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error('Ошибка webhook Telegram:', error);
-    return NextResponse.json({ ok: true });
+    console.error('Webhook Error:', error);
+    return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
