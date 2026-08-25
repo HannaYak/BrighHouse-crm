@@ -54,6 +54,12 @@ export default function RootLayout({
               >
                 📦 Склад
               </Link>
+             <Link
+  href="/finances"
+  className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+>
+  📊 Финансы
+</Link>
 </nav>
 
             {/* Статус системы */}
