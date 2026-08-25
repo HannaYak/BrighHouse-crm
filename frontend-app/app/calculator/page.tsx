@@ -20,8 +20,7 @@ const EXTRA_SERVICES: ExtraService[] = [
   { id: 'microwave', name: '📻 Микроволновка', price: 25 },
   { id: 'hood', name: '💨 Вытяжка', price: 40 },
   { id: 'dishes', name: '🍽 Посуда вручную', price: 40 },
-  { id: 'balcony', name: '🌿 Балкон / лоджия', price: 60 },
-  { id: 'windows', name: '🪟 Окна (за 1 шт)', price: 35 },
+  { id: 'balcony', name: '🌿 Уборка балкона / лоджии', price: 60 },
   { id: 'ironing', name: '👔 Глажка (за 1 час)', price: 50 },
   { id: 'pets', name: '🐾 Доплата за шерсть', price: 30 },
 ];
@@ -41,7 +40,7 @@ const DRY_CLEAN_ITEMS: DryCleanItem[] = [
 export default function CalculatorPage() {
   const router = useRouter();
 
-  // Режим: Уборка или Химчистка (можно комбинировать)
+  // Режим: Уборка или Химчистка
   const [activeTab, setActiveTab] = useState<'CLEANING' | 'DRY_CLEANING'>('CLEANING');
 
   // 4 вида уборок
@@ -50,9 +49,12 @@ export default function CalculatorPage() {
   const [bathrooms, setBathrooms] = useState<number>(1);
   const [area, setArea] = useState<number>(50);
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
-  const [windowCount, setWindowCount] = useState<number>(2);
+  
+  // Мытье окон раздельно
+  const [windowCount, setWindowCount] = useState<number>(0);
+  const [balconyWindowCount, setBalconyWindowCount] = useState<number>(0);
 
-  // Химчистка (количества по позициям)
+  // Химчистка
   const [dryCleanCounts, setDryCleanCounts] = useState<{ [key: string]: number }>({});
   const [carpetArea, setCarpetArea] = useState<number>(10);
 
@@ -71,7 +73,6 @@ export default function CalculatorPage() {
       return 160 + (rooms - 1) * 35 + (bathrooms - 1) * 45;
     }
     if (cleaningType === 'STANDARD_PLUS') {
-      // Стандарт+ (глубокий стандарт с техникой/фасадами)
       return 210 + (rooms - 1) * 45 + (bathrooms - 1) * 55;
     }
     if (cleaningType === 'GENERAL') {
@@ -83,13 +84,15 @@ export default function CalculatorPage() {
     return 0;
   };
 
-  // Расчет допов к уборке
+  // Расчет допов + окон
   const calculateExtrasPrice = () => {
-    return selectedExtras.reduce((sum, extraId) => {
-      if (extraId === 'windows') return sum + windowCount * 35;
+    const fixedExtras = selectedExtras.reduce((sum, extraId) => {
       const item = EXTRA_SERVICES.find(e => e.id === extraId);
       return sum + (item ? item.price : 0);
     }, 0);
+
+    const windowsTotal = (windowCount * 35) + (balconyWindowCount * 45);
+    return fixedExtras + windowsTotal;
   };
 
   // Расчет химчистки
@@ -134,16 +137,21 @@ export default function CalculatorPage() {
     return 'Уборка после ремонта';
   };
 
-  // Формирование красивого КП для клиента
+  // Генерация текста КП для клиента
   const generateOfferText = () => {
-    const extrasList = selectedExtras
-      .map(id => {
-        if (id === 'windows') return `• Мытье окон (${windowCount} шт.) — ${windowCount * 35} zł`;
-        const item = EXTRA_SERVICES.find(e => e.id === id);
-        return item ? `• ${item.name} — ${item.price} zł` : '';
-      })
-      .filter(Boolean)
-      .join('\n');
+    const extrasLines: string[] = [];
+
+    selectedExtras.forEach(id => {
+      const item = EXTRA_SERVICES.find(e => e.id === id);
+      if (item) extrasLines.push(`• ${item.name} — ${item.price} zł`);
+    });
+
+    if (windowCount > 0) {
+      extrasLines.push(`• 🪟 Мытье стандартных окон (${windowCount} шт.) — ${windowCount * 35} zł`);
+    }
+    if (balconyWindowCount > 0) {
+      extrasLines.push(`• 🚪 Мытье балконных окон/дверей (${balconyWindowCount} шт.) — ${balconyWindowCount * 45} zł`);
+    }
 
     const dryCleanList = Object.entries(dryCleanCounts)
       .map(([id, count]) => {
@@ -160,8 +168,8 @@ export default function CalculatorPage() {
       text += `✨ <b>${getTypeNameRu()}</b> (${rooms} комн., ${bathrooms} санузел${bathrooms > 1 ? 'а' : ''}${area ? `, ~${area} м²` : ''}) — <b>${cleaningBase} zł</b>\n`;
     }
 
-    if (extrasList) {
-      text += `\nДополнительные услуги:\n${extrasList}\n`;
+    if (extrasLines.length > 0) {
+      text += `\nДополнительные услуги:\n${extrasLines.join('\n')}\n`;
     }
 
     if (dryCleanList) {
@@ -190,6 +198,11 @@ export default function CalculatorPage() {
         mainService = `${getTypeNameRu()} + Химчистка`;
       }
 
+      const windowsNote = [
+        windowCount > 0 ? `Окон станд: ${windowCount}` : '',
+        balconyWindowCount > 0 ? `Балк. окон: ${balconyWindowCount}` : ''
+      ].filter(Boolean).join(', ');
+
       const orderPayload = {
         clientName: clientName || 'Клиент из калькулятора',
         clientPhone: clientPhone || '',
@@ -198,7 +211,7 @@ export default function CalculatorPage() {
         price: grandTotal,
         date: new Date(date).toISOString(),
         status: 'NEW',
-        notes: `Сформировано калькулятором. Допы: ${selectedExtras.join(', ')}. Химчистка: ${Object.keys(dryCleanCounts).join(', ')}`,
+        notes: `Сформировано калькулятором. Допы: ${selectedExtras.join(', ')}. ${windowsNote}. Химчистка: ${Object.keys(dryCleanCounts).join(', ')}`,
       };
 
       const res = await fetch('/api/orders', {
@@ -224,13 +237,13 @@ export default function CalculatorPage() {
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
       <div>
         <h1 className="text-xl font-bold text-slate-900">🧮 Умный калькулятор (Уборка + Химчистка)</h1>
-        <p className="text-xs text-slate-500">4 вида уборки, экстракторная химчистка, расчет сметы и создание заказа</p>
+        <p className="text-xs text-slate-500">4 вида уборки, раздельное мытье окон, химчистка, расчет сметы и создание заказа</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Левая колонка: Настройка */}
         <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-          {/* Переключатель вкладок: Уборка / Химчистка */}
+          {/* Переключатель вкладок */}
           <div className="flex bg-slate-100 p-1 rounded-xl">
             <button
               onClick={() => setActiveTab('CLEANING')}
@@ -250,7 +263,7 @@ export default function CalculatorPage() {
             </button>
           </div>
 
-          {/* Вкладка 1: Уборка (4 вида) */}
+          {/* Вкладка 1: Уборка */}
           {activeTab === 'CLEANING' && (
             <div className="space-y-6">
               <div>
@@ -311,10 +324,42 @@ export default function CalculatorPage() {
                 </div>
               </div>
 
+              {/* Блок мытья окон (Обычные 35 zł / Балконные 45 zł) */}
+              <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl space-y-3">
+                <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider block">
+                  🪟 Мытье окон
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-white p-3 rounded-xl border border-blue-100 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Обычное окно</div>
+                      <div className="text-[10px] text-blue-600 font-extrabold">35 zł / шт</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setWindowCount(Math.max(0, windowCount - 1))} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">-</button>
+                      <span className="w-6 text-center font-extrabold text-xs text-slate-900">{windowCount}</span>
+                      <button onClick={() => setWindowCount(windowCount + 1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">+</button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-blue-100 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Балконное окно / дверь</div>
+                      <div className="text-[10px] text-blue-600 font-extrabold">45 zł / шт</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setBalconyWindowCount(Math.max(0, balconyWindowCount - 1))} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">-</button>
+                      <span className="w-6 text-center font-extrabold text-xs text-slate-900">{balconyWindowCount}</span>
+                      <button onClick={() => setBalconyWindowCount(balconyWindowCount + 1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Дополнительные опции уборки */}
               <div>
                 <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  Дополнительные опции уборки
+                  Дополнительные опции
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {EXTRA_SERVICES.map(extra => {
@@ -335,17 +380,6 @@ export default function CalculatorPage() {
                     );
                   })}
                 </div>
-
-                {selectedExtras.includes('windows') && (
-                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
-                    <span className="text-xs font-bold text-blue-900">Количество окон:</span>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setWindowCount(Math.max(1, windowCount - 1))} className="w-7 h-7 bg-white rounded-lg border border-blue-200 font-bold text-xs">-</button>
-                      <span className="font-extrabold text-xs text-blue-900 w-6 text-center">{windowCount}</span>
-                      <button onClick={() => setWindowCount(windowCount + 1)} className="w-7 h-7 bg-white rounded-lg border border-blue-200 font-bold text-xs">+</button>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -402,9 +436,8 @@ export default function CalculatorPage() {
           )}
         </div>
 
-        {/* Правая колонка: Итог, текст для отправки и создание */}
+        {/* Правая колонка: Итог, смета и создание */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Плашка суммы */}
           <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-md">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Итоговая смета</span>
             <div className="flex items-baseline gap-2 mt-1">
@@ -415,7 +448,6 @@ export default function CalculatorPage() {
             </div>
           </div>
 
-          {/* Превью готового ответа клиенту */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-slate-800">💬 Ответ для клиента в мессенджер</span>
@@ -432,7 +464,6 @@ export default function CalculatorPage() {
             </div>
           </div>
 
-          {/* Быстрое создание заказа */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
             <span className="text-xs font-bold text-slate-800 block">⚡ Создать заказ в CRM</span>
             <div className="space-y-2">
