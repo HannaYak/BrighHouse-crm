@@ -48,6 +48,12 @@ export default function RootLayout({
   <Link href="/chat" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
     💬 Чаты
   </Link>
+             <Link
+                href="/inventory"
+                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+              >
+                📦 Склад
+              </Link>
 </nav>
 
             {/* Статус системы */}
