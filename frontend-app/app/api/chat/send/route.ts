@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma';
+import { prisma } from '../../../../lib/prisma'; // 4 уровня вверх
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -11,7 +11,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Не указан conversationId или текст' }, { status: 400 });
     }
 
-    // Находим диалог, чтобы узнать externalId (chat_id в Telegram)
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
     });
@@ -20,7 +19,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 });
     }
 
-    // Если канал Telegram — отправляем через Telegram API
     if (conversation.channel === 'TELEGRAM' && TELEGRAM_BOT_TOKEN) {
       const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
@@ -39,7 +37,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Сохраняем сообщение менеджера в базу данных
     const newMessage = await prisma.message.create({
       data: {
         conversationId,
@@ -48,7 +45,6 @@ export async function POST(request: Request) {
       },
     });
 
-    // Обновляем время последнего изменения диалога
     await prisma.conversation.update({
       where: { id: conversationId },
       data: { updatedAt: new Date() },
