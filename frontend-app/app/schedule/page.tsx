@@ -2,28 +2,30 @@
 import React, { useState, useEffect } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
-const HOURS = Array.from({ length: 14 }, (_, i) => i + 8); // от 08:00 до 21:00
-const MINUTE_WIDTH = 2; // 1 минута = 2px (1 час = 120px)
+// Безопасное форматирование даты в локальный YYYY-MM-DD без UTC-сдвига
+const formatLocalDate = (d: Date): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function SchedulePage() {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [cleaners, setCleaners] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Модальное окно
+  // Модалка заказа
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
 
-  const loadData = async () => {
+  const loadOrders = async () => {
     try {
       setLoading(true);
-      const [resCl, resOrd] = await Promise.all([
-        fetch('/api/cleaners'),
-        fetch('/api/orders')
-      ]);
-      if (resCl.ok) setCleaners(await resCl.json());
-      if (resOrd.ok) setOrders(await resOrd.json());
+      const res = await fetch('/api/orders');
+      if (res.ok) {
+        setOrders(await res.json());
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -32,181 +34,176 @@ export default function SchedulePage() {
   };
 
   useEffect(() => {
-    loadData();
+    loadOrders();
   }, []);
-
-  // Фильтруем заказы для выбранной даты и исключаем отмененные
-  const dayOrders = orders.filter(o => {
-    if (o.status === 'CANCELLED') return false;
-    const orderDate = new Date(o.date).toISOString().split('T')[0];
-    return orderDate === selectedDate;
-  });
 
   const handleSaveOrder = async (savedOrder: OrderDetail) => {
     try {
-      await fetch('/api/orders', {
-        method: 'POST',
+      const isExisting = Boolean((savedOrder as any).id);
+      const url = isExisting ? `/api/orders/${(savedOrder as any).id}` : '/api/orders';
+      const method = isExisting ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(savedOrder),
       });
-      setIsModalOpen(false);
-      loadData(); // Перезагружаем данные
+
+      if (res.ok) {
+        setIsModalOpen(false);
+        loadOrders();
+      } else {
+        alert('Ошибка при сохранении заказа');
+      }
     } catch (e) {
       console.error(e);
-      alert('Ошибка при сохранении заказа');
+      alert('Ошибка соединения с сервером');
     }
   };
 
-  // Функция для расчета позиции и ширины блока на таймлайне
-  const getEventStyle = (startTime: string, endTime: string) => {
-    const [startH, startM] = (startTime || '10:00').split(':').map(Number);
-    const [endH, endM] = (endTime || '13:00').split(':').map(Number);
-    
-    // Смещение от 08:00 в минутах
-    const offsetMinutes = (startH - 8) * 60 + startM;
-    const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
-
-    return {
-      left: `${Math.max(0, offsetMinutes * MINUTE_WIDTH)}px`,
-      width: `${Math.max(30, durationMinutes * MINUTE_WIDTH)}px`, // минимум 30 мин визуально
-    };
+  // Навигация по неделям
+  const changeWeek = (direction: number) => {
+    const next = new Date(currentDate);
+    next.setDate(currentDate.getDate() + direction * 7);
+    setCurrentDate(next);
   };
 
-  const changeDay = (days: number) => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + days);
-    setSelectedDate(d.toISOString().split('T')[0]);
+  // 7 дней текущей недели (начиная с понедельника)
+  const getWeekDays = () => {
+    const startOfWeek = new Date(currentDate);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
+    startOfWeek.setDate(diff);
+
+    const days: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      days.push(d);
+    }
+    return days;
   };
+
+  const weekDays = getWeekDays();
+  const todayStr = formatLocalDate(new Date());
+  const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+  if (loading) return <div className="p-10 text-center text-slate-500 text-xs">Загрузка расписания...</div>;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden max-w-[1600px] mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm">
-      
-      {/* Шапка журнала */}
-      <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-base font-bold text-slate-900">📅 Журнал смен</h1>
-            <p className="text-[11px] text-slate-500">График клинеров на день</p>
-          </div>
-          
-          <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
-            <button onClick={() => changeDay(-1)} className="px-3 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">◀</button>
-            <input 
-              type="date" 
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-2 py-1.5 text-xs font-bold text-slate-800 border-x border-slate-200 outline-none"
-            />
-            <button onClick={() => changeDay(1)} className="px-3 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">▶</button>
-          </div>
+    <div className="space-y-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col">
+      {/* Шапка расписания */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-shrink-0">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">🗓 Календарь и сетка уборок</h1>
+          <p className="text-xs text-slate-500">Наглядное распределение заказов по дням недели</p>
         </div>
 
-        <button
-          onClick={() => {
-            setEditingOrder(null);
-            setIsModalOpen(true);
-          }}
-          className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm"
-        >
-          + Создать заказ
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+            <button
+              onClick={() => changeWeek(-1)}
+              className="px-3 py-1.5 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-600"
+            >
+              ← Пред. неделя
+            </button>
+            <button
+              onClick={() => setCurrentDate(new Date())}
+              className="px-3 py-1.5 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-800"
+            >
+              Сегодня
+            </button>
+            <button
+              onClick={() => changeWeek(1)}
+              className="px-3 py-1.5 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-600"
+            >
+              След. неделя →
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              setEditingOrder(null);
+              setIsModalOpen(true);
+            }}
+            className="bg-brand-600 hover:bg-brand-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition shadow-sm"
+          >
+            + Добавить заказ
+          </button>
+        </div>
       </div>
 
-      {/* Основная сетка таймлайна */}
-      <div className="flex flex-1 overflow-hidden relative">
-        
-        {/* Левая колонка: Имена клинеров */}
-        <div className="w-48 flex-shrink-0 border-r border-slate-200 bg-white z-20 flex flex-col">
-          <div className="h-10 border-b border-slate-100 bg-slate-50 flex items-center px-3 sticky top-0">
-            <span className="text-[10px] font-bold text-slate-500 uppercase">Сотрудник</span>
-          </div>
-          <div className="flex-1 overflow-y-auto hide-scrollbar pb-20">
-            {cleaners.map(c => (
-              <div key={c.id} className="h-16 border-b border-slate-100 px-3 flex flex-col justify-center">
-                <span className="text-xs font-bold text-slate-900 truncate">{c.name}</span>
-                <span className="text-[10px] text-slate-500 truncate">📍 {c.district}</span>
+      {/* Сетка недели */}
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-3 flex-1 overflow-hidden">
+        {weekDays.map((day, idx) => {
+          const dateStr = formatLocalDate(day);
+          const isToday = todayStr === dateStr;
+
+          const dayOrders = orders.filter((o: any) => {
+            const orderDateStr = formatLocalDate(new Date(o.date));
+            return orderDateStr === dateStr && o.status !== 'CANCELLED';
+          });
+
+          return (
+            <div
+              key={idx}
+              className={`bg-white border rounded-2xl flex flex-col overflow-hidden shadow-sm ${
+                isToday ? 'border-brand-500 ring-2 ring-brand-100' : 'border-slate-200'
+              }`}
+            >
+              {/* Шапка дня */}
+              <div className={`p-3 text-center border-b ${isToday ? 'bg-brand-50 text-brand-700' : 'bg-slate-50 text-slate-700'}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider">{dayNames[idx]}</div>
+                <div className="text-base font-extrabold">{day.getDate()}</div>
+                <span className="text-[10px] text-slate-400 font-semibold">{dayOrders.length} уборок</span>
               </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Правая часть: Сетка часов (скроллится по X и Y) */}
-        <div className="flex-1 overflow-auto bg-slate-50 relative pb-20">
-          
-          {/* Шапка часов (08:00, 09:00...) */}
-          <div className="flex h-10 border-b border-slate-100 bg-slate-50 sticky top-0 z-10 min-w-max">
-            {HOURS.map(h => (
-              <div 
-                key={h} 
-                style={{ width: `${60 * MINUTE_WIDTH}px` }} 
-                className="flex-shrink-0 border-r border-slate-200 px-2 flex items-center text-[10px] font-bold text-slate-400"
-              >
-                {String(h).padStart(2, '0')}:00
-              </div>
-            ))}
-          </div>
+              {/* Список заказов */}
+              <div className="p-2 space-y-2 flex-1 overflow-y-auto">
+                {dayOrders.map((order: any) => {
+                  const team = order.assignedCleaners?.map((ac: any) => ac.cleaner?.name).join(', ');
 
-          {/* Строки клинеров с их заказами */}
-          <div className="min-w-max relative">
-            {loading && (
-              <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/50 backdrop-blur-sm">
-                <span className="text-slate-500 text-xs font-bold">Синхронизация графика...</span>
-              </div>
-            )}
-            
-            {/* Отрисовка вертикальных линий часов на фоне */}
-            <div className="absolute inset-0 flex pointer-events-none opacity-20">
-              {HOURS.map(h => (
-                <div key={h} style={{ width: `${60 * MINUTE_WIDTH}px` }} className="flex-shrink-0 border-r border-slate-300"></div>
-              ))}
-            </div>
-
-            {cleaners.map(cleaner => {
-              // Ищем заказы, где участвует этот клинер
-              const myOrders = dayOrders.filter(o => 
-                o.assignedCleaners?.some((ac: any) => ac.cleanerId === cleaner.id || ac.cleaner?.id === cleaner.id)
-              );
-
-              return (
-                <div key={cleaner.id} className="h-16 border-b border-slate-200/50 relative hover:bg-slate-100/50 transition">
-                  {myOrders.map(order => {
-                    const style = getEventStyle(order.startTime, order.endTime);
-                    const isGroup = order.assignedCleaners?.length > 1;
-
-                    return (
-                      <div
-                        key={order.id}
-                        style={style}
-                        onClick={() => {
-                          setEditingOrder(order);
-                          setIsModalOpen(true);
-                        }}
-                        className={`absolute top-1.5 bottom-1.5 rounded-lg shadow-sm cursor-pointer overflow-hidden border p-1.5 transition hover:shadow-md hover:z-10 ${
-                          order.status === 'COMPLETED' ? 'bg-purple-100 border-purple-300' :
-                          order.status === 'PROCESSING' ? 'bg-blue-100 border-blue-300' :
-                          'bg-emerald-100 border-emerald-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1 mb-0.5">
-                          <span className="text-[9px] font-extrabold px-1 py-0.5 rounded bg-white/60 text-slate-800 leading-none">
-                            {order.startTime} - {order.endTime}
-                          </span>
-                          {isGroup && <span className="text-[10px]" title="Бригадная уборка">👥</span>}
-                        </div>
-                        <div className="text-[10px] font-bold text-slate-900 truncate leading-tight">
-                          {order.clientName || 'Новый клиент'}
-                        </div>
-                        <div className="text-[9px] text-slate-600 truncate">
-                          📍 {order.addressLine1}
-                        </div>
+                  return (
+                    <div
+                      key={order.id}
+                      onClick={() => {
+                        setEditingOrder(order);
+                        setIsModalOpen(true);
+                      }}
+                      className="p-2.5 bg-slate-50 hover:bg-brand-50/60 border border-slate-200 rounded-xl cursor-pointer transition text-left"
+                    >
+                      <div className="flex justify-between items-center text-[10px] font-bold">
+                        <span className="text-brand-600">{order.timeSlot?.split('—')[0]?.trim() || order.startTime || '10:00'}</span>
+                        <span className="text-emerald-600 font-extrabold">{order.price} zł</span>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+
+                      <div className="font-bold text-xs text-slate-900 mt-1 truncate">
+                        {order.clientName || 'Без имени'}
+                      </div>
+
+                      <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                        📍 {order.addressLine1 || 'Адрес не указан'}
+                      </div>
+
+                      {team && (
+                        <div className="mt-1.5 pt-1.5 border-t border-slate-200/60 flex items-center gap-1 text-[9px] text-slate-600 font-semibold">
+                          <span>👤</span>
+                          <span className="truncate">{team}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {dayOrders.length === 0 && (
+                  <div className="text-center py-8 text-[11px] text-slate-300 font-medium">
+                    Нет уборок
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {isModalOpen && (
@@ -217,12 +214,6 @@ export default function SchedulePage() {
           onSave={handleSaveOrder}
         />
       )}
-      
-      {/* Скрываем скроллбар в левой колонке через CSS */}
-      <style dangerouslySetInnerHTML={{__html: `
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}} />
     </div>
   );
 }
