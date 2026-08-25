@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 
-export default function CRM empresario ChatPage() {
+export default function ChatPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [selectedConv, setSelectedConv] = useState<any | null>(null);
   const [messageText, setMessageText] = useState('');
@@ -17,12 +17,11 @@ export default function CRM empresario ChatPage() {
       if (res.ok) {
         const data = await res.json();
         setConversations(data);
-        // Если чат уже выбран, обновляем его данные, чтобы видеть новые сообщения
         if (selectedConv) {
           const updated = data.find((c: any) => c.id === selectedConv.id);
           if (updated) setSelectedConv(updated);
         } else if (data.length > 0) {
-          setSelectedConv(data[0]); // Автоматически выбираем первый чат
+          setSelectedConv(data[0]);
         }
       }
     } catch (e) {
@@ -64,7 +63,7 @@ export default function CRM empresario ChatPage() {
       });
 
       if (res.ok) {
-        await fetchConversations(); // Сразу обновляем список
+        await fetchConversations();
       } else {
         alert('Ошибка при отправке сообщения');
       }
