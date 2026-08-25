@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     const update = await request.json();
 
     // 1. Обработка нажатий на инлайн-кнопки клинерами
+  // 1. Обработка нажатий на инлайн-кнопки клинерами
     if (update.callback_query) {
       const callback = update.callback_query;
       const data = callback.data;
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
         const orderId = data.replace('start_order_', '');
         await prisma.order.update({
           where: { id: orderId },
-          data: { status: 'CONFIRMED' }, // Либо статус из твоей схемы
+          data: { status: 'IN_PROGRESS' as any },
         });
 
         await answerCallbackQuery(callback.id, 'Статус обновлен!');
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
         const orderId = data.replace('done_order_', '');
         await prisma.order.update({
           where: { id: orderId },
-          data: { status: 'COMPLETED' },
+          data: { status: 'COMPLETED' as any },
         });
 
         await answerCallbackQuery(callback.id, 'Уборка завершена!');
