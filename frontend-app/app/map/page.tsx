@@ -146,13 +146,13 @@ export default function MapDayPage() {
       // @ts-ignore
       const L = window.L;
       markersLayerRef.current.clearLayers();
-      const bounds = L.latLngBounds();
-      let hasOrders = false;
+      
+      // ИСПРАВЛЕНИЕ ОШИБКИ: собираем координаты в массив перед созданием bounds
+      const coordsToFit: [number, number][] = [];
 
       currentPoints.forEach((p) => {
         if (p.type === 'order') {
-          hasOrders = true;
-          bounds.extend([p.lat, p.lng]);
+          coordsToFit.push([p.lat, p.lng]);
           
           // Круглый маркер со временем для заказов
           const time = p.rawOrder?.startTime?.split(':')[0] || '10';
@@ -178,7 +178,9 @@ export default function MapDayPage() {
         }
       });
 
-      if (hasOrders) {
+      // Передаем собранный массив координат в latLngBounds
+      if (coordsToFit.length > 0) {
+        const bounds = L.latLngBounds(coordsToFit);
         mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
       } else {
         mapInstanceRef.current.setView([52.2297, 21.0122], 11);
