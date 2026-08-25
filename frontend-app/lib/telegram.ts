@@ -1,3 +1,40 @@
+// 1. Отправка уведомлений админу о новых лидах/заявках
+export async function sendAdminLeadNotification(leadData: any) {
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // Убедись, что этот ID есть в переменных окружения Render
+
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn('Токен Telegram бота не задан в .env');
+    return;
+  }
+
+  const messageText = `
+🔔 <b>Новая заявка (Лид)!</b>
+
+<b>Имя:</b> ${leadData.name || 'Не указано'}
+<b>Телефон:</b> ${leadData.phone || 'Не указан'}
+<b>Услуга:</b> ${leadData.service || 'Не указана'}
+<b>Комментарий:</b> ${leadData.notes || 'Нет'}
+  `;
+
+  if (ADMIN_CHAT_ID) {
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: ADMIN_CHAT_ID,
+          text: messageText,
+          parse_mode: 'HTML',
+        }),
+      });
+    } catch (e) {
+      console.error(`Ошибка отправки лида админу:`, e);
+    }
+  }
+}
+
+// 2. Персональная рассылка клинерам о назначенном заказе
 export async function sendPersonalOrderNotification(orderData: any) {
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
   if (!TELEGRAM_BOT_TOKEN) {
@@ -35,7 +72,6 @@ ${orderData.notes ? `📝 <b>ТЗ/Комментарий:</b>\n<i>${orderData.no
 
   // Рассылаем каждому назначенному клинеру, у которого привязан Telegram
   for (const ac of orderData.assignedCleaners) {
-    // В зависимости от того, как передаются данные из OrderModal
     const cleaner = ac.cleaner || ac; 
     
     if (cleaner.telegramChatId) {
