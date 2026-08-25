@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../../../lib/prisma';
-
+import { prisma } from '../../../../lib/prisma';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 // Функция для отправки ответа пользователю
