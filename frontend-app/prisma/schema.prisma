@@ -131,3 +131,26 @@ model OrderCleaner {
 
   @@id([orderId, cleanerId])
 }
+
+// Модель диалога с клиентом
+model Conversation {
+    id        String    @id @default(uuid())
+    channel   String    // 'TELEGRAM', 'WHATSAPP', 'INSTAGRAM'
+    externalId String   @unique // ID чата в мессенджере (например, chat_id в Telegram)
+    clientName String?  // Имя клиента в мессенджере
+    phone     String?   // Телефон, если удалось определить
+    createdAt DateTime  @default(now())
+    updatedAt DateTime  @updatedAt
+    
+    messages  Message[]
+}
+
+// Модель отдельного сообщения
+model Message {
+    id             String       @id @default(uuid())
+    conversationId String
+    conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+    senderType     String       // 'CLIENT' или 'MANAGER'
+    text           String       // Текст сообщения
+    createdAt      DateTime     @default(now())
+}
