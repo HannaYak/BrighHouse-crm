@@ -4,28 +4,32 @@ import { prisma } from '../../../lib/prisma';
 export async function GET() {
   try {
     const clients = await prisma.client.findMany({
-      orderBy: { name: 'asc' },
-    });
-    return NextResponse.json(clients);
-  } catch (error) {
-    return NextResponse.json({ error: 'Ошибка получения клиентов' }, { status: 500 });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const newClient = await prisma.client.create({
-      data: {
-        name: body.name,
-        phone: body.phone,
-        address: body.address || '',
-        favoriteCleaner: body.favoriteCleaner || null,
-        blacklistCleaner: body.blacklistCleaner || null,
+      include: {
+        orders: {
+          select: { price: true, status: true, date: true }
+        }
       },
+      orderBy: { createdAt: 'desc' },
     });
-    return NextResponse.json(newClient, { status: 201 });
+
+    const enrichedClients = clients.map(client => {
+      // Считаем только не отмененные заказы
+      const validOrders = client.orders.filter(o => o.status !== 'CANCELLED');
+      const ltv = validOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+      
+      return {
+        ...client,
+        ordersCount: validOrders.length,
+        ltv,
+        lastOrderDate: validOrders.length > 0 
+          ? validOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date 
+          : null
+      };
+    });
+
+    return NextResponse.json(enrichedClients);
   } catch (error) {
-    return NextResponse.json({ error: 'Ошибка создания клиента' }, { status: 500 });
+    console.error('Ошибка загрузки клиентов:', error);
+    return NextResponse.json({ error: 'Ошибка загрузки клиентов' }, { status: 500 });
   }
 }
