@@ -14,8 +14,7 @@ export async function GET(request: Request) {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-    // Ищем все подтвержденные заказы на завтра, у которых есть клиент с Telegram-чатом
-    // (предполагаем, что у клиента может быть привязан chat_id, либо ищем по его телефону в базе диалогов)
+    // Ищем все подтвержденные заказы на завтра
     const orders = await prisma.order.findMany({
       where: {
         date: {
@@ -44,7 +43,7 @@ export async function GET(request: Request) {
 🌸 <b>Напоминаем об уборке!</b>
 
 Здравствуйте, <b>${order.clientName}</b>! Завтра (${tomorrowStr}) ждем вас на уборку.
-⏱ <b>Время:</b> ${order.timeSlot || order.startTime || '10:00'}
+⏱ <b>Время:</b> ${order.timeSlot || '10:00 — 14:00'}
 📍 <b>Адрес:</b> ${order.addressLine1}
 
 Если у вас изменились планы, пожалуйста, дайте нам знать. До встречи! ✨
