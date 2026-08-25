@@ -6,30 +6,64 @@ export async function GET() {
     const clients = await prisma.client.findMany({
       include: {
         orders: {
-          select: { price: true, status: true, date: true }
-        }
+          orderBy: { date: 'desc' },
+          include: {
+            assignedCleaners: {
+              include: { cleaner: true },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const enrichedClients = clients.map(client => {
-      // Считаем только не отмененные заказы
-      const validOrders = client.orders.filter(o => o.status !== 'CANCELLED');
-      const ltv = validOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-      
+    const formattedClients = clients.map(client => {
+      const totalSpent = client.orders
+        .filter(o => o.status !== ('CANCELLED' as any))
+        .reduce((sum, o) => sum + (o.price || 0), 0);
+
       return {
-        ...client,
-        ordersCount: validOrders.length,
-        ltv,
-        lastOrderDate: validOrders.length > 0 
-          ? validOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date 
-          : null
+        id: client.id,
+        name: client.name,
+        phone: client.phone,
+        address: client.address,
+        notes: client.notes,
+        favoriteCleaner: client.favoriteCleaner,
+        blacklistCleaner: client.blacklistCleaner,
+        ordersCount: client.orders.length,
+        totalSpent,
+        orders: client.orders,
       };
     });
 
-    return NextResponse.json(enrichedClients);
+    return NextResponse.json(formattedClients);
   } catch (error) {
     console.error('Ошибка загрузки клиентов:', error);
-    return NextResponse.json({ error: 'Ошибка загрузки клиентов' }, { status: 500 });
+    return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, notes, favoriteCleaner, blacklistCleaner } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID клиента обязателен' }, { status: 400 });
+    }
+
+    const updatedClient = await prisma.client.update({
+      where: { id: parseInt(id, 10) },
+      data: {
+        notes,
+        favoriteCleaner,
+        blacklistCleaner,
+      },
+    });
+
+    return NextResponse.json(updatedClient);
+  } catch (error) {
+    console.error('Ошибка обновления клиента:', error);
+    return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
   }
 }
