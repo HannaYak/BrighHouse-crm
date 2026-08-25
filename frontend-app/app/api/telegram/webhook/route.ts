@@ -37,17 +37,17 @@ export async function POST(request: Request) {
     // 1. Обработка нажатий на инлайн-кнопки клинерами
     if (update.callback_query) {
       const callback = update.callback_query;
-      const data = callback.data; // Пример: "start_order_UUID" или "done_order_UUID"
+      const data = callback.data;
       const chatId = callback.message.chat.id;
 
       if (data.startsWith('start_order_')) {
         const orderId = data.replace('start_order_', '');
         await prisma.order.update({
           where: { id: orderId },
-          data: { status: 'IN_PROGRESS' },
+          data: { status: 'IN_WORK' },
         });
 
-        await answerCallbackQuery(callback.id, 'Статус обновлен: В процессе!');
+        await answerCallbackQuery(callback.id, 'Статус обновлен: В работе!');
         await sendMessage(
           chatId,
           `🚗 <b>Вы начали выполнение заказа!</b>\nСтатус в CRM переведен в «В работе». Удачной уборки! ✨`,
