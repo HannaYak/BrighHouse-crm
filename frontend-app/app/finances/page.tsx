@@ -23,13 +23,59 @@ export default function FinancesPage() {
     loadFinances();
   }, []);
 
-  if (loading) return <div className="p-10 text-center text-slate-500">Загрузка финансового отчета...</div>;
+  // Экспорт ведомости выплат и сводки в CSV (Excel-совместимый)
+  const exportToCSV = () => {
+    if (!data || !data.cleanerStats) return;
+
+    const rows = [
+      ['Отчет по финансам и выплатам BrightHouse CRM'],
+      [`Дата выгрузки: ${new Date().toLocaleDateString('ru-RU')}`],
+      [''],
+      ['Сводка показателей:'],
+      ['Выручка (выполненные заказы)', `${data.completedRevenue || 0} zł`],
+      ['Фонд оплаты труда (клинерам)', `${data.totalPayouts || 0} zł`],
+      ['Чистая прибыль компании', `${data.netProfit || 0} zł`],
+      ['Всего заказов', `${data.ordersCount || 0}`],
+      ['Выполненных уборок', `${data.completedCount || 0}`],
+      [''],
+      ['Ведомость по клинерам:'],
+      ['Имя клинера', 'Телефон', 'Telegram', 'Выполнено уборок', 'Сумма к выплате (zł)'],
+      ...data.cleanerStats.map((c: any) => [
+        `"${c.name}"`,
+        `"${c.phone || ''}"`,
+        `"${c.telegramHandle || ''}"`,
+        c.completedCount,
+        c.totalPayout,
+      ]),
+    ];
+
+    const csvContent = '\uFEFF' + rows.map(e => e.join(';')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `brighthouse_finances_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500 text-xs">Загрузка финансового отчета...</div>;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">📊 Финансы и выплаты клинерам</h1>
-        <p className="text-xs text-slate-500">Сводка по выручке, расходам на оплату труда и чистой прибыли</p>
+      {/* Заголовок и кнопка экспорта */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">📊 Финансы и выплаты клинерам</h1>
+          <p className="text-xs text-slate-500">Сводка по выручке, расходам на оплату труда и чистой прибыли</p>
+        </div>
+        <button
+          onClick={exportToCSV}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition shadow-sm flex items-center gap-2"
+        >
+          📥 Экспорт в Excel / CSV
+        </button>
       </div>
 
       {/* Ключевые финансовые метрики */}
