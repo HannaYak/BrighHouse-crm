@@ -5,7 +5,6 @@ export default function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Форма добавления
   const [name, setName] = useState('');
   const [category, setCategory] = useState('CHEMISTRY');
   const [quantity, setQuantity] = useState('');
@@ -87,7 +86,6 @@ export default function InventoryPage() {
         <p className="text-xs text-slate-500">Контроль остатков химии, инвентаря и оборудования</p>
       </div>
 
-      {/* Форма добавления нового средства/инвентаря */}
       <form onSubmit={handleAddItem} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
         <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">➕ Добавить позицию на склад</h2>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
@@ -152,7 +150,6 @@ export default function InventoryPage() {
         </button>
       </form>
 
-      {/* Список складских остатков */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200">
           <h2 className="text-sm font-bold text-slate-900">Остатки на складе</h2>
