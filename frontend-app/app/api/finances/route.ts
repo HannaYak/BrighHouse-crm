@@ -4,48 +4,42 @@ import { prisma } from '../../../lib/prisma';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const month = searchParams.get('month'); // Например: 2026-08
+    const month = searchParams.get('month');
 
-    // Загружаем всех клинеров и их выполненные заказы
+    // 1. Загружаем список всех клинеров
     const cleaners = await prisma.cleaner.findMany({
-      include: {
-        assignedOrders: {
-          include: {
-            order: true,
-          },
-        },
-      },
       orderBy: { name: 'asc' },
     });
 
-    // Загружаем все заказы для общей финансовой сводки
+    // 2. Загружаем все заказы с привязанными клинерами
     const allOrders = await prisma.order.findMany({
-      where: { status: { not: 'CANCELLED' } },
+      where: { status: { not: 'CANCELLED' as any } },
       include: {
         assignedCleaners: {
-          include: { cleaner: true }
-        }
-      }
+          include: { cleaner: true },
+        },
+      },
     });
 
-    // Фильтруем заказы по месяцу, если передан параметр
+    // Фильтруем по выбранному месяцу, если он указан
     const filteredOrders = month
       ? allOrders.filter(o => o.date.toISOString().startsWith(month))
       : allOrders;
 
     const totalRevenue = filteredOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-    const completedOrders = filteredOrders.filter(o => o.status === 'COMPLETED');
+    const completedOrders = filteredOrders.filter(o => o.status === ('COMPLETED' as any));
     const completedRevenue = completedOrders.reduce((sum, o) => sum + (o.price || 0), 0);
 
-    // Считаем выплаты клинерам (по умолчанию 40% от стоимости заказа на бригаду или по индивидуальной ставке)
+    // 3. Считаем начисления каждому клинеру по выполненным заказам
     const cleanerStats = cleaners.map(cleaner => {
-      const completedAssignments = cleaner.assignedOrders.filter(
-        ao => ao.order.status === 'COMPLETED' && (!month || ao.order.date.toISOString().startsWith(month))
+      // Находим все завершенные заказы, где участвовал данный клинер
+      const completedForCleaner = completedOrders.filter(order =>
+        order.assignedCleaners.some(ac => ac.cleanerId === cleaner.id || (ac.cleaner && ac.cleaner.id === cleaner.id))
       );
 
-      const totalEarned = completedAssignments.reduce((sum, ao) => {
-        const orderPrice = ao.order.price || 0;
-        // Если ставка указана как процент (например, 0.4 = 40%) или дефолт 40%
+      const totalEarned = completedForCleaner.reduce((sum, order) => {
+        const orderPrice = order.price || 0;
+        // Базовая ставка: если указана дробью (0.4 = 40%) или дефолтные 40%
         const rate = cleaner.hourlyRate && cleaner.hourlyRate <= 1 ? cleaner.hourlyRate : 0.4;
         return sum + (orderPrice * rate);
       }, 0);
@@ -55,7 +49,7 @@ export async function GET(request: Request) {
         name: cleaner.name,
         phone: cleaner.phone,
         telegramHandle: cleaner.telegramHandle,
-        completedCount: completedAssignments.length,
+        completedCount: completedForCleaner.length,
         totalPayout: Math.round(totalEarned),
       };
     });
