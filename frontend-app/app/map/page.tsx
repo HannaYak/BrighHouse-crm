@@ -31,6 +31,7 @@ export default function MapDayPage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [filteredPoints, setFilteredPoints] = useState<MapPoint[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<MapPoint | null>(null);
+  
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -64,11 +65,12 @@ export default function MapDayPage() {
     fetchData();
   }, []);
 
-  // 2. Инициализация карты OpenStreetMap
+  // 2. Инициализация карты
   useEffect(() => {
     async function initLeaflet() {
       if (typeof window !== 'undefined' && mapContainerRef.current && !mapInstanceRef.current) {
-        const L = (await import('leaflet')).default;
+        // @ts-ignore
+        const L = window.L || (await import('leaflet')).default;
 
         if (!document.getElementById('leaflet-css')) {
           const link = document.createElement('link');
@@ -79,8 +81,11 @@ export default function MapDayPage() {
         }
 
         const map = L.map(mapContainerRef.current).setView([52.2297, 21.0122], 11);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap contributors',
+        
+        // Красивая светлая карта CartoDB
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+          attribution: '© OpenStreetMap & CartoDB',
+          maxZoom: 19
         }).addTo(map);
 
         markersLayerRef.current = L.layerGroup().addTo(map);
@@ -90,15 +95,17 @@ export default function MapDayPage() {
     initLeaflet();
   }, []);
 
-  // 3. Фильтрация точек по выбранной дате
+  // 3. Формирование точек и отрисовка
   useEffect(() => {
     const dayOrders = allOrders.filter((o) => {
+      if (o.status === 'CANCELLED') return false;
       const orderDate = new Date(o.date).toISOString().split('T')[0];
       return orderDate === selectedDate;
     });
 
     const orderPoints: MapPoint[] = dayOrders.map((o) => {
       const base = districtCoordinates['Центр'];
+      // Если есть реальные координаты из БД — используем их. Иначе старый рандом.
       const lat = o.latitude || base.lat + (Math.random() - 0.5) * 0.08;
       const lng = o.longitude || base.lng + (Math.random() - 0.5) * 0.08;
       const assigned = o.assignedCleaners?.map((ac: any) => ac.cleaner?.name).join(', ');
@@ -107,7 +114,7 @@ export default function MapDayPage() {
         id: o.id || o.orderNumber,
         type: 'order',
         title: `${o.orderNumber} — ${o.clientName}`,
-        subtitle: `⏱️ ${o.timeSlot} • 💰 ${o.price} zł • 👥 ${assigned || 'Не назначен'}`,
+        subtitle: `⏱️ ${o.timeSlot || o.startTime} • 💰 ${o.price} zł • 👥 ${assigned || 'Не назначен'}`,
         address: `${o.addressLine1}${o.addressLine2 ? ', ' + o.addressLine2 : ''}`,
         date: selectedDate,
         lat,
@@ -135,25 +142,47 @@ export default function MapDayPage() {
     const currentPoints = [...orderPoints, ...cleanerPoints];
     setFilteredPoints(currentPoints);
 
-    // Отрисовка маркеров на карте
     if (mapInstanceRef.current && markersLayerRef.current) {
-      import('leaflet').then((LModule) => {
-        const L = LModule.default;
-        markersLayerRef.current.clearLayers();
+      // @ts-ignore
+      const L = window.L;
+      markersLayerRef.current.clearLayers();
+      const bounds = L.latLngBounds();
+      let hasOrders = false;
 
-        currentPoints.forEach((p) => {
+      currentPoints.forEach((p) => {
+        if (p.type === 'order') {
+          hasOrders = true;
+          bounds.extend([p.lat, p.lng]);
+          
+          // Круглый маркер со временем для заказов
+          const time = p.rawOrder?.startTime?.split(':')[0] || '10';
+          const icon = L.divIcon({
+            html: `<div style="background-color: #2563eb; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${time}</div>`,
+            className: '',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+          });
+          const marker = L.marker([p.lat, p.lng], { icon }).addTo(markersLayerRef.current);
+          marker.bindPopup(`<div style="font-family:sans-serif;"><b>${p.title}</b><br/>${p.subtitle}<br/>📍 ${p.address}</div>`);
+          marker.on('click', () => setSelectedPoint(p));
+        } else {
+          // Маленький зелёный кружок для клинеров
           const marker = L.circleMarker([p.lat, p.lng], {
-            radius: p.type === 'order' ? 9 : 7,
-            color: p.type === 'order' ? '#2563eb' : '#10b981',
-            fillColor: p.type === 'order' ? '#3b82f6' : '#34d399',
+            radius: 6,
+            color: '#10b981',
+            fillColor: '#34d399',
             fillOpacity: 0.9,
             weight: 2,
           }).addTo(markersLayerRef.current);
-
-          marker.bindPopup(`<b>${p.title}</b><br/>${p.subtitle}<br/>📍 ${p.address}`);
-          marker.on('click', () => setSelectedPoint(p));
-        });
+          marker.bindPopup(`<b>${p.title}</b><br/>${p.subtitle}`);
+        }
       });
+
+      if (hasOrders) {
+        mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+      } else {
+        mapInstanceRef.current.setView([52.2297, 21.0122], 11);
+      }
     }
   }, [selectedDate, allOrders, cleaners]);
 
@@ -164,8 +193,8 @@ export default function MapDayPage() {
         id: o.id,
         orderNumber: o.orderNumber,
         date: new Date(o.date).toISOString().split('T')[0],
-        startTime: o.timeSlot ? o.timeSlot.split(' — ')[0] : '10:00',
-        endTime: o.timeSlot ? o.timeSlot.split(' — ')[1] : '14:00',
+        startTime: o.timeSlot ? o.timeSlot.split(' — ')[0] : (o.startTime || '10:00'),
+        endTime: o.timeSlot ? o.timeSlot.split(' — ')[1] : (o.endTime || '14:00'),
         timeSlot: o.timeSlot,
         serviceType: o.serviceType || 'STANDARD',
         areaM2: o.areaM2 || 45,
@@ -215,6 +244,7 @@ export default function MapDayPage() {
         body: JSON.stringify(saved),
       });
       if (res.ok) {
+        setIsModalOpen(false);
         fetchData();
       }
     } catch (e) {
@@ -225,11 +255,11 @@ export default function MapDayPage() {
   const orderPointsList = filteredPoints.filter((p) => p.type === 'order');
 
   return (
-    <div className="flex flex-col h-[calc(100vh-5.5rem)] space-y-3">
+    <div className="flex flex-col h-[calc(100vh-80px)] space-y-3 max-w-[1600px] mx-auto">
       {/* Панель управления и выбор даты */}
       <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-slate-800">🗺️ Карта дня (Визуальная логистика)</h1>
+          <h1 className="text-lg font-bold text-slate-800">🗺️ Карта дня (Логистика)</h1>
           <span className="text-xs text-slate-400">|</span>
           <span className="text-xs font-semibold text-slate-600">
             Заказов на дату: <b className="text-brand-600 font-extrabold">{orderPointsList.length}</b>
@@ -237,13 +267,32 @@ export default function MapDayPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs font-bold text-slate-500 uppercase">Дата:</label>
+          <button
+            onClick={() => {
+              const d = new Date(selectedDate);
+              d.setDate(d.getDate() - 1);
+              setSelectedDate(d.toISOString().split('T')[0]);
+            }}
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 font-bold transition"
+          >
+            ◀
+          </button>
           <input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 shadow-inner"
+            className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800 shadow-inner outline-none focus:border-brand-500"
           />
+          <button
+            onClick={() => {
+              const d = new Date(selectedDate);
+              d.setDate(d.getDate() + 1);
+              setSelectedDate(d.toISOString().split('T')[0]);
+            }}
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 font-bold transition"
+          >
+            ▶
+          </button>
         </div>
       </div>
 
@@ -260,9 +309,11 @@ export default function MapDayPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-            {orderPointsList.length === 0 ? (
-              <div className="text-center py-10 text-slate-400 text-xs">
-                Нет запланированных заказов на эту дату
+            {loading && <div className="text-center py-5 text-slate-400 text-xs">Загрузка...</div>}
+            
+            {!loading && orderPointsList.length === 0 ? (
+              <div className="text-center py-10 text-slate-400 text-xs border-2 border-dashed border-slate-100 rounded-xl">
+                Нет запланированных заказов
               </div>
             ) : (
               orderPointsList.map((p) => (
@@ -271,7 +322,7 @@ export default function MapDayPage() {
                   onClick={() => {
                     setSelectedPoint(p);
                     if (mapInstanceRef.current) {
-                      mapInstanceRef.current.flyTo([p.lat, p.lng], 13);
+                      mapInstanceRef.current.flyTo([p.lat, p.lng], 14, { duration: 1 });
                     }
                   }}
                   className={`p-3 rounded-xl border cursor-pointer transition flex flex-col gap-1 ${
@@ -287,7 +338,7 @@ export default function MapDayPage() {
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-500">{p.subtitle}</div>
-                  <div className="text-[11px] text-slate-600 truncate">📍 {p.address}</div>
+                  <div className="text-[11px] text-slate-600 truncate mb-1">📍 {p.address}</div>
 
                   <button
                     type="button"
@@ -295,9 +346,9 @@ export default function MapDayPage() {
                       e.stopPropagation();
                       handleEditClick(p);
                     }}
-                    className="mt-1.5 text-center bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold py-1 rounded text-[11px] transition shadow-2xs"
+                    className="mt-1 text-center bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold py-1.5 rounded-lg text-[11px] transition shadow-sm w-full"
                   >
-                    ✏️ Назначить / Изменить
+                    ✏️ Изменить / Назначить бригаду
                   </button>
                 </div>
               ))
@@ -307,16 +358,18 @@ export default function MapDayPage() {
 
         {/* Интерактивная карта OpenStreetMap справа */}
         <div className="col-span-2 bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden relative shadow-inner">
-          <div ref={mapContainerRef} className="w-full h-full z-0" />
+          <div ref={mapContainerRef} className="w-full h-full z-0" id="map" />
         </div>
       </div>
 
-      <OrderModal
-        order={editingOrder}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveOrder}
-      />
+      {isModalOpen && (
+        <OrderModal
+          order={editingOrder}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleSaveOrder}
+        />
+      )}
     </div>
   );
 }
