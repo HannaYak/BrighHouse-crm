@@ -43,7 +43,12 @@ export default function RootLayout({
   <Link href="/directories" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
     👥 Справочники
   </Link>
-  
+  <Link
+  href="/cleaners"
+  className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+>
+  🧹 Клинеры
+</Link>
   {/* 👇 ВОТ СЮДА МОЖНО ВСТАВИТЬ КНОПКУ ЧАТОВ 👇 */}
   <Link href="/chat" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
     💬 Чаты
