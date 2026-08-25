@@ -1,10 +1,19 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 
+const MONTHS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+];
+
 export default function AnalyticsPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Стейты для фильтра (по умолчанию текущий месяц и год)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     const fetchData = async () => {
@@ -24,18 +33,22 @@ export default function AnalyticsPage() {
     fetchData();
   }, []);
 
-  // Фильтруем только активные и завершенные заказы (без отмененных)
-  const validOrders = orders.filter(o => o.status !== 'CANCELLED');
+  // 1. Фильтруем заказы (не отмененные + попадают в выбранный месяц и год)
+  const filteredOrders = orders.filter(o => {
+    if (o.status === 'CANCELLED') return false;
+    const d = new Date(o.date);
+    return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+  });
 
-  // Базовая экономика
-  const totalRevenue = validOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+  // 2. Базовая экономика за период
+  const totalRevenue = filteredOrders.reduce((sum, o) => sum + (o.price || 0), 0);
   const salaryFund = totalRevenue * 0.50; // 50% на ЗП
   const materialsCost = totalRevenue * 0.10; // 10% на химию
   const netProfit = totalRevenue - salaryFund - materialsCost;
 
-  // Статистика по клинерам
+  // 3. Статистика по клинерам за период
   const cleanerStats = cleaners.map(cleaner => {
-    const cleanerOrders = validOrders.filter(o => 
+    const cleanerOrders = filteredOrders.filter(o => 
       o.assignedCleaners?.some((ac: any) => ac.cleanerId === cleaner.id || ac.cleaner?.id === cleaner.id)
     );
     
@@ -54,23 +67,82 @@ export default function AnalyticsPage() {
       earnedForCompany,
       personalSalary
     };
-  }).sort((a, b) => b.earnedForCompany - a.earnedForCompany); // Сортируем по выручке
+  }).sort((a, b) => b.earnedForCompany - a.earnedForCompany);
+
+  // 4. Функция выгрузки в CSV (Excel)
+  const exportToCSV = () => {
+    const headers = ['Имя сотрудника', 'Выполнено заказов', 'Принес выручки (zl)', 'Зарплата к выплате (zl)'];
+    const rows = cleanerStats
+      .filter(c => c.ordersCount > 0)
+      .map(c => [
+        c.name, 
+        c.ordersCount, 
+        c.earnedForCompany.toFixed(2), 
+        c.personalSalary.toFixed(2)
+      ]);
+
+    const csvContent = [
+      headers.join(';'), // Используем ; для Excel
+      ...rows.map(r => r.join(';'))
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }); // \uFEFF для поддержки кириллицы
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Зарплаты_BrightHouse_${MONTHS[selectedMonth]}_${selectedYear}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Генерация списка годов (от 2024 до текущего + 1)
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({length: 5}, (_, i) => currentYear - 2 + i);
 
   if (loading) return <div className="p-10 text-center text-slate-500">Загрузка аналитики...</div>;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">📈 Финансовая аналитика</h1>
-        <p className="text-xs text-slate-500">Unit-экономика, выручка и статистика по сотрудникам</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">📈 Финансовая аналитика</h1>
+          <p className="text-xs text-slate-500">Unit-экономика, выручка и статистика по сотрудникам</p>
+        </div>
+
+        {/* Панель фильтров и экспорта */}
+        <div className="flex items-center gap-3 bg-white p-2 border border-slate-200 rounded-xl shadow-sm">
+          <select 
+            value={selectedMonth} 
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-bold rounded-lg px-3 py-1.5 focus:outline-none"
+          >
+            {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+          </select>
+
+          <select 
+            value={selectedYear} 
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-bold rounded-lg px-3 py-1.5 focus:outline-none"
+          >
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+
+          <button 
+            onClick={exportToCSV}
+            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm font-bold px-4 py-1.5 rounded-lg transition"
+          >
+            📥 Скачать Excel
+          </button>
+        </div>
       </div>
 
       {/* KPI Карточки */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 mb-1">Общая выручка</div>
+          <div className="text-xs font-bold text-slate-500 mb-1">Выручка за период</div>
           <div className="text-2xl font-extrabold text-slate-900">{totalRevenue.toFixed(0)} zł</div>
-          <div className="text-[10px] font-semibold text-emerald-600 mt-2">Всего заказов: {validOrders.length}</div>
+          <div className="text-[10px] font-semibold text-emerald-600 mt-2">Заказов в периоде: {filteredOrders.length}</div>
         </div>
         
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
@@ -88,14 +160,14 @@ export default function AnalyticsPage() {
         <div className="bg-brand-600 p-5 rounded-2xl border border-brand-700 shadow-sm text-white">
           <div className="text-xs font-bold text-brand-100 mb-1">Чистая прибыль (40%)</div>
           <div className="text-2xl font-extrabold">{netProfit.toFixed(0)} zł</div>
-          <div className="text-[10px] font-semibold text-brand-200 mt-2">Net Profit</div>
+          <div className="text-[10px] font-semibold text-brand-200 mt-2">Net Profit за {MONTHS[selectedMonth]}</div>
         </div>
       </div>
 
       {/* Рейтинг сотрудников */}
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
-          <h2 className="text-sm font-bold text-slate-800">🏆 Эффективность сотрудников (Leaderboard)</h2>
+          <h2 className="text-sm font-bold text-slate-800">🏆 Зарплаты и эффективность (Leaderboard)</h2>
         </div>
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50/50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
@@ -124,7 +196,7 @@ export default function AnalyticsPage() {
             {cleanerStats.filter(c => c.ordersCount === 0).length > 0 && (
               <tr>
                 <td colSpan={4} className="p-3.5 text-center text-slate-400 text-[10px] bg-slate-50/50">
-                  Остальные {cleanerStats.filter(c => c.ordersCount === 0).length} сотрудников пока без заказов
+                  Остальные {cleanerStats.filter(c => c.ordersCount === 0).length} сотрудников без заказов в этом месяце
                 </td>
               </tr>
             )}
