@@ -63,7 +63,8 @@ const serviceTitles: Record<ServiceType, string> = {
 
 export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
   if (!isOpen) return null;
-
+  
+  const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
   const [form, setForm] = useState<OrderDetail>(
     order || {
       date: new Date().toISOString().split('T')[0],
@@ -107,6 +108,22 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   const [durationText, setDurationText] = useState('3 ч');
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
+  // Загрузка актуального прайс-листа из Настроек
+  useEffect(() => {
+    fetch('/api/settings/addons')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const rates: Record<string, { price: number; durationMins: number }> = {};
+          data.forEach((item: any) => {
+            rates[item.code] = { price: item.price, durationMins: item.durationMins };
+          });
+          setAddonRates(rates);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
   // Загрузка списка клинеров
   useEffect(() => {
     fetch('/api/cleaners')
@@ -142,6 +159,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       dryMattressSide: form.dryMattressSide,
       cleanersCount: Math.max(1, form.assignedCleaners.length),
       startTime: form.startTime || '10:00',
+      addonRates, // <--- Прайс-лист передается в калькулятор
     });
 
     setForm((prev) => ({
@@ -176,6 +194,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.dryMattressSide,
     form.assignedCleaners.length,
     form.startTime,
+    addonRates, // <--- Зависимость обновлена
   ]);
 
   // Умный фильтр клинеров
@@ -289,7 +308,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Окон (35 zł)</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Окон</label>
                 <input
                   type="number"
                   value={form.windowsCount}
@@ -304,15 +323,15 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Дополнительные опции</label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { k: 'hasOven', label: '🍳 Духовка (45 zł)' },
-                  { k: 'hasFridge', label: '❄️ Холодильник (35 zł)' },
-                  { k: 'hasFridgeFreeze', label: '🧊 Холод.+мороз. (50 zł)' },
-                  { k: 'hasMicrowave', label: '📡 Микроволновка (20 zł)' },
-                  { k: 'hasBalcony', label: '🌿 Балкон (35 zł)' },
-                  { k: 'hasKitchenClosets', label: '🗄️ Кух. шкафы (100 zł)' },
-                  { k: 'hasStairs', label: '🪜 Лестница (30 zł)' },
-                  { k: 'hasSteamer', label: '💨 Пароочиститель (75 zł)' },
-                  { k: 'hasVacuum', label: '🔌 Доставка пылесоса (30 zł)' },
+                  { k: 'hasOven', label: `🍳 Духовка (${addonRates['oven']?.price || 45} zł)` },
+                  { k: 'hasFridge', label: `❄️ Холодильник (${addonRates['fridge']?.price || 35} zł)` },
+                  { k: 'hasFridgeFreeze', label: `🧊 Холод.+мороз. (${addonRates['fridgeFreeze']?.price || 50} zł)` },
+                  { k: 'hasMicrowave', label: `📡 Микроволновка (${addonRates['microwave']?.price || 20} zł)` },
+                  { k: 'hasBalcony', label: `🌿 Балкон (${addonRates['balcony']?.price || 35} zł)` },
+                  { k: 'hasKitchenClosets', label: `🗄️ Кух. шкафы (${addonRates['kitchenClosets']?.price || 100} zł)` },
+                  { k: 'hasStairs', label: `🪜 Лестница (${addonRates['stairs']?.price || 30} zł)` },
+                  { k: 'hasSteamer', label: `💨 Пароочиститель (${addonRates['steamer']?.price || 75} zł)` },
+                  { k: 'hasVacuum', label: `🔌 Пылесос (${addonRates['vacuum']?.price || 30} zł)` },
                   { k: 'hasPets', label: '🐾 Есть животные (Аллергия)' },
                   { k: 'hasKeys', label: '🔑 Забрать/отдать ключи' },
                 ].map(({ k, label }) => {
@@ -513,7 +532,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 />
               </div>
             </div>
-{/* Итоговая стоимость и кнопки */}
+
+            {/* Итоговая стоимость и кнопки */}
             <div className="border-t border-slate-200 pt-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 font-medium">Итоговая стоимость:</span>
