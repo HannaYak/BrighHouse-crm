@@ -67,24 +67,19 @@ export async function POST(request: Request) {
         const order = await prisma.order.update({
           where: { id: orderId },
           data: { status: 'COMPLETED' as any },
-          include: { client: true },
         });
 
         await answerCallbackQuery(callback.id, 'Уборка завершена!');
         await sendMessage(chatId, `🎉 <b>Отличная работа!</b> Заказ отмечен как выполненный.`);
 
-        // Ищем чат с клиентом по его телефону или имени в диалогах
-        if (order.clientPhone) {
+        // Ищем чат с клиентом по имени в диалогах
+        if (order.clientName) {
           const clientConv = await prisma.conversation.findFirst({
             where: {
-              OR: [
-                { clientPhone: order.clientPhone },
-                { clientName: { contains: order.clientName } }
-              ]
+              clientName: { contains: order.clientName }
             }
           });
 
-          // Если у нас есть диалог с клиентом в Telegram — отправляем опрос качества
           if (clientConv && clientConv.externalId) {
             await sendMessage(
               clientConv.externalId,
