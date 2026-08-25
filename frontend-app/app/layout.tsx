@@ -27,44 +27,28 @@ export default function RootLayout({
             </div>
 
             {/* Меню навигации */}
-            <nav className="flex items-center gap-1">
-              <Link
-                href="/schedule"
-                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
-              >
-                📅 Журнал смен
-              </Link>
-              <Link
-                href="/map"
-                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
-              >
-                🗺️ Карта дня
-              </Link>
-              <Link
-                href="/kanban"
-                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
-              >
-                📋 Канбан
-              </Link>
-              <Link
-                href="/directories"
-                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
-              >
-                📁 Справочники
-              </Link>
-              <Link
-                href="/analytics"
-                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
-              >
-                📈 Аналитика
-              </Link>
-              <Link
-                href="/settings"
-                className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
-              >
-                ⚙️ Настройки
-              </Link>
-            </nav>
+           <nav className="flex items-center gap-2">
+  <Link href="/schedule" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
+    📅 Журнал
+  </Link>
+  <Link href="/kanban" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
+    📋 Канбан
+  </Link>
+  <Link href="/map" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
+    🗺️ Карта
+  </Link>
+  <Link href="/analytics" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
+    📈 Аналитика
+  </Link>
+  <Link href="/directories" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
+    👥 Справочники
+  </Link>
+  
+  {/* 👇 ВОТ СЮДА МОЖНО ВСТАВИТЬ КНОПКУ ЧАТОВ 👇 */}
+  <Link href="/chat" className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition">
+    💬 Чаты
+  </Link>
+</nav>
 
             {/* Статус системы */}
             <div className="flex items-center gap-2">
