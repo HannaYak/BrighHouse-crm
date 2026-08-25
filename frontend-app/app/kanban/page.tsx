@@ -1,287 +1,270 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
-import QuickResponsesModal from '../../components/QuickResponsesModal';
 
-type Status = 'NEW' | 'PROCESSING' | 'SELECTING' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED';
+// Колонки для Канбан-доски
+const COLUMNS = [
+  { id: 'NEW', title: '📥 Новые', color: 'bg-slate-100', borderColor: 'border-slate-200' },
+  { id: 'PROCESSING', title: '⏳ В работе (Общение)', color: 'bg-blue-50', borderColor: 'border-blue-200' },
+  { id: 'ASSIGNED', title: '✅ Назначены', color: 'bg-emerald-50', borderColor: 'border-emerald-200' },
+  { id: 'COMPLETED', title: '🏆 Завершены', color: 'bg-purple-50', borderColor: 'border-purple-200' },
+];
 
-interface Order extends OrderDetail {
-  urgency: 'urgent' | 'today' | 'confirmed' | 'normal';
-  status: Status;
-}
-
-const columns: { key: Status; title: string }[] = [
-  { key: 'NEW', title: 'Новая заявка' },
-  { key: 'PROCESSING', title: 'В обработке' },
-  { key: 'SELECTING', title: 'Подбор клинера' },
-  { key: 'ASSIGNED', title: 'Назначен' },
-  { key: 'COMPLETED', title: 'Выполнен' },
-  { key: 'CANCELLED', title: 'Отмена' },
+// Твои шаблоны для быстрых ответов
+const QUICK_RESPONSES = [
+  {
+    title: '💰 Прейскурант и условия (Стандарт)',
+    text: `Стандарт - лёгкая, освежающая уборка всех открытых поверхностей, до которых можно дотянуться без стремянки\n\nЕсли желаете можем выслать подробный состав :)\n\nПодробные состав:\nВанная комната\n* Моем поверхность стиральной машины, открытые полки, умывальник, душевую кабину, ванну, зеркала, унитаз, дверь, пол, выключатели, розетки.\n\nКухня\n* Моем фасады кухонного гарнитура, фартук, столешницы, плиту, раковину, внутри шкафчика под мусор, (выкидываем мусор), дверь, пол, выключатели, розетки.\n\nКомнаты\n* Моем фасады мебели, протираем или пылесосим мягкую мебель, телевизор, подоконники, батареи, плинтуса, двери, столы и стулья, открытые полки, пол, выключатели, розетки.\n\nКоридор\n* Фасады мебели, открытые полки, зеркало, пол, плинтуса, выключатели, розетки, домофон (прочая техника).\n\nМеняем постельное белье по Вашему желанию.\nЗагружаем посуду в посудомойку.\n\nПодскажите, сколько комнат и санузлов в вашей квартире, а также примерный метраж? Мы сразу рассчитаем точную стоимость и время уборки.`
+  },
+  {
+    title: '🧼 Генеральная уборка',
+    text: `Здравствуйте ☺️\nВ генеральную уборку входит уборка всех открытых поверхностей + очистка изнутри холодильника, вытяжки, СВЧ, духовки, посудомойки, стиральной машины, шкафчиков, ящиков, мойка стен, высоковисящих люстр и карнизов, отодвигание мебели для уборки под ней и очистка решётки вентиляции.\n\nЕсли желаете можем выслать подробный состав :)\n\nПодробный состав:\nВанная комната\n+ уборка внутри шкафов\n+ мойка вытяжки\n+ отодвигание мебели для уборки пыли\n+ протираем карнизы, люстры\n+ протираем стены, если на них есть загрязнения\n+ Моем поверхность стиральной машины, открытые полки, умывальник, душевую кабину, ванну, зеркала, унитаз, дверь, пол.\n\nКухня\n+ уборка внутри шкафов\n+ мойка холодильника\n+ мойка духовки\n+ мойка вытяжки\n+ протираем карнизы, люстры\n+ протираем стены, если на них есть загрязнения\n+ Моем фасады кухонного гарнитура, столешницы, плиту, раковину, внутри шкафчика под мусор, дверь, пол.\n\nКомнаты\n+ пылесосим внутри диванов\n+ уборка внутри шкафов\n+ отодвигание мебели для уборки пыли\n+ протираем карнизы, люстры, стены\n+ Моем фасады мебели, пылесосим мягкую мебель, пол\n\nКоридор\n+ пылесосим внутри диванов\n+ уборка внутри шкафов\n+ протираем карнизы, люстры, стены\n+ отодвигание мебели для уборки пыли\n+ Фасады мебели, открытые полки, зеркало, пол.`
+  },
+  {
+    title: '🏗️ После ремонта',
+    text: `Уборка строительной пыли и минимальных следов покраски\n\nВлажная и сухая уборка всех поверхностей в комнатах и на кухне (кроме потолков)\nВлажная уборка всех поверхностей в санузле (кроме потолков)\nМойка внутри и снаружи мебели, кухни`
+  },
+  {
+    title: '📍 Запрос адреса и времени',
+    text: `Отлично! Записали Вас :)\nДля подтверждения заказа пришлите, пожалуйста, нам Ваши:\n1. Точный адрес\n2. Контактный телефон\n3. Проживают ли домашние питомцы\n4. Доступен ли на месте пылесос`
+  },
+  {
+    title: '💳 Подтверждение бронирования',
+    text: `Ваш заказ подтвержден! 🌸\nОплата производится после завершения уборки и проверки качества (наличными, переводом на счёт/BLIK, PayPal, revolut).\n\nСпасибо за заказ и хорошего дня ☺️`
+  },
+  {
+    title: '🛋 Химчистка мебели',
+    text: `Здравствуйте! ✨ Мы выполняем профессиональную экстракторную химчистку мебели и ковров.\n\nПришлите, пожалуйста, фото вашей мебели для точной оценки :)`
+  }
 ];
 
 export default function KanbanPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
+  
+  // Состояния для модалки заказа
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isQuickResponsesOpen, setIsQuickResponsesOpen] = useState(false);
-  const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
+  const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
 
-  const fetchOrders = async () => {
+  // Состояние для панели шаблонов
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const loadOrders = async () => {
     try {
       setLoading(true);
       const res = await fetch('/api/orders');
       if (res.ok) {
-        const data = await res.json();
-        const formatted: Order[] = data.map((item: any) => ({
-          id: item.id,
-          orderNumber: item.orderNumber,
-          timeSlot: item.timeSlot || '10:00 — 14:00',
-          startTime: item.timeSlot ? item.timeSlot.split(' — ')[0] : '10:00',
-          endTime: item.timeSlot ? item.timeSlot.split(' — ')[1] : '14:00',
-          date: new Date(item.date).toISOString().split('T')[0],
-          serviceType: item.serviceType || 'STANDARD',
-          areaM2: item.areaM2 || 45,
-          roomsCount: item.roomsCount || 1,
-          bathroomsCount: item.bathroomsCount || 1,
-          windowsCount: item.windowsCount || 0,
-          hasOven: item.hasOven || false,
-          hasFridge: item.hasFridge || false,
-          hasFridgeFreeze: item.hasFridgeFreeze || false,
-          hasMicrowave: item.hasMicrowave || false,
-          hasBalcony: item.hasBalcony || false,
-          hasKitchenClosets: item.hasKitchenClosets || false,
-          hasStairs: item.hasStairs || false,
-          hasSteamer: item.hasSteamer || false,
-          hasDishesHours: item.hasDishesHours || 0,
-          hasIroningHours: item.hasIroningHours || 0,
-          hasVacuum: item.hasVacuum || false,
-          hasPets: item.hasPets || false,
-          hasKeys: item.hasKeys || false,
-          drySofa2: item.drySofa2 || 0,
-          drySofa3: item.drySofa3 || 0,
-          drySofaCorner4: item.drySofaCorner4 || 0,
-          dryArmchair: item.dryArmchair || 0,
-          dryMattressSide: item.dryMattressSide || 0,
-          clientName: item.clientName,
-          clientPhone: item.clientPhone,
-          addressLine1: item.addressLine1,
-          addressLine2: item.addressLine2 || '',
-          price: item.price,
-          cleanersCount: item.cleanersCount || 1,
-          assignedCleaners: item.assignedCleaners?.map((ac: any) => ({
-            id: ac.cleaner.id,
-            name: ac.cleaner.name,
-            phone: ac.cleaner.phone,
-            isAccepted: ac.isAccepted || false,
-          })) || [],
-          urgency: (item.urgency || 'NORMAL').toLowerCase(),
-          status: item.status || 'NEW',
-          notes: item.notes || '',
-        }));
-        setOrders(formatted);
+        setOrders(await res.json());
       }
     } catch (e) {
-      console.error('Ошибка загрузки заказов:', e);
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOrders();
+    loadOrders();
   }, []);
 
-  const handleDragStart = (id: string) => {
-    setDraggedOrderId(id);
+  // --- ЛОГИКА DRAG & DROP ---
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('orderId', id);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
+    e.preventDefault(); // Обязательно, чтобы разрешить drop
   };
 
-  const handleDrop = async (newStatus: Status) => {
-    if (!draggedOrderId) return;
+  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault();
+    const orderId = e.dataTransfer.getData('orderId');
+    
+    // Оптимистичное обновление UI (чтобы карточка прыгнула сразу)
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
 
-    setOrders((prev) =>
-      prev.map((o) => (o.id === draggedOrderId ? { ...o, status: newStatus } : o))
-    );
-
+    // Отправка на сервер
     try {
       await fetch('/api/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: draggedOrderId, status: newStatus }),
+        body: JSON.stringify({ id: orderId, status: newStatus }),
       });
-    } catch (e) {
-      console.error('Ошибка обновления статуса:', e);
-      fetchOrders();
-    } finally {
-      setDraggedOrderId(null);
+    } catch (err) {
+      console.error('Ошибка при перемещении карточки:', err);
+      loadOrders(); // Откат, если ошибка
     }
   };
 
-  const openCreateModal = () => {
-    setSelectedOrder(null);
-    setIsModalOpen(true);
-  };
-
-  const openEditModal = (order: Order) => {
-    setSelectedOrder(order);
-    setIsModalOpen(true);
-  };
-
-  const handleSaveOrder = async (saved: OrderDetail) => {
+  // --- ЛОГИКА СОХРАНЕНИЯ (ЕДИНОЕ ОКНО) ---
+  const handleSaveOrder = async (savedOrder: OrderDetail) => {
     try {
-      const res = await fetch('/api/orders', {
+      await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saved),
+        body: JSON.stringify(savedOrder),
       });
-
-      if (res.ok) {
-        fetchOrders();
-      }
+      setIsModalOpen(false);
+      loadOrders(); // Перезагружаем доску
     } catch (e) {
-      console.error('Ошибка сохранения заказа:', e);
+      console.error(e);
+      alert('Ошибка при сохранении заказа');
     }
   };
 
+  const copyToClipboard = (text: string, title: string) => {
+    navigator.clipboard.writeText(text);
+    setCopyFeedback(`Скопировано: ${title}`);
+    setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Загрузка доски...</div>;
+
   return (
-    <div className="flex flex-col h-[calc(100vh-5.5rem)]">
-      <div className="flex items-center justify-between mb-4">
+    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden max-w-[1600px] mx-auto">
+      {/* Шапка Канбана */}
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Канбан-доска заказов</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {loading ? 'Синхронизация с базой...' : `Всего заказов: ${orders.length} (Перетаскивай карточки между колонками)`}
-          </p>
+          <h1 className="text-xl font-bold text-slate-900">📋 Канбан-доска</h1>
+          <p className="text-xs text-slate-500">Управление статусами заказов (Drag & Drop)</p>
         </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <button
-            onClick={() => setIsQuickResponsesOpen(true)}
-            className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-lg shadow-2xs transition flex items-center gap-1.5"
+            onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
+            className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm flex items-center gap-1"
           >
-            <span>⚡</span>
-            <span>Быстрые ответы</span>
+            ⚡ Шаблоны ответов
           </button>
-
           <button
-            onClick={openCreateModal}
-            className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition"
+            onClick={() => {
+              setEditingOrder(null);
+              setIsModalOpen(true);
+            }}
+            className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm"
           >
             + Создать заказ
           </button>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-4 overflow-x-auto pb-4 items-start">
-        {columns.map((col) => {
-          const colOrders = orders.filter((o) => o.status === col.key);
-          return (
-            <div
-              key={col.key}
-              onDragOver={handleDragOver}
-              onDrop={() => handleDrop(col.key)}
-              className="w-80 flex-shrink-0 bg-slate-100/70 border border-slate-200/80 rounded-xl p-3 flex flex-col max-h-full min-h-[400px] transition-colors"
-            >
-              <div className="flex items-center justify-between mb-3 px-1">
-                <span className="font-semibold text-xs text-slate-700 uppercase tracking-wide">
-                  {col.title}
-                </span>
-                <span className="text-xs font-bold text-slate-400 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
-                  {colOrders.length}
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-2.5 overflow-y-auto pr-0.5 flex-1">
-                {colOrders.map((order) => (
-                  <div
-                    key={order.id || order.orderNumber}
-                    draggable
-                    onDragStart={() => handleDragStart(order.id!)}
-                    onClick={() => openEditModal(order)}
-                    className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm hover:border-brand-500 hover:shadow-md active:cursor-grabbing transition cursor-grab flex flex-col gap-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                        ⏱️ {order.timeSlot}
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-400">{order.orderNumber}</span>
-                    </div>
-
-                    <div className="font-semibold text-sm text-slate-900 leading-tight">
-                      {order.clientName}
-                    </div>
-
-                    <div className="text-xs text-slate-500 leading-snug">
-                      <div>📍 {order.addressLine1}</div>
-                      {order.addressLine2 && <div className="text-slate-400 pl-4">{order.addressLine2}</div>}
-                    </div>
-
-                    <div className="flex flex-wrap gap-1 mt-0.5">
-                      <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded font-medium">
-                        {order.areaM2} м²
-                      </span>
-                      {order.hasPets && (
-                        <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded">
-                          🐾 Животные
+      <div className="flex gap-4 h-full overflow-hidden relative">
+        
+        {/* Колонки Канбана */}
+        <div className="flex gap-4 h-full overflow-x-auto pb-4 flex-1">
+          {COLUMNS.map(col => {
+            const columnOrders = orders.filter(o => (o.status || 'NEW') === col.id);
+            return (
+              <div 
+                key={col.id} 
+                className={`flex-shrink-0 w-80 flex flex-col rounded-2xl border ${col.borderColor} ${col.color}`}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, col.id)}
+              >
+                <div className="px-4 py-3 border-b border-white/40 flex justify-between items-center">
+                  <h3 className="font-bold text-sm text-slate-800">{col.title}</h3>
+                  <span className="bg-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs">
+                    {columnOrders.length}
+                  </span>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                  {columnOrders.map(order => (
+                    <div
+                      key={order.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, order.id)}
+                      onClick={() => {
+                        setEditingOrder(order);
+                        setIsModalOpen(true);
+                      }}
+                      className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-brand-300 hover:shadow-md transition"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">
+                          {order.orderNumber}
                         </span>
-                      )}
-                      {order.hasVacuum && (
-                        <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded">
-                          🔌 Пылесос
+                        <span className="text-[10px] font-extrabold text-emerald-600">
+                          {order.price} zł
                         </span>
-                      )}
-                      {order.hasKeys && (
-                        <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded">
-                          🔑 Ключи
-                        </span>
-                      )}
-                    </div>
+                      </div>
+                      
+                      <div className="font-bold text-sm text-slate-900 mb-0.5">
+                        {order.clientName || 'Без имени'}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mb-2 truncate">
+                        📍 {order.addressLine1 || 'Адрес не указан'}
+                      </div>
 
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 mt-0.5">
-                      <span className="text-sm font-bold text-slate-800">{order.price} zł</span>
-                      <div className="text-right">
-                        {order.assignedCleaners && order.assignedCleaners.length > 0 ? (
-                          <div className="flex flex-col items-end">
-                            <span className="text-xs text-brand-600 font-semibold truncate max-w-[150px]">
-                              👥 {order.assignedCleaners.map((c: any) => c.name).join(', ')}
-                            </span>
-                            {order.assignedCleaners.every((c: any) => c.isAccepted) ? (
-                              <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                ✅ Все приняли
-                              </span>
-                            ) : order.assignedCleaners.some((c: any) => c.isAccepted) ? (
-                              <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                ⏳ Частично принят
-                              </span>
-                            ) : null}
+                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+                        <div className="text-[10px] font-medium text-slate-500">
+                          {new Date(order.date).toLocaleDateString('ru-RU')} • {order.timeSlot?.split('—')[0]?.trim() || order.startTime}
+                        </div>
+                        {order.assignedCleaners?.length > 0 && (
+                          <div className="flex -space-x-1.5">
+                            {order.assignedCleaners.map((ac: any, i: number) => (
+                              <div key={i} className="w-5 h-5 rounded-full bg-brand-100 border border-white flex items-center justify-center text-[8px] font-bold text-brand-700" title={ac.cleaner?.name}>
+                                {ac.cleaner?.name?.charAt(0)}
+                              </div>
+                            ))}
                           </div>
-                        ) : (
-                          <span className="text-xs text-slate-400 font-medium">Клинер не выбран</span>
                         )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                  {columnOrders.length === 0 && (
+                    <div className="text-center text-slate-400 text-xs py-10 border-2 border-dashed border-slate-200 rounded-xl">
+                      Перетащите сюда
+                    </div>
+                  )}
+                </div>
               </div>
+            );
+          })}
+        </div>
+
+        {/* Боковая панель: Шаблоны быстрых ответов */}
+        {isTemplatesOpen && (
+          <div className="w-80 flex-shrink-0 bg-white border border-slate-200 rounded-2xl shadow-lg flex flex-col h-full overflow-hidden animate-fade-in">
+            <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center bg-amber-50">
+              <h3 className="font-bold text-sm text-amber-900">⚡ Быстрые ответы</h3>
+              <button onClick={() => setIsTemplatesOpen(false)} className="text-amber-700 hover:bg-amber-100 p-1 rounded">✕</button>
             </div>
-          );
-        })}
+            
+            {copyFeedback && (
+              <div className="bg-emerald-500 text-white text-[10px] font-bold text-center py-1.5">
+                {copyFeedback}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {QUICK_RESPONSES.map((tmpl, idx) => (
+                <div key={idx} className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl hover:border-amber-300 transition group relative">
+                  <div className="font-bold text-xs text-slate-800 mb-1">{tmpl.title}</div>
+                  <div className="text-[10px] text-slate-500 line-clamp-2">{tmpl.text}</div>
+                  <button 
+                    onClick={() => copyToClipboard(tmpl.text, tmpl.title)}
+                    className="absolute inset-0 w-full h-full bg-white/90 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-bold text-amber-600 rounded-xl backdrop-blur-sm"
+                  >
+                    Скопировать текст
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
 
-      <OrderModal
-        order={selectedOrder}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveOrder}
-      />
-
-      <QuickResponsesModal
-        isOpen={isQuickResponsesOpen}
-        onClose={() => setIsQuickResponsesOpen(false)}
-      />
+      {/* Вызов единого окна создания/редактирования */}
+      {isModalOpen && (
+        <OrderModal
+          order={editingOrder}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleSaveOrder}
+        />
+      )}
     </div>
   );
 }
