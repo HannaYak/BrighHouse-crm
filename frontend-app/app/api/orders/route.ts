@@ -27,57 +27,25 @@ export async function POST(request: Request) {
     const body = await request.json();
     const orderNumber = body.orderNumber || `ORD-${Math.floor(100 + Math.random() * 900)}`;
 
-    let order;
-
-    if (body.id) {
-      // Обновление существующего заказа
-      await prisma.orderCleaner.deleteMany({
-        where: { orderId: body.id },
-      });
-
-      order = await prisma.order.update({
-        where: { id: body.id },
-        data: {
-          date: new Date(body.date),
-          timeSlot: body.timeSlot || '10:00 — 14:00',
-          serviceType: body.serviceType || 'STANDARD',
-          areaM2: Number(body.areaM2) || 45,
-          roomsCount: Number(body.roomsCount) || 1,
-          bathroomsCount: Number(body.bathroomsCount) || 1,
-          windowsCount: Number(body.windowsCount) || 0,
-          hasOven: Boolean(body.hasOven),
-          hasFridge: Boolean(body.hasFridge),
-          hasFridgeFreeze: Boolean(body.hasFridgeFreeze),
-          hasMicrowave: Boolean(body.hasMicrowave),
-          hasBalcony: Boolean(body.hasBalcony),
-          hasKitchenClosets: Boolean(body.hasKitchenClosets),
-          hasStairs: Boolean(body.hasStairs),
-          hasSteamer: Boolean(body.hasSteamer),
-          hasVacuum: Boolean(body.hasVacuum),
-          hasPets: Boolean(body.hasPets),
-          hasKeys: Boolean(body.hasKeys),
-          clientName: body.clientName || 'Клиент',
-          clientPhone: body.clientPhone || '',
-          addressLine1: body.addressLine1 || '',
-          addressLine2: body.addressLine2 || '',
-          price: Number(body.price),
-          cleanersCount: (body.assignedCleaners || []).length || 1,
-          notes: body.notes || '',
-          status: body.status || 'NEW',
-          assignedCleaners: {
-            create: (body.assignedCleaners || []).map((c: { id: number }) => ({
-              cleanerId: c.id,
-            })),
-          },
+    // === БЛОК 1: АВТО-СОЗДАНИЕ КЛИЕНТА ===
+    let clientId = null;
+    if (body.clientPhone) {
+      const client = await prisma.client.upsert({
+        where: { phone: body.clientPhone },
+        update: { 
+          name: body.clientName || 'Клиент',
+          address: body.addressLine1 || '' 
         },
-        include: {
-          assignedCleaners: {
-            include: { cleaner: true },
-          },
-        },
+        create: { 
+          name: body.clientName || 'Новый Клиент', 
+          phone: body.clientPhone, 
+          address: body.addressLine1 || '' 
+        }
       });
-    } else {
-      // Запрашиваем реальные координаты через OpenStreetMap (Nominatim API)
+      clientId = client.id;
+    }
+
+    // === БЛОК 2: ГЕОКОДИРОВАНИЕ ===
     let lat = null;
     let lng = null;
     if (body.addressLine1) {
@@ -94,36 +62,70 @@ export async function POST(request: Request) {
         console.warn('Geocoding failed:', e);
       }
     }
+
+    // Общие данные заказа
+    const orderData = {
+      date: new Date(body.date),
+      timeSlot: body.timeSlot || '10:00 — 14:00',
+      serviceType: body.serviceType || 'STANDARD',
+      areaM2: Number(body.areaM2) || 45,
+      roomsCount: Number(body.roomsCount) || 1,
+      bathroomsCount: Number(body.bathroomsCount) || 1,
+      windowsCount: Number(body.windowsCount) || 0,
+      hasOven: Boolean(body.hasOven),
+      hasFridge: Boolean(body.hasFridge),
+      hasFridgeFreeze: Boolean(body.hasFridgeFreeze),
+      hasMicrowave: Boolean(body.hasMicrowave),
+      hasBalcony: Boolean(body.hasBalcony),
+      hasKitchenClosets: Boolean(body.hasKitchenClosets),
+      hasStairs: Boolean(body.hasStairs),
+      hasSteamer: Boolean(body.hasSteamer),
+      hasVacuum: Boolean(body.hasVacuum),
+      hasPets: Boolean(body.hasPets),
+      hasKeys: Boolean(body.hasKeys),
+      clientName: body.clientName || 'Клиент',
+      clientPhone: body.clientPhone || '',
+      addressLine1: body.addressLine1 || '',
+      addressLine2: body.addressLine2 || '',
+      latitude: lat,
+      longitude: lng,
+      price: Number(body.price),
+      cleanersCount: (body.assignedCleaners || []).length || 1,
+      notes: body.notes || '',
+      status: body.status || 'NEW',
+      clientId: clientId, // Привязка к клиенту
+    };
+
+    let order;
+
+    if (body.id) {
+      // Обновление существующего заказа
+      await prisma.orderCleaner.deleteMany({
+        where: { orderId: body.id },
+      });
+
+      order = await prisma.order.update({
+        where: { id: body.id },
+        data: {
+          ...orderData,
+          assignedCleaners: {
+            create: (body.assignedCleaners || []).map((c: { id: number }) => ({
+              cleanerId: c.id,
+            })),
+          },
+        },
+        include: {
+          assignedCleaners: {
+            include: { cleaner: true },
+          },
+        },
+      });
+    } else {
       // Создание нового заказа
       order = await prisma.order.create({
         data: {
           orderNumber,
-          date: new Date(body.date),
-          timeSlot: body.timeSlot || '10:00 — 14:00',
-          serviceType: body.serviceType || 'STANDARD',
-          areaM2: Number(body.areaM2) || 45,
-          roomsCount: Number(body.roomsCount) || 1,
-          bathroomsCount: Number(body.bathroomsCount) || 1,
-          windowsCount: Number(body.windowsCount) || 0,
-          hasOven: Boolean(body.hasOven),
-          hasFridge: Boolean(body.hasFridge),
-          hasFridgeFreeze: Boolean(body.hasFridgeFreeze),
-          hasMicrowave: Boolean(body.hasMicrowave),
-          hasBalcony: Boolean(body.hasBalcony),
-          hasKitchenClosets: Boolean(body.hasKitchenClosets),
-          hasStairs: Boolean(body.hasStairs),
-          hasSteamer: Boolean(body.hasSteamer),
-          hasVacuum: Boolean(body.hasVacuum),
-          hasPets: Boolean(body.hasPets),
-          hasKeys: Boolean(body.hasKeys),
-          clientName: body.clientName || 'Новый Клиент',
-          clientPhone: body.clientPhone || '',
-          addressLine1: body.addressLine1 || '',
-          addressLine2: body.addressLine2 || '',
-          price: Number(body.price),
-          cleanersCount: (body.assignedCleaners || []).length || 1,
-          notes: body.notes || '',
-          status: body.status || 'NEW',
+          ...orderData,
           assignedCleaners: {
             create: (body.assignedCleaners || []).map((c: { id: number }) => ({
               cleanerId: c.id,
