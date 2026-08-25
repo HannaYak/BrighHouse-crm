@@ -49,6 +49,12 @@ export default function RootLayout({
     💬 Чаты
   </Link>
              <Link
+  href="/clients"
+  className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+>
+  👥 Клиенты
+</Link>
+             <Link
                 href="/inventory"
                 className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
               >
