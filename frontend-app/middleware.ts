@@ -2,24 +2,27 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  const authCookie = request.cookies.get('crm_auth');
   const { pathname } = request.nextUrl;
 
-  // Разрешаем доступ к странице логина, API авторизации, вебхукам Telegram и статическим файлам
+  // Открытые публичные маршруты, доступные без авторизации
   if (
+    pathname.startsWith('/book') ||
     pathname.startsWith('/login') ||
-    pathname.startsWith('/api/auth') ||
-    pathname.startsWith('/api/telegram') ||
-    pathname.startsWith('/api/leads') ||
+    pathname.startsWith('/api/book') ||
+    pathname.startsWith('/api/health') ||
+    pathname.startsWith('/api/auth/login') ||
     pathname.startsWith('/_next') ||
-    pathname.startsWith('/favicon.ico')
+    pathname.includes('/api/orders/') && pathname.endsWith('/invoice') // открытый доступ к PDF счету по ссылке
   ) {
     return NextResponse.next();
   }
 
-  // Если куки авторизации нет — редиректим на /login
-  if (!authCookie || authCookie.value !== 'authenticated') {
-    return NextResponse.redirect(new URL('/login', request.url));
+  const authToken = request.cookies.get('bh_auth_token')?.value;
+
+  // Если сессии нет — редирект на экран логина
+  if (!authToken || authToken !== 'authenticated_admin') {
+    const loginUrl = new URL('/login', request.url);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
