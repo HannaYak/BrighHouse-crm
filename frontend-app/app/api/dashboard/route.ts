@@ -3,74 +3,65 @@ import { prisma } from '../../../lib/prisma';
 
 export async function GET() {
   try {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
-    const currentMonthStr = now.toISOString().slice(0, 7);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Загружаем все заказы
-    const allOrders = await prisma.order.findMany({
-      include: {
-        assignedCleaners: {
-          include: { cleaner: true }
-        }
-      },
-      orderBy: { date: 'asc' }
-    });
+    const [
+      ordersToday,
+      newOrdersCount,
+      inProgressCount,
+      allCompletedOrders,
+      cleaners,
+    ] = await Promise.all([
+      prisma.order.findMany({
+        where: {
+          date: {
+            gte: today,
+            lt: tomorrow,
+          },
+        },
+        include: {
+          assignedCleaners: {
+            include: { cleaner: true },
+          },
+        },
+        orderBy: { timeSlot: 'asc' },
+      }),
+      prisma.order.count({ where: { status: 'NEW' } }),
+      prisma.order.count({ where: { status: 'IN_PROGRESS' } }),
+      prisma.order.findMany({
+        where: { status: 'COMPLETED' },
+        select: { price: true },
+      }),
+      prisma.cleaner.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, district: true, rating: true },
+      }),
+    ]);
 
-    // Загружаем всех клинеров
-    const allCleaners = await prisma.cleaner.findMany({
-      where: { status: 'ACTIVE' }
-    });
-
-    const nonCancelled = allOrders.filter(o => o.status !== ('CANCELLED' as any));
-    
-    // Заказы на сегодня
-    const todayOrders = nonCancelled.filter(o => o.date.toISOString().startsWith(todayStr));
-    
-    // Заказы за текущий месяц
-    const monthOrders = nonCancelled.filter(o => o.date.toISOString().startsWith(currentMonthStr));
-    const completedMonthOrders = monthOrders.filter(o => o.status === ('COMPLETED' as any));
-
-    const totalRevenueMonth = completedMonthOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-    const avgCheck = completedMonthOrders.length > 0 
-      ? Math.round(totalRevenueMonth / completedMonthOrders.length) 
-      : 0;
-
-    // Статистика по типам услуг
-    const serviceDistribution: { [key: string]: number } = {};
-    monthOrders.forEach(o => {
-      const type = o.serviceType || 'Стандарт';
-      serviceDistribution[type] = (serviceDistribution[type] || 0) + 1;
-    });
-
-    // Топ клинеров по выполненным заказам
-    const cleanerPerformance = allCleaners.map(cleaner => {
-      const completedCount = allOrders.filter(o =>
-        o.status === ('COMPLETED' as any) &&
-        o.assignedCleaners.some(ac => ac.cleanerId === cleaner.id || (ac.cleaner && ac.cleaner.id === cleaner.id))
-      ).length;
-
-      return {
-        id: cleaner.id,
-        name: cleaner.name,
-        district: cleaner.district,
-        completedCount,
-        isLinked: Boolean(cleaner.telegramChatId)
-      };
-    }).sort((a, b) => b.completedCount - a.completedCount);
+    const totalRevenue = allCompletedOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+    const todayRevenue = ordersToday
+      .filter(o => o.status === 'COMPLETED')
+      .reduce((sum, o) => sum + (o.price || 0), 0);
 
     return NextResponse.json({
-      todayCount: todayOrders.length,
-      monthCount: monthOrders.length,
-      completedMonthCount: completedMonthOrders.length,
-      totalRevenueMonth,
-      avgCheck,
-      serviceDistribution,
-      cleanerPerformance,
-      todayOrders
+      todayOrders: ordersToday,
+      counts: {
+        todayTotal: ordersToday.length,
+        newOrders: newOrdersCount,
+        inProgress: inProgressCount,
+        activeCleaners: cleaners.length,
+      },
+      finance: {
+        totalRevenue,
+        todayRevenue,
+      },
+      cleaners,
     });
   } catch (error) {
-    console.error('Ошибка аналитики дашборда:', error);
+    console.error('Ошибка загрузки дашборда:', error);
     return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
   }
 }
