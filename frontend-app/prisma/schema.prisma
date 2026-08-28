@@ -155,18 +155,6 @@ model Message {
     createdAt      DateTime     @default(now())
 }
 
-// Модель складского учета инвентаря и химии
-model InventoryItem {
-    id          String   @id @default(uuid())
-    name        String   // Название (например: "Kiehl Clarida Eco", "Микрофибра 40x40")
-    category    String   // "CHEMISTRY", "CONSUMABLE", "EQUIPMENT"
-    quantity    Float    @default(0) // Текущее количество (шт или литров)
-    unit        String   @default("шт") // "шт", "л", "упак"
-    minQuantity Float    @default(2) // Минимальный остаток для предупреждения
-    costPrice   Float    @default(0) // Закупочная стоимость за единицу (zł)
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
-}
 
 model PromoCode {
   id          Int       @id @default(autoincrement())
