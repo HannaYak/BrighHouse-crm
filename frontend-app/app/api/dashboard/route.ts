@@ -52,9 +52,8 @@ export async function GET() {
         select: { price: true },
       }),
 
-      // Список всех активных клинеров вместе с назначенными заказами для рейтинга
+      // Список всех клинеров вместе с назначенными заказами для рейтинга
       prisma.cleaner.findMany({
-        where: { isActive: true },
         include: {
           assignedOrders: {
             include: { order: true },
@@ -71,12 +70,12 @@ export async function GET() {
     // Формирование рейтинга клинеров
     const cleanerPerformance = cleaners
       .map((c) => {
-        const completedCount = c.assignedOrders.filter((ao) => ao.order?.status === 'COMPLETED').length;
+        const completedCount = c.assignedOrders?.filter((ao) => ao.order?.status === 'COMPLETED').length || 0;
         return {
           id: c.id,
           name: c.name,
           district: c.district || 'Район не указан',
-          isLinked: Boolean(c.telegramChatId),
+          isLinked: Boolean((c as any).telegramChatId || (c as any).telegramId),
           completedCount,
         };
       })
