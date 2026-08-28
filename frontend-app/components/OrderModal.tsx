@@ -159,7 +159,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       dryMattressSide: form.dryMattressSide,
       cleanersCount: Math.max(1, form.assignedCleaners.length),
       startTime: form.startTime || '10:00',
-      addonRates, // <--- Прайс-лист передается в калькулятор
+      addonRates,
     });
 
     setForm((prev) => ({
@@ -194,7 +194,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.dryMattressSide,
     form.assignedCleaners.length,
     form.startTime,
-    addonRates, // <--- Зависимость обновлена
+    addonRates,
   ]);
 
   // Умный фильтр клинеров
@@ -216,7 +216,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       });
       setWarningMessage(null);
     } else {
-      // Проверка несовместимости
       if (cleaner.incompatibleWith && cleaner.incompatibleWith.length > 0) {
         const conflict = form.assignedCleaners.find((c) => cleaner.incompatibleWith.includes(c.name));
         if (conflict) {
@@ -281,7 +280,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             {/* Метраж, Комнаты, Санузлы, Окна */}
             <div className="grid grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Метраж ($м^2$)</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Метраж (м²)</label>
                 <input
                   type="number"
                   value={form.areaM2}
@@ -533,7 +532,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
-            {/* Итоговая стоимость и кнопки */}
+            {/* Итоговая стоимость и кнопки действий */}
             <div className="border-t border-slate-200 pt-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 font-medium">Итоговая стоимость:</span>
@@ -548,28 +547,43 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               </div>
 
+              {/* Кнопки управления заказом */}
               <div className="flex items-center gap-2 pt-2">
                 {form.id && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const reason = prompt('Укажите причину отмены заказа:');
-                      if (reason !== null) {
-                        await fetch('/api/orders', {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ id: form.id, status: 'CANCELLED', cancelReason: reason }),
-                        });
-                        onClose();
-                        window.location.reload();
-                      }
-                    }}
-                    className="w-1/3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold py-3 rounded-xl text-xs transition"
-                  >
-                    ❌ Отменить
-                  </button>
+                  <>
+                    {/* Кнопка открытия счета / PDF */}
+                    <button
+                      type="button"
+                      onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                      title="Печать счета / Rachunek"
+                    >
+                      📄 Счет
+                    </button>
+
+                    {/* Кнопка отмены заказа */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const reason = prompt('Укажите причину отмены заказа:');
+                        if (reason !== null) {
+                          await fetch('/api/orders', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: form.id, status: 'CANCELLED', cancelReason: reason }),
+                          });
+                          onClose();
+                          window.location.reload();
+                        }
+                      }}
+                      className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-3 rounded-xl text-xs transition"
+                    >
+                      ❌ Отменить
+                    </button>
+                  </>
                 )}
 
+                {/* Кнопка сохранения */}
                 <button
                   type="button"
                   onClick={() => {
@@ -579,9 +593,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     });
                     onClose();
                   }}
-                  className={`bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition ${
-                    form.id ? 'w-2/3' : 'w-full'
-                  }`}
+                  className="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
                 >
                   💾 Сохранить заказ
                 </button>
