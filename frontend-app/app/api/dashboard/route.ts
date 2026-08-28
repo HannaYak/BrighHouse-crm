@@ -40,7 +40,7 @@ export async function GET() {
         },
       }),
 
-      // Только выполненные заказы за месяц для расчета выручки и среднего чека
+      // Выполненные заказы за месяц с назначенными клинерами
       prisma.order.findMany({
         where: {
           status: 'COMPLETED',
@@ -49,17 +49,13 @@ export async function GET() {
             lte: monthEnd,
           },
         },
-        select: { price: true },
-      }),
-
-      // Список всех клинеров вместе с назначенными заказами для рейтинга
-      prisma.cleaner.findMany({
         include: {
-          assignedOrders: {
-            include: { order: true },
-          },
+          assignedCleaners: true,
         },
       }),
+
+      // Список всех клинеров
+      prisma.cleaner.findMany(),
     ]);
 
     // Расчет финансовых KPI
@@ -67,10 +63,13 @@ export async function GET() {
     const completedMonthCount = completedMonthOrders.length;
     const avgCheck = completedMonthCount > 0 ? Math.round(totalRevenueMonth / completedMonthCount) : 0;
 
-    // Формирование рейтинга клинеров
+    // Подсчет выполненных уборок для каждого клинера
     const cleanerPerformance = cleaners
       .map((c) => {
-        const completedCount = c.assignedOrders?.filter((ao) => ao.order?.status === 'COMPLETED').length || 0;
+        const completedCount = completedMonthOrders.filter((o) =>
+          o.assignedCleaners?.some((ac: any) => ac.cleanerId === c.id)
+        ).length;
+
         return {
           id: c.id,
           name: c.name,
