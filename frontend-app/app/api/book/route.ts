@@ -9,9 +9,6 @@ export async function POST(request: Request) {
       clientPhone,
       addressLine1,
       serviceType,
-      roomsCount,
-      bathroomsCount,
-      areaM2,
       price,
       date,
       startTime,
@@ -25,10 +22,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // Генерируем уникальный номер заказа, например BH-2608-492
+    // Генерируем уникальный номер заказа (например BH-2608-492)
     const datePrefix = new Date().toISOString().slice(2, 7).replace('-', '');
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     const orderNumber = `BH-${datePrefix}-${randomSuffix}`;
+
+    const slot = startTime ? `${startTime} — 14:00` : '10:00 — 14:00';
 
     const newOrder = await prisma.order.create({
       data: {
@@ -37,15 +36,11 @@ export async function POST(request: Request) {
         clientPhone: clientPhone.trim(),
         addressLine1: addressLine1.trim(),
         serviceType: serviceType || 'Стандартная уборка',
-        roomsCount: Number(roomsCount) || 1,
-        bathroomsCount: Number(bathroomsCount) || 1,
-        areaM2: Number(areaM2) || 45,
         price: Number(price) || 0,
         date: date ? new Date(date) : new Date(),
-        startTime: startTime || '10:00',
-        endTime: '13:00',
+        timeSlot: slot,
         status: 'NEW',
-        notes: notes ? `Онлайн-бронирование через сайт: ${notes}` : 'Онлайн-бронирование через сайт',
+        notes: notes ? `Онлайн-бронирование: ${notes}` : 'Онлайн-бронирование через сайт',
       },
     });
 
