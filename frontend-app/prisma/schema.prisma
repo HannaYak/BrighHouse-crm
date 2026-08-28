@@ -181,3 +181,25 @@ model PromoCode {
   expiresAt   DateTime?
   createdAt   DateTime  @default(now())
 }
+
+model CompanySettings {
+  id              Int      @id @default(1)
+  companyName     String   @default("BrightHouse Cleaning")
+  nip             String?  @default("")
+  phone           String?  @default("")
+  email           String?  @default("")
+  city            String?  @default("Warszawa")
+  address         String?  @default("")
+  instagram       String?  @default("@brighthouse.pl")
+  
+  // Банковские реквизиты для клиентов
+  bankName        String?  @default("Santander / mBank")
+  accountNumber   String?  @default("") // IBAN
+  blikPhone       String?  @default("") // Номер для перевода BLIK на телефон
+  recipientName   String?  @default("")
+
+  // Проценты выплат клинерам
+  cleanerRatePercent Float @default(40.0) // Ставка клинера (% от заказа по умолчанию)
+
+  updatedAt       DateTime @updatedAt
+}
