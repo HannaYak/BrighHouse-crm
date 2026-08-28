@@ -31,7 +31,7 @@ export default function MapDayPage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [filteredPoints, setFilteredPoints] = useState<MapPoint[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<MapPoint | null>(null);
-  
+
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,8 +52,8 @@ export default function MapDayPage() {
       const rawOrders = ordersRes.ok ? await ordersRes.json() : [];
       const rawCleaners = cleanersRes.ok ? await cleanersRes.json() : [];
 
-      setAllOrders(rawOrders);
-      setCleaners(rawCleaners);
+      setAllOrders(Array.isArray(rawOrders) ? rawOrders : []);
+      setCleaners(Array.isArray(rawCleaners) ? rawCleaners : []);
     } catch (err) {
       console.error('Ошибка загрузки данных карты:', err);
     } finally {
@@ -65,12 +65,15 @@ export default function MapDayPage() {
     fetchData();
   }, []);
 
-  // 2. Инициализация карты
+  // 2. Инициализация Leaflet только на клиенте
   useEffect(() => {
+    let isMounted = true;
+
     async function initLeaflet() {
-      if (typeof window !== 'undefined' && mapContainerRef.current && !mapInstanceRef.current) {
-        // @ts-ignore
-        const L = window.L || (await import('leaflet')).default;
+      if (typeof window === 'undefined' || !mapContainerRef.current || mapInstanceRef.current) return;
+
+      try {
+        const L = (await import('leaflet')).default;
 
         if (!document.getElementById('leaflet-css')) {
           const link = document.createElement('link');
@@ -80,19 +83,31 @@ export default function MapDayPage() {
           document.head.appendChild(link);
         }
 
+        if (!isMounted || !mapContainerRef.current) return;
+
         const map = L.map(mapContainerRef.current).setView([52.2297, 21.0122], 11);
-        
-        // Красивая светлая карта CartoDB
+
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
           attribution: '© OpenStreetMap & CartoDB',
-          maxZoom: 19
+          maxZoom: 19,
         }).addTo(map);
 
         markersLayerRef.current = L.layerGroup().addTo(map);
         mapInstanceRef.current = map;
+      } catch (e) {
+        console.error('Ошибка инициализации Leaflet:', e);
       }
     }
+
     initLeaflet();
+
+    return () => {
+      isMounted = false;
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
   }, []);
 
   // 3. Формирование точек и отрисовка
@@ -105,7 +120,6 @@ export default function MapDayPage() {
 
     const orderPoints: MapPoint[] = dayOrders.map((o) => {
       const base = districtCoordinates['Центр'];
-      // Если есть реальные координаты из БД — используем их. Иначе старый рандом.
       const lat = o.latitude || base.lat + (Math.random() - 0.5) * 0.08;
       const lng = o.longitude || base.lng + (Math.random() - 0.5) * 0.08;
       const assigned = o.assignedCleaners?.map((ac: any) => ac.cleaner?.name).join(', ');
@@ -113,9 +127,9 @@ export default function MapDayPage() {
       return {
         id: o.id || o.orderNumber,
         type: 'order',
-        title: `${o.orderNumber} — ${o.clientName}`,
-        subtitle: `⏱️ ${o.timeSlot || o.startTime} • 💰 ${o.price} zł • 👥 ${assigned || 'Не назначен'}`,
-        address: `${o.addressLine1}${o.addressLine2 ? ', ' + o.addressLine2 : ''}`,
+        title: `${o.orderNumber} — ${o.clientName || 'Клиент'}`,
+        subtitle: `⏱️ ${o.timeSlot || o.startTime || '10:00'} • 💰 ${o.price} zł • 👥 ${assigned || 'Не назначен'}`,
+        address: `${o.addressLine1 || ''}${o.addressLine2 ? ', ' + o.addressLine2 : ''}`,
         date: selectedDate,
         lat,
         lng,
@@ -132,8 +146,8 @@ export default function MapDayPage() {
         id: c.id,
         type: 'cleaner',
         title: `🙋‍♀️ ${c.name}`,
-        subtitle: `📍 Район: ${c.district} • ${c.phone}`,
-        address: `Базовый район: ${c.district}`,
+        subtitle: `📍 Район: ${c.district || 'Центр'} • ${c.phone || ''}`,
+        address: `Базовый район: ${c.district || 'Центр'}`,
         lat,
         lng,
       };
@@ -142,31 +156,29 @@ export default function MapDayPage() {
     const currentPoints = [...orderPoints, ...cleanerPoints];
     setFilteredPoints(currentPoints);
 
-    if (mapInstanceRef.current && markersLayerRef.current) {
-      // @ts-ignore
-      const L = window.L;
+    async function updateMarkers() {
+      if (typeof window === 'undefined' || !mapInstanceRef.current || !markersLayerRef.current) return;
+
+      const L = (await import('leaflet')).default;
       markersLayerRef.current.clearLayers();
-      
-      // ИСПРАВЛЕНИЕ ОШИБКИ: собираем координаты в массив перед созданием bounds
+
       const coordsToFit: [number, number][] = [];
 
       currentPoints.forEach((p) => {
         if (p.type === 'order') {
           coordsToFit.push([p.lat, p.lng]);
-          
-          // Круглый маркер со временем для заказов
-          const time = p.rawOrder?.startTime?.split(':')[0] || '10';
+
+          const time = (p.rawOrder?.timeSlot?.split(':')[0] || p.rawOrder?.startTime?.split(':')[0] || '10').trim();
           const icon = L.divIcon({
             html: `<div style="background-color: #2563eb; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${time}</div>`,
             className: '',
             iconSize: [28, 28],
-            iconAnchor: [14, 14]
+            iconAnchor: [14, 14],
           });
           const marker = L.marker([p.lat, p.lng], { icon }).addTo(markersLayerRef.current);
           marker.bindPopup(`<div style="font-family:sans-serif;"><b>${p.title}</b><br/>${p.subtitle}<br/>📍 ${p.address}</div>`);
           marker.on('click', () => setSelectedPoint(p));
         } else {
-          // Маленький зелёный кружок для клинеров
           const marker = L.circleMarker([p.lat, p.lng], {
             radius: 6,
             color: '#10b981',
@@ -178,7 +190,6 @@ export default function MapDayPage() {
         }
       });
 
-      // Передаем собранный массив координат в latLngBounds
       if (coordsToFit.length > 0) {
         const bounds = L.latLngBounds(coordsToFit);
         mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
@@ -186,6 +197,8 @@ export default function MapDayPage() {
         mapInstanceRef.current.setView([52.2297, 21.0122], 11);
       }
     }
+
+    updateMarkers();
   }, [selectedDate, allOrders, cleaners]);
 
   const handleEditClick = (point: MapPoint) => {
@@ -259,7 +272,7 @@ export default function MapDayPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] space-y-3 max-w-[1600px] mx-auto">
       {/* Панель управления и выбор даты */}
-      <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm">
+      <div className="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-xs">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-slate-800">🗺️ Карта дня (Логистика)</h1>
           <span className="text-xs text-slate-400">|</span>
@@ -298,9 +311,9 @@ export default function MapDayPage() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-3 gap-4 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-hidden">
         {/* Список заказов на день слева */}
-        <div className="col-span-1 bg-white border border-slate-200 rounded-2xl p-4 flex flex-col overflow-hidden shadow-sm">
+        <div className="lg:col-span-1 bg-white border border-slate-200 rounded-2xl p-4 flex flex-col overflow-hidden shadow-xs">
           <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-100">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               Заказы на {selectedDate}
@@ -312,7 +325,7 @@ export default function MapDayPage() {
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             {loading && <div className="text-center py-5 text-slate-400 text-xs">Загрузка...</div>}
-            
+
             {!loading && orderPointsList.length === 0 ? (
               <div className="text-center py-10 text-slate-400 text-xs border-2 border-dashed border-slate-100 rounded-xl">
                 Нет запланированных заказов
@@ -329,7 +342,7 @@ export default function MapDayPage() {
                   }}
                   className={`p-3 rounded-xl border cursor-pointer transition flex flex-col gap-1 ${
                     selectedPoint?.id === p.id && selectedPoint?.type === p.type
-                      ? 'border-brand-500 bg-brand-50/60 shadow-sm'
+                      ? 'border-brand-500 bg-brand-50/60 shadow-xs'
                       : 'border-slate-200 hover:border-slate-300 bg-slate-50/60'
                   }`}
                 >
@@ -348,7 +361,7 @@ export default function MapDayPage() {
                       e.stopPropagation();
                       handleEditClick(p);
                     }}
-                    className="mt-1 text-center bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold py-1.5 rounded-lg text-[11px] transition shadow-sm w-full"
+                    className="mt-1 text-center bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold py-1.5 rounded-lg text-[11px] transition shadow-xs w-full"
                   >
                     ✏️ Изменить / Назначить бригаду
                   </button>
@@ -359,7 +372,7 @@ export default function MapDayPage() {
         </div>
 
         {/* Интерактивная карта OpenStreetMap справа */}
-        <div className="col-span-2 bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden relative shadow-inner">
+        <div className="lg:col-span-2 bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden relative shadow-inner">
           <div ref={mapContainerRef} className="w-full h-full z-0" id="map" />
         </div>
       </div>
