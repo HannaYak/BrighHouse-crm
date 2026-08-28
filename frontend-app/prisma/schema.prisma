@@ -123,11 +123,12 @@ model Order {
 }
 
 model OrderCleaner {
-  orderId    String
-  cleanerId  Int
-  isAccepted Boolean @default(false)
-  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  cleaner    Cleaner @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
+  orderId      String
+  cleanerId    Int
+  isAccepted   Boolean @default(false)
+  reminderSent Boolean @default(false)
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cleaner      Cleaner @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
 
   @@id([orderId, cleanerId])
 }
@@ -213,13 +214,3 @@ model InventoryItem {
   createdAt   DateTime          @default(now())
 }
 
-model OrderCleaner {
-  orderId      String
-  cleanerId    Int
-  isAccepted   Boolean @default(false)
-  reminderSent Boolean @default(false) // <--- Добавляем флаг
-  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  cleaner      Cleaner @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
-
-  @@id([orderId, cleanerId])
-}
