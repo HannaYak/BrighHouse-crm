@@ -617,6 +617,29 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     </button>
   </>
 )}
+                   {form.id && (
+  <button
+    type="button"
+    onClick={async () => {
+      try {
+        const res = await fetch(`/api/orders/${form.id}/request-review`, { method: 'POST' });
+        const data = await res.json();
+        if (data.method === 'TELEGRAM_DIRECT') {
+          alert('⭐️ Запрос оценки и отзыва отправлен клиенту в Telegram!');
+        } else if (data.messageText) {
+          navigator.clipboard.writeText(data.messageText);
+          alert('📋 Текст сообщения с запросом отзыва скопирован в буфер обмена!');
+        }
+      } catch {
+        alert('Ошибка отправки');
+      }
+    }}
+    className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+    title="Запросить отзыв и оценку"
+  >
+    ⭐️ Отзыв
+  </button>
+)}
                     
                     {/* Кнопка отмены заказа */}
                     <button
