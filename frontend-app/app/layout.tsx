@@ -56,6 +56,12 @@ export default function RootLayout({
 >
   💬 Чат
 </Link>
+             <Link
+  href="/checklists"
+  className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+>
+  ✅ Чек-листы
+</Link>
   <Link
   href="/calculator"
   className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
