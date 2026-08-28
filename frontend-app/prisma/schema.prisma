@@ -203,3 +203,24 @@ model CompanySettings {
 
   updatedAt       DateTime @updatedAt
 }
+
+enum InventoryCategory {
+  CHEMISTRY     // Профессиональная химия
+  CONSUMABLE    // Расходники (губки, салфетки, перчатки)
+  EQUIPMENT     // Оборудование (пылесосы, пароочистители)
+  UNIFORM       // Форма / инвентарь
+}
+
+model InventoryItem {
+  id          String            @id @default(cuid())
+  name        String
+  category    InventoryCategory @default(CHEMISTRY)
+  quantity    Int               @default(0)
+  minQuantity Int               @default(5)       // Порог предупреждения об остатке
+  unit        String            @default("шт")     // шт, л, уп
+  location    String?           @default("Главный склад")
+  assignedTo  String?                              // Имя клинера, если техника на руках
+  notes       String?
+  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime          @default(now())
+}
