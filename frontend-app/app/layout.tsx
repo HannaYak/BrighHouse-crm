@@ -87,6 +87,12 @@ export default function RootLayout({
   👥 Клиенты
 </Link>
              <Link
+  href="/settings"
+  className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
+>
+  ⚙️ Настройки
+</Link>
+             <Link
                 href="/inventory"
                 className="px-3.5 py-1.5 text-xs font-bold rounded-lg text-slate-700 hover:bg-slate-100 transition"
               >
