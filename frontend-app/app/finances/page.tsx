@@ -2,15 +2,16 @@
 import React, { useState, useEffect } from 'react';
 
 export default function FinancesPage() {
-  const [data, setData] = useState<any>(null);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportMonth, setExportMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  const loadFinances = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/finances');
+      const res = await fetch('/api/orders');
       if (res.ok) {
-        setData(await res.json());
+        setOrders(await res.json());
       }
     } catch (e) {
       console.error(e);
@@ -20,128 +21,88 @@ export default function FinancesPage() {
   };
 
   useEffect(() => {
-    loadFinances();
+    loadData();
   }, []);
 
-  // Экспорт ведомости выплат и сводки в CSV (Excel-совместимый)
-  const exportToCSV = () => {
-    if (!data || !data.cleanerStats) return;
-
-    const rows = [
-      ['Отчет по финансам и выплатам BrightHouse CRM'],
-      [`Дата выгрузки: ${new Date().toLocaleDateString('ru-RU')}`],
-      [''],
-      ['Сводка показателей:'],
-      ['Выручка (выполненные заказы)', `${data.completedRevenue || 0} zł`],
-      ['Фонд оплаты труда (клинерам)', `${data.totalPayouts || 0} zł`],
-      ['Чистая прибыль компании', `${data.netProfit || 0} zł`],
-      ['Всего заказов', `${data.ordersCount || 0}`],
-      ['Выполненных уборок', `${data.completedCount || 0}`],
-      [''],
-      ['Ведомость по клинерам:'],
-      ['Имя клинера', 'Телефон', 'Telegram', 'Выполнено уборок', 'Сумма к выплате (zł)'],
-      ...data.cleanerStats.map((c: any) => [
-        `"${c.name}"`,
-        `"${c.phone || ''}"`,
-        `"${c.telegramHandle || ''}"`,
-        c.completedCount,
-        c.totalPayout,
-      ]),
-    ];
-
-    const csvContent = '\uFEFF' + rows.map(e => e.join(';')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `brighthouse_finances_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadCsv = () => {
+    window.open(`/api/export?month=${exportMonth}`, '_blank');
   };
 
-  if (loading) return <div className="p-10 text-center text-slate-500 text-xs">Загрузка финансового отчета...</div>;
+  const completedOrders = orders.filter((o: any) => o.status === 'COMPLETED');
+  const totalRevenue = completedOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+  const cleanerPayouts = Math.round(totalRevenue * 0.4);
+  const netProfit = totalRevenue - cleanerPayouts;
+
+  if (loading) return <div className="p-10 text-center text-slate-500 text-xs">Загрузка финансов...</div>;
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Заголовок и кнопка экспорта */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* Шапка с кнопкой экспорта */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">📊 Финансы и выплаты клинерам</h1>
-          <p className="text-xs text-slate-500">Сводка по выручке, расходам на оплату труда и чистой прибыли</p>
-        </div>
-        <button
-          onClick={exportToCSV}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition shadow-sm flex items-center gap-2"
-        >
-          📥 Экспорт в Excel / CSV
-        </button>
-      </div>
-
-      {/* Ключевые финансовые метрики */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Выручка (Завершенные)</p>
-          <p className="text-2xl font-extrabold text-slate-900 mt-1">{data?.completedRevenue?.toLocaleString() || 0} zł</p>
-          <p className="text-[11px] text-emerald-600 mt-1 font-semibold">{data?.completedCount} выполненных уборок</p>
+          <h1 className="text-xl font-bold text-slate-900">📊 Финансы и P&L</h1>
+          <p className="text-xs text-slate-500">Выручка, выплаты клинерам и чистая прибыль компании</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Выплаты клинерам</p>
-          <p className="text-2xl font-extrabold text-amber-600 mt-1">{data?.totalPayouts?.toLocaleString() || 0} zł</p>
-          <p className="text-[11px] text-slate-500 mt-1">Фонд оплаты труда</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Чистая прибыль</p>
-          <p className="text-2xl font-extrabold text-brand-600 mt-1">{data?.netProfit?.toLocaleString() || 0} zł</p>
-          <p className="text-[11px] text-emerald-600 mt-1 font-semibold">Остаток компании</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Маржинальность</p>
-          <p className="text-2xl font-extrabold text-slate-900 mt-1">
-            {data?.completedRevenue ? Math.round((data.netProfit / data.completedRevenue) * 100) : 0}%
-          </p>
-          <p className="text-[11px] text-slate-500 mt-1">Рентабельность заказов</p>
+        {/* Блок выгрузки CSV/Excel */}
+        <div className="flex items-center gap-2">
+          <input
+            type="month"
+            value={exportMonth}
+            onChange={(e) => setExportMonth(e.target.value)}
+            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 shadow-xs outline-none"
+          />
+          <button
+            onClick={handleDownloadCsv}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-xs flex items-center gap-1.5"
+          >
+            📥 Скачать отчет (Excel/CSV)
+          </button>
         </div>
       </div>
 
-      {/* Ведомость начислений каждому клинеру */}
+      {/* KPI карточки */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Общая выручка</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">{totalRevenue.toLocaleString()} zł</div>
+          <span className="text-[11px] text-slate-500 mt-1 block">{completedOrders.length} закрытых заказов</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Выплаты клинерам (~40%)</span>
+          <div className="text-2xl font-extrabold text-amber-600 mt-1">{cleanerPayouts.toLocaleString()} zł</div>
+          <span className="text-[11px] text-slate-500 mt-1 block">Фонд оплаты труда</span>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Чистая прибыль</span>
+          <div className="text-2xl font-extrabold text-emerald-600 mt-1">{netProfit.toLocaleString()} zł</div>
+          <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">Маржа ~60%</span>
+        </div>
+      </div>
+
+      {/* Таблица последних заказов */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-          <h2 className="text-sm font-bold text-slate-900">👥 Расчет зарплат клинеров к выплате</h2>
-          <span className="text-[11px] text-slate-500">Авторасчет по закрытым нарядам</span>
+        <div className="p-4 border-b border-slate-100 bg-slate-50">
+          <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">История закрытых уборок</h2>
         </div>
-
         <div className="divide-y divide-slate-100">
-          {data?.cleanerStats?.map((cleaner: any) => (
-            <div key={cleaner.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          {completedOrders.map((o: any) => (
+            <div key={o.id} className="p-4 flex justify-between items-center text-xs">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-xs text-slate-900">{cleaner.name}</span>
-                  {cleaner.telegramHandle && (
-                    <span className="text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded font-semibold">
-                      {cleaner.telegramHandle}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Тел: {cleaner.phone || 'Не указан'} • Выполнено уборок: <b>{cleaner.completedCount}</b>
-                </p>
+                <span className="font-bold text-slate-900">{o.clientName || 'Без имени'}</span>
+                <span className="text-slate-400 ml-2 font-mono">{o.orderNumber}</span>
+                <p className="text-[11px] text-slate-500 mt-0.5">📍 {o.addressLine1}</p>
               </div>
-
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">К выплате</span>
-                  <span className="text-sm font-extrabold text-emerald-600">{cleaner.totalPayout} zł</span>
-                </div>
+              <div className="text-right">
+                <span className="font-extrabold text-slate-900 block">{o.price} zł</span>
+                <span className="text-[10px] text-slate-400">Клинеру: {Math.round((o.price || 0) * 0.4)} zł</span>
               </div>
             </div>
           ))}
-
-          {(!data?.cleanerStats || data.cleanerStats.length === 0) && (
-            <div className="p-8 text-center text-xs text-slate-400">Клинеры еще не добавлены в систему.</div>
+          {completedOrders.length === 0 && (
+            <div className="p-8 text-center text-xs text-slate-400">Пока нет завершенных уборок.</div>
           )}
         </div>
       </div>
