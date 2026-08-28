@@ -3,23 +3,23 @@ import { prisma } from '../../../lib/prisma';
 
 export async function GET() {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const now = new Date();
+    
+    // Границы сегодняшнего дня
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
-    const [
-      ordersToday,
-      newOrdersCount,
-      inProgressCount,
-      allCompletedOrders,
-      cleaners,
-    ] = await Promise.all([
+    // Границы текущего месяца
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const [todayOrders, monthOrders, completedMonthOrders, cleaners] = await Promise.all([
+      // Заказы на сегодня
       prisma.order.findMany({
         where: {
           date: {
-            gte: today,
-            lt: tomorrow,
+            gte: todayStart,
+            lt: todayEnd,
           },
         },
         include: {
@@ -29,39 +29,70 @@ export async function GET() {
         },
         orderBy: { timeSlot: 'asc' },
       }),
-      prisma.order.count({ where: { status: 'NEW' } }),
-      prisma.order.count({ where: { status: 'IN_PROGRESS' } }),
+
+      // Все заказы за текущий месяц
       prisma.order.findMany({
-        where: { status: 'COMPLETED' },
+        where: {
+          date: {
+            gte: monthStart,
+            lte: monthEnd,
+          },
+        },
+      }),
+
+      // Только выполненные заказы за месяц для расчета выручки и среднего чека
+      prisma.order.findMany({
+        where: {
+          status: 'COMPLETED',
+          date: {
+            gte: monthStart,
+            lte: monthEnd,
+          },
+        },
         select: { price: true },
       }),
+
+      // Список всех активных клинеров вместе с назначенными заказами для рейтинга
       prisma.cleaner.findMany({
         where: { isActive: true },
-        select: { id: true, name: true, district: true, rating: true },
+        include: {
+          assignedOrders: {
+            include: { order: true },
+          },
+        },
       }),
     ]);
 
-    const totalRevenue = allCompletedOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-    const todayRevenue = ordersToday
-      .filter(o => o.status === 'COMPLETED')
-      .reduce((sum, o) => sum + (o.price || 0), 0);
+    // Расчет финансовых KPI
+    const totalRevenueMonth = completedMonthOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+    const completedMonthCount = completedMonthOrders.length;
+    const avgCheck = completedMonthCount > 0 ? Math.round(totalRevenueMonth / completedMonthCount) : 0;
+
+    // Формирование рейтинга клинеров
+    const cleanerPerformance = cleaners
+      .map((c) => {
+        const completedCount = c.assignedOrders.filter((ao) => ao.order?.status === 'COMPLETED').length;
+        return {
+          id: c.id,
+          name: c.name,
+          district: c.district || 'Район не указан',
+          isLinked: Boolean(c.telegramChatId),
+          completedCount,
+        };
+      })
+      .sort((a, b) => b.completedCount - a.completedCount);
 
     return NextResponse.json({
-      todayOrders: ordersToday,
-      counts: {
-        todayTotal: ordersToday.length,
-        newOrders: newOrdersCount,
-        inProgress: inProgressCount,
-        activeCleaners: cleaners.length,
-      },
-      finance: {
-        totalRevenue,
-        todayRevenue,
-      },
-      cleaners,
+      totalRevenueMonth,
+      completedMonthCount,
+      avgCheck,
+      todayCount: todayOrders.length,
+      monthCount: monthOrders.length,
+      todayOrders,
+      cleanerPerformance,
     });
   } catch (error) {
-    console.error('Ошибка загрузки дашборда:', error);
+    console.error('Ошибка загрузки данных дашборда:', error);
     return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
   }
 }
