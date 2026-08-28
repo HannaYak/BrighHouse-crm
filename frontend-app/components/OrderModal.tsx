@@ -424,6 +424,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-semibold"
                   />
                 </div>
+                
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Кв / Офис</label>
                   <input
@@ -595,6 +596,29 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     >
       💬 В Telegram
     </button>
+    {form.id && form.assignedCleaners && form.assignedCleaners.length > 0 && (
+  <button
+    type="button"
+    onClick={async () => {
+      try {
+        const res = await fetch(`/api/orders/${form.id}/dispatch-cleaners`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          const sentCount = data.results.filter((r: any) => r.status === 'SENT').length;
+          alert(`📲 Наряд отправлен клинерам в Telegram (${sentCount}/${data.results.length})!`);
+        } else {
+          alert(data.error || 'Ошибка отправки');
+        }
+      } catch {
+        alert('Ошибка соединения с сервером');
+      }
+    }}
+    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+    title="Отправить наряд в Telegram клинерам"
+  >
+    📲 Бригаде
+  </button>
+)}
 
     {/* Кнопка отмены заказа */}
     <button
