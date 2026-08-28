@@ -10,7 +10,7 @@ const COLUMNS = [
   { id: 'COMPLETED', title: '🏆 Завершены', color: 'bg-purple-50', borderColor: 'border-purple-200' },
 ];
 
-// Твои шаблоны для быстрых ответов
+// Шаблоны для быстрых ответов
 const QUICK_RESPONSES = [
   {
     title: '💰 Прейскурант и условия (Стандарт)',
@@ -72,12 +72,13 @@ export default function KanbanPage() {
   const sendToCleaner = async (orderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`/api/orders/${orderId}/send-to-cleaner`, {
+      const res = await fetch(`/api/orders/${orderId}/dispatch-cleaners`, {
         method: 'POST',
       });
       const data = await res.json();
-      if (res.ok) {
-        alert(`✅ Наряд успешно отправлен в Telegram (клинеров: ${data.sentTo})`);
+      if (res.ok && data.success) {
+        const sentCount = data.results?.filter((r: any) => r.status === 'SENT').length || 0;
+        alert(`✅ Наряд успешно отправлен в Telegram клинерам (${sentCount})`);
       } else {
         alert(`⚠️ Ошибка: ${data.error || 'Не удалось отправить'}`);
       }
@@ -148,7 +149,7 @@ export default function KanbanPage() {
         <div className="flex gap-2">
           <button
             onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
-            className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm flex items-center gap-1"
+            className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1"
           >
             ⚡ Шаблоны ответов
           </button>
@@ -157,7 +158,7 @@ export default function KanbanPage() {
               setEditingOrder(null);
               setIsModalOpen(true);
             }}
-            className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-sm"
+            className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs"
           >
             + Создать заказ
           </button>
@@ -193,15 +194,29 @@ export default function KanbanPage() {
                         setEditingOrder(order);
                         setIsModalOpen(true);
                       }}
-                      className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-brand-300 hover:shadow-md transition"
+                      className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs cursor-grab active:cursor-grabbing hover:border-brand-300 hover:shadow-md transition"
                     >
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">
                           {order.orderNumber}
                         </span>
-                        <span className="text-[10px] font-extrabold text-emerald-600">
-                          {order.price} zł
-                        </span>
+                        
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-extrabold text-emerald-600">
+                            {order.price} zł
+                          </span>
+                          {/* Кнопка быстрого открытия счета */}
+                          <a
+                            href={`/api/orders/${order.id}/invoice`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold transition"
+                            title="Открыть счет / PDF"
+                          >
+                            📄
+                          </a>
+                        </div>
                       </div>
 
                       <div className="font-bold text-sm text-slate-900 mb-0.5">
@@ -267,7 +282,7 @@ export default function KanbanPage() {
                   <div className="text-[10px] text-slate-500 line-clamp-2">{tmpl.text}</div>
                   <button
                     onClick={() => copyToClipboard(tmpl.text, tmpl.title)}
-                    className="absolute inset-0 w-full h-full bg-white/90 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-bold text-amber-600 rounded-xl backdrop-blur-sm"
+                    className="absolute inset-0 w-full h-full bg-white/90 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-bold text-amber-600 rounded-xl backdrop-blur-xs"
                   >
                     Скопировать текст
                   </button>
