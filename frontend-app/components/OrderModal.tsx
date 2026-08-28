@@ -63,7 +63,7 @@ const serviceTitles: Record<ServiceType, string> = {
 
 export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
   if (!isOpen) return null;
-  
+
   const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
   const [form, setForm] = useState<OrderDetail>(
     order || {
@@ -111,8 +111,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   // Загрузка актуального прайс-листа из Настроек
   useEffect(() => {
     fetch('/api/settings/addons')
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (Array.isArray(data)) {
           const rates: Record<string, { price: number; durationMins: number }> = {};
           data.forEach((item: any) => {
@@ -234,7 +234,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-6xl h-[92vh] max-h-[880px] flex flex-col overflow-hidden">
-        
         {/* Шапка */}
         <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
@@ -252,10 +251,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
         {/* Двухколоночный контент */}
         <div className="flex-1 flex overflow-hidden">
-          
           {/* Левая часть: Тариф, Параметры, Допы и Химчистка (55%) */}
           <div className="w-[55%] p-6 border-r border-slate-100 overflow-y-auto space-y-4">
-            
             {/* Выбор тарифа */}
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Тариф уборки</label>
@@ -424,7 +421,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-semibold"
                   />
                 </div>
-                
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Кв / Офис</label>
                   <input
@@ -441,7 +437,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
           {/* Правая часть: Тайминг, Бригада, Напарники, Итог (45%) */}
           <div className="w-[45%] p-6 flex flex-col justify-between bg-slate-50/40 overflow-y-auto space-y-4">
             <div className="space-y-4">
-              
               {/* Дата, Время старта и Время финиша (Авто) */}
               <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                 <div>
@@ -485,7 +480,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               )}
 
-              {/* Назначение клинеров (Умный фильтр) */}
+              {/* Назначение клинеров */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase">Бригада ({form.assignedCleaners.length})</label>
@@ -549,7 +544,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
 
               {/* Кнопки управления заказом */}
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex items-center gap-2 pt-2 flex-wrap">
                 {form.id && (
                   <>
                     {/* Кнопка открытия счета / PDF */}
@@ -562,110 +557,78 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       📄 Счет
                     </button>
 
-                    {form.id && (
-  <>
-    {/* Кнопка открытия счета / PDF */}
-    <button
-      type="button"
-      onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
-      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
-      title="Печать счета / Rachunek"
-    >
-      📄 Счет
-    </button>
+                    {/* Отправка счета клиенту в Telegram */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/orders/${form.id}/send-invoice`, { method: 'POST' });
+                          const data = await res.json();
+                          if (data.method === 'TELEGRAM_DIRECT') {
+                            alert('✅ Счет успешно отправлен клиенту в Telegram!');
+                          } else if (data.messageText) {
+                            navigator.clipboard.writeText(data.messageText);
+                            alert('📋 Чат клиента не найден, но текст счета с реквизитами скопирован в буфер!');
+                          }
+                        } catch {
+                          alert('Ошибка отправки счета');
+                        }
+                      }}
+                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                      title="Отправить счет клиенту"
+                    >
+                      💬 В Telegram
+                    </button>
 
-    {/* Кнопка быстрой отправки счета клиенту */}
-    <button
-      type="button"
-      onClick={async () => {
-        try {
-          const res = await fetch(`/api/orders/${form.id}/send-invoice`, { method: 'POST' });
-          const data = await res.json();
-          if (data.method === 'TELEGRAM_DIRECT') {
-            alert('✅ Счет успешно отправлен клиенту в Telegram!');
-          } else if (data.messageText) {
-            navigator.clipboard.writeText(data.messageText);
-            alert('📋 Чат клиента не найден, но текст счета с реквизитами скопирован в буфер обмена!');
-          }
-        } catch {
-          alert('Ошибка отправки счета');
-        }
-      }}
-      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
-      title="Отправить счет клиенту"
-    >
-      💬 В Telegram
-    </button>
-    {form.id && form.assignedCleaners && form.assignedCleaners.length > 0 && (
-  <button
-    type="button"
-    onClick={async () => {
-      try {
-        const res = await fetch(`/api/orders/${form.id}/dispatch-cleaners`, { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-          const sentCount = data.results.filter((r: any) => r.status === 'SENT').length;
-          alert(`📲 Наряд отправлен клинерам в Telegram (${sentCount}/${data.results.length})!`);
-        } else {
-          alert(data.error || 'Ошибка отправки');
-        }
-      } catch {
-        alert('Ошибка соединения с сервером');
-      }
-    }}
-    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
-    title="Отправить наряд в Telegram клинерам"
-  >
-    📲 Бригаде
-  </button>
-)}
+                    {/* Отправка наряда клинерам */}
+                    {form.assignedCleaners && form.assignedCleaners.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/orders/${form.id}/dispatch-cleaners`, { method: 'POST' });
+                            const data = await res.json();
+                            if (data.success) {
+                              const sentCount = data.results.filter((r: any) => r.status === 'SENT').length;
+                              alert(`📲 Наряд отправлен клинерам (${sentCount}/${data.results.length})!`);
+                            } else {
+                              alert(data.error || 'Ошибка отправки');
+                            }
+                          } catch {
+                            alert('Ошибка соединения с сервером');
+                          }
+                        }}
+                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                        title="Отправить наряд в Telegram клинерам"
+                      >
+                        📲 Бригаде
+                      </button>
+                    )}
 
-    {/* Кнопка отмены заказа */}
-    <button
-      type="button"
-      onClick={async () => {
-        const reason = prompt('Укажите причину отмены заказа:');
-        if (reason !== null) {
-          await fetch('/api/orders', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: form.id, status: 'CANCELLED', cancelReason: reason }),
-          });
-          onClose();
-          window.location.reload();
-        }
-      }}
-      className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-3 rounded-xl text-xs transition"
-    >
-      ❌ Отменить
-    </button>
-  </>
-)}
-                   {form.id && (
-  <button
-    type="button"
-    onClick={async () => {
-      try {
-        const res = await fetch(`/api/orders/${form.id}/request-review`, { method: 'POST' });
-        const data = await res.json();
-        if (data.method === 'TELEGRAM_DIRECT') {
-          alert('⭐️ Запрос оценки и отзыва отправлен клиенту в Telegram!');
-        } else if (data.messageText) {
-          navigator.clipboard.writeText(data.messageText);
-          alert('📋 Текст сообщения с запросом отзыва скопирован в буфер обмена!');
-        }
-      } catch {
-        alert('Ошибка отправки');
-      }
-    }}
-    className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
-    title="Запросить отзыв и оценку"
-  >
-    ⭐️ Отзыв
-  </button>
-)}
-                    
-                    {/* Кнопка отмены заказа */}
+                    {/* Запрос отзыва */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/orders/${form.id}/request-review`, { method: 'POST' });
+                          const data = await res.json();
+                          if (data.method === 'TELEGRAM_DIRECT') {
+                            alert('⭐️ Запрос отзыва отправлен клиенту в Telegram!');
+                          } else if (data.messageText) {
+                            navigator.clipboard.writeText(data.messageText);
+                            alert('📋 Текст сообщения с запросом отзыва скопирован в буфер!');
+                          }
+                        } catch {
+                          alert('Ошибка отправки');
+                        }
+                      }}
+                      className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                      title="Запросить отзыв и оценку"
+                    >
+                      ⭐️ Отзыв
+                    </button>
+
+                    {/* Отмена заказа */}
                     <button
                       type="button"
                       onClick={async () => {
@@ -687,7 +650,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   </>
                 )}
 
-                {/* Кнопка сохранения */}
+                {/* Сохранение */}
                 <button
                   type="button"
                   onClick={() => {
