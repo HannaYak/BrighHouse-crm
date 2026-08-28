@@ -20,7 +20,7 @@ const EXTRA_SERVICES: ExtraService[] = [
   { id: 'microwave', name: '📻 Микроволновка', price: 25 },
   { id: 'hood', name: '💨 Вытяжка', price: 40 },
   { id: 'dishes', name: '🍽 Посуда вручную', price: 40 },
-  { id: 'balcony', name: '🌿 Уборка балкона / лоджии', price: 60 },
+  { id: 'balcony', name: '🌿 Балкон / лоджия', price: 60 },
   { id: 'ironing', name: '👔 Глажка (за 1 час)', price: 50 },
   { id: 'pets', name: '🐾 Доплата за шерсть', price: 30 },
 ];
@@ -40,23 +40,25 @@ const DRY_CLEAN_ITEMS: DryCleanItem[] = [
 export default function CalculatorPage() {
   const router = useRouter();
 
-  // Режим: Уборка или Химчистка
   const [activeTab, setActiveTab] = useState<'CLEANING' | 'DRY_CLEANING'>('CLEANING');
 
-  // 4 вида уборок
   const [cleaningType, setCleaningType] = useState<'STANDARD' | 'STANDARD_PLUS' | 'GENERAL' | 'POST_CONSTRUCTION'>('STANDARD');
   const [rooms, setRooms] = useState<number>(2);
   const [bathrooms, setBathrooms] = useState<number>(1);
   const [area, setArea] = useState<number>(50);
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
   
-  // Мытье окон раздельно
   const [windowCount, setWindowCount] = useState<number>(0);
   const [balconyWindowCount, setBalconyWindowCount] = useState<number>(0);
 
-  // Химчистка
   const [dryCleanCounts, setDryCleanCounts] = useState<{ [key: string]: number }>({});
   const [carpetArea, setCarpetArea] = useState<number>(10);
+
+  // Промокоды
+  const [promoInput, setPromoInput] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountAmount: number } | null>(null);
+  const [promoError, setPromoError] = useState('');
+  const [checkingPromo, setCheckingPromo] = useState(false);
 
   // Данные клиента
   const [clientName, setClientName] = useState('');
@@ -67,40 +69,25 @@ export default function CalculatorPage() {
   const [copySuccess, setCopySuccess] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // Расчет базовой стоимости уборки
   const calculateBaseCleaningPrice = () => {
-    if (cleaningType === 'STANDARD') {
-      return 160 + (rooms - 1) * 35 + (bathrooms - 1) * 45;
-    }
-    if (cleaningType === 'STANDARD_PLUS') {
-      return 210 + (rooms - 1) * 45 + (bathrooms - 1) * 55;
-    }
-    if (cleaningType === 'GENERAL') {
-      return 280 + (rooms - 1) * 65 + (bathrooms - 1) * 75;
-    }
-    if (cleaningType === 'POST_CONSTRUCTION') {
-      return Math.max(380, area * 8);
-    }
+    if (cleaningType === 'STANDARD') return 160 + (rooms - 1) * 35 + (bathrooms - 1) * 45;
+    if (cleaningType === 'STANDARD_PLUS') return 210 + (rooms - 1) * 45 + (bathrooms - 1) * 55;
+    if (cleaningType === 'GENERAL') return 280 + (rooms - 1) * 65 + (bathrooms - 1) * 75;
+    if (cleaningType === 'POST_CONSTRUCTION') return Math.max(380, area * 8);
     return 0;
   };
 
-  // Расчет допов + окон
   const calculateExtrasPrice = () => {
     const fixedExtras = selectedExtras.reduce((sum, extraId) => {
       const item = EXTRA_SERVICES.find(e => e.id === extraId);
       return sum + (item ? item.price : 0);
     }, 0);
-
-    const windowsTotal = (windowCount * 35) + (balconyWindowCount * 45);
-    return fixedExtras + windowsTotal;
+    return fixedExtras + (windowCount * 35) + (balconyWindowCount * 45);
   };
 
-  // Расчет химчистки
   const calculateDryCleanPrice = () => {
     return Object.entries(dryCleanCounts).reduce((sum, [id, count]) => {
-      if (id === 'carpet') {
-        return sum + (count > 0 ? carpetArea * 25 : 0);
-      }
+      if (id === 'carpet') return sum + (count > 0 ? carpetArea * 25 : 0);
       const item = DRY_CLEAN_ITEMS.find(e => e.id === id);
       return sum + (item ? item.price * count : 0);
     }, 0);
@@ -109,7 +96,9 @@ export default function CalculatorPage() {
   const cleaningBase = calculateBaseCleaningPrice();
   const cleaningExtras = calculateExtrasPrice();
   const dryCleanTotal = calculateDryCleanPrice();
-  const grandTotal = cleaningBase + cleaningExtras + dryCleanTotal;
+  const subTotal = cleaningBase + cleaningExtras + dryCleanTotal;
+  const discountAmount = appliedPromo ? appliedPromo.discountAmount : 0;
+  const grandTotal = Math.max(0, subTotal - discountAmount);
 
   const toggleExtra = (id: string) => {
     setSelectedExtras(prev =>
@@ -130,6 +119,37 @@ export default function CalculatorPage() {
     });
   };
 
+  const applyPromoCode = async () => {
+    if (!promoInput.trim()) return;
+    setCheckingPromo(true);
+    setPromoError('');
+    try {
+      const res = await fetch('/api/discounts/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: promoInput.trim(), orderSum: subTotal }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAppliedPromo({ code: data.code, discountAmount: data.discountAmount });
+        setPromoError('');
+      } else {
+        setPromoError(data.error || 'Недействительный промокод');
+        setAppliedPromo(null);
+      }
+    } catch {
+      setPromoError('Ошибка при проверке промокода');
+    } finally {
+      setCheckingPromo(false);
+    }
+  };
+
+  const removePromo = () => {
+    setAppliedPromo(null);
+    setPromoInput('');
+    setPromoError('');
+  };
+
   const getTypeNameRu = () => {
     if (cleaningType === 'STANDARD') return 'Стандартная уборка';
     if (cleaningType === 'STANDARD_PLUS') return 'Стандарт+ (Освежающая + фасады/техника)';
@@ -137,21 +157,15 @@ export default function CalculatorPage() {
     return 'Уборка после ремонта';
   };
 
-  // Генерация текста КП для клиента
   const generateOfferText = () => {
     const extrasLines: string[] = [];
-
     selectedExtras.forEach(id => {
       const item = EXTRA_SERVICES.find(e => e.id === id);
       if (item) extrasLines.push(`• ${item.name} — ${item.price} zł`);
     });
 
-    if (windowCount > 0) {
-      extrasLines.push(`• 🪟 Мытье стандартных окон (${windowCount} шт.) — ${windowCount * 35} zł`);
-    }
-    if (balconyWindowCount > 0) {
-      extrasLines.push(`• 🚪 Мытье балконных окон/дверей (${balconyWindowCount} шт.) — ${balconyWindowCount * 45} zł`);
-    }
+    if (windowCount > 0) extrasLines.push(`• 🪟 Мытье стандартных окон (${windowCount} шт.) — ${windowCount * 35} zł`);
+    if (balconyWindowCount > 0) extrasLines.push(`• 🚪 Мытье балконных окон/дверей (${balconyWindowCount} шт.) — ${balconyWindowCount * 45} zł`);
 
     const dryCleanList = Object.entries(dryCleanCounts)
       .map(([id, count]) => {
@@ -168,12 +182,11 @@ export default function CalculatorPage() {
       text += `✨ <b>${getTypeNameRu()}</b> (${rooms} комн., ${bathrooms} санузел${bathrooms > 1 ? 'а' : ''}${area ? `, ~${area} м²` : ''}) — <b>${cleaningBase} zł</b>\n`;
     }
 
-    if (extrasLines.length > 0) {
-      text += `\nДополнительные услуги:\n${extrasLines.join('\n')}\n`;
-    }
+    if (extrasLines.length > 0) text += `\nДополнительные услуги:\n${extrasLines.join('\n')}\n`;
+    if (dryCleanList) text += `\n🛋 Профессиональная экстракторная химчистка:\n${dryCleanList}\n`;
 
-    if (dryCleanList) {
-      text += `\n🛋 Профессиональная экстракторная химчистка:\n${dryCleanList}\n`;
+    if (appliedPromo) {
+      text += `\n🏷 Скидка по промокоду (${appliedPromo.code}): -${appliedPromo.discountAmount} zł\n`;
     }
 
     text += `\n💰 <b>Итоговая стоимость: ${grandTotal} zł</b>\n\nВ стоимость включен весь профессиональный инвентарь, немецкая химия и оборудование. Оплата производится после завершения работы и проверки качества.\n\nПодскажите, пожалуйста, какой день и время для вас будут наиболее удобны? ☺️`;
@@ -192,16 +205,15 @@ export default function CalculatorPage() {
     setCreating(true);
     try {
       let mainService = getTypeNameRu();
-      if (dryCleanTotal > 0 && cleaningBase === 0) {
-        mainService = 'Химчистка мебели';
-      } else if (dryCleanTotal > 0 && cleaningBase > 0) {
-        mainService = `${getTypeNameRu()} + Химчистка`;
-      }
+      if (dryCleanTotal > 0 && cleaningBase === 0) mainService = 'Химчистка мебели';
+      else if (dryCleanTotal > 0 && cleaningBase > 0) mainService = `${getTypeNameRu()} + Химчистка`;
 
       const windowsNote = [
         windowCount > 0 ? `Окон станд: ${windowCount}` : '',
         balconyWindowCount > 0 ? `Балк. окон: ${balconyWindowCount}` : ''
       ].filter(Boolean).join(', ');
+
+      const promoNote = appliedPromo ? `Промокод: ${appliedPromo.code} (-${appliedPromo.discountAmount} zł)` : '';
 
       const orderPayload = {
         clientName: clientName || 'Клиент из калькулятора',
@@ -211,7 +223,7 @@ export default function CalculatorPage() {
         price: grandTotal,
         date: new Date(date).toISOString(),
         status: 'NEW',
-        notes: `Сформировано калькулятором. Допы: ${selectedExtras.join(', ')}. ${windowsNote}. Химчистка: ${Object.keys(dryCleanCounts).join(', ')}`,
+        notes: `Сформировано калькулятором. Допы: ${selectedExtras.join(', ')}. ${windowsNote}. Химчистка: ${Object.keys(dryCleanCounts).join(', ')}. ${promoNote}`,
       };
 
       const res = await fetch('/api/orders', {
@@ -220,11 +232,8 @@ export default function CalculatorPage() {
         body: JSON.stringify(orderPayload),
       });
 
-      if (res.ok) {
-        router.push('/kanban');
-      } else {
-        alert('Не удалось создать заказ');
-      }
+      if (res.ok) router.push('/kanban');
+      else alert('Не удалось создать заказ');
     } catch (e) {
       console.error(e);
       alert('Ошибка соединения');
@@ -237,13 +246,11 @@ export default function CalculatorPage() {
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
       <div>
         <h1 className="text-xl font-bold text-slate-900">🧮 Умный калькулятор (Уборка + Химчистка)</h1>
-        <p className="text-xs text-slate-500">4 вида уборки, раздельное мытье окон, химчистка, расчет сметы и создание заказа</p>
+        <p className="text-xs text-slate-500">4 вида уборки, раздельное мытье окон, промокоды, химчистка и создание заказа</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Левая колонка: Настройка */}
         <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-          {/* Переключатель вкладок */}
           <div className="flex bg-slate-100 p-1 rounded-xl">
             <button
               onClick={() => setActiveTab('CLEANING')}
@@ -263,7 +270,6 @@ export default function CalculatorPage() {
             </button>
           </div>
 
-          {/* Вкладка 1: Уборка */}
           {activeTab === 'CLEANING' && (
             <div className="space-y-6">
               <div>
@@ -293,7 +299,6 @@ export default function CalculatorPage() {
                 </div>
               </div>
 
-              {/* Параметры квартиры */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Комнаты</label>
@@ -324,7 +329,6 @@ export default function CalculatorPage() {
                 </div>
               </div>
 
-              {/* Блок мытья окон (Обычные 35 zł / Балконные 45 zł) */}
               <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl space-y-3">
                 <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider block">
                   🪟 Мытье окон
@@ -356,7 +360,6 @@ export default function CalculatorPage() {
                 </div>
               </div>
 
-              {/* Дополнительные опции уборки */}
               <div>
                 <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
                   Дополнительные опции
@@ -384,7 +387,6 @@ export default function CalculatorPage() {
             </div>
           )}
 
-          {/* Вкладка 2: Химчистка */}
           {activeTab === 'DRY_CLEANING' && (
             <div className="space-y-4">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
@@ -402,19 +404,9 @@ export default function CalculatorPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => updateDryCleanCount(item.id, -1)}
-                          className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-700"
-                        >
-                          -
-                        </button>
+                        <button onClick={() => updateDryCleanCount(item.id, -1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-700">-</button>
                         <span className="w-6 text-center font-bold text-xs text-slate-900">{count}</span>
-                        <button
-                          onClick={() => updateDryCleanCount(item.id, 1)}
-                          className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-700"
-                        >
-                          +
-                        </button>
+                        <button onClick={() => updateDryCleanCount(item.id, 1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-700">+</button>
                       </div>
                     </div>
                   );
@@ -436,18 +428,60 @@ export default function CalculatorPage() {
           )}
         </div>
 
-        {/* Правая колонка: Итог, смета и создание */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-md">
+          {/* Плашка суммы */}
+          <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-md space-y-2">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Итоговая смета</span>
-            <div className="flex items-baseline gap-2 mt-1">
+            <div className="flex items-baseline gap-2">
               <span className="text-3xl font-extrabold text-emerald-400">{grandTotal} zł</span>
-              <span className="text-xs text-slate-400">
-                (Уборка: {cleaningBase + cleaningExtras} zł | Химчистка: {dryCleanTotal} zł)
-              </span>
+              {appliedPromo && (
+                <span className="text-xs text-slate-400 line-through">{subTotal} zł</span>
+              )}
             </div>
+            {appliedPromo && (
+              <div className="text-xs text-emerald-400 font-semibold">
+                Скидка по промокоду ({appliedPromo.code}): -{appliedPromo.discountAmount} zł
+              </div>
+            )}
           </div>
 
+          {/* Применение промокода */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-2">
+            <label className="text-xs font-bold text-slate-800 block">🏷 Промокод на скидку</label>
+            {!appliedPromo ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ввести промокод..."
+                  value={promoInput}
+                  onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 uppercase"
+                />
+                <button
+                  onClick={applyPromoCode}
+                  disabled={checkingPromo || !promoInput.trim()}
+                  className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs transition"
+                >
+                  {checkingPromo ? '...' : 'Применить'}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
+                <div className="text-xs font-bold text-emerald-800">
+                  ✓ {appliedPromo.code} (-{appliedPromo.discountAmount} zł)
+                </div>
+                <button
+                  onClick={removePromo}
+                  className="text-xs text-rose-600 font-bold hover:underline"
+                >
+                  Отменить
+                </button>
+              </div>
+            )}
+            {promoError && <p className="text-[11px] text-rose-600 font-semibold">{promoError}</p>}
+          </div>
+
+          {/* Превью ответа */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-slate-800">💬 Ответ для клиента в мессенджер</span>
@@ -464,6 +498,7 @@ export default function CalculatorPage() {
             </div>
           </div>
 
+          {/* Быстрое создание */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
             <span className="text-xs font-bold text-slate-800 block">⚡ Создать заказ в CRM</span>
             <div className="space-y-2">
