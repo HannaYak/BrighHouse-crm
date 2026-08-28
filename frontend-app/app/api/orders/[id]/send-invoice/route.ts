@@ -31,16 +31,13 @@ export async function POST(
       recipientName: 'BrightHouse Cleaning',
     };
 
-    // Ищем диалог клиента в Telegram
+    // Ищем диалог в Telegram по имени клиента или externalId
     let conversation = null;
-    if (order.clientPhone) {
+    if (order.clientName) {
       conversation = await prisma.conversation.findFirst({
         where: {
           channel: 'TELEGRAM',
-          OR: [
-            { clientPhone: order.clientPhone },
-            { clientName: order.clientName },
-          ],
+          clientName: order.clientName,
         },
       });
     }
@@ -60,7 +57,6 @@ ${company.blikPhone ? `• 📲 **BLIK на номер:** \`${company.blikPhone}
 
 Будем очень благодарны за ваш отзыв! ☺️`;
 
-    // Если есть привязанный чат в Telegram — отправляем через бота
     if (conversation?.externalId && TELEGRAM_BOT_TOKEN) {
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
@@ -72,7 +68,6 @@ ${company.blikPhone ? `• 📲 **BLIK на номер:** \`${company.blikPhone}
         }),
       });
 
-      // Сохраняем отправленный счет в историю диалога
       await prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -84,7 +79,6 @@ ${company.blikPhone ? `• 📲 **BLIK на номер:** \`${company.blikPhone}
       return NextResponse.json({ success: true, method: 'TELEGRAM_DIRECT' });
     }
 
-    // Если прямого чата нет — возвращаем сформированный текст для отправки
     return NextResponse.json({
       success: true,
       method: 'MANUAL_COPY',
