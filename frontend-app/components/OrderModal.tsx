@@ -561,6 +561,63 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       📄 Счет
                     </button>
 
+                    {form.id && (
+  <>
+    {/* Кнопка открытия счета / PDF */}
+    <button
+      type="button"
+      onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
+      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+      title="Печать счета / Rachunek"
+    >
+      📄 Счет
+    </button>
+
+    {/* Кнопка быстрой отправки счета клиенту */}
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          const res = await fetch(`/api/orders/${form.id}/send-invoice`, { method: 'POST' });
+          const data = await res.json();
+          if (data.method === 'TELEGRAM_DIRECT') {
+            alert('✅ Счет успешно отправлен клиенту в Telegram!');
+          } else if (data.messageText) {
+            navigator.clipboard.writeText(data.messageText);
+            alert('📋 Чат клиента не найден, но текст счета с реквизитами скопирован в буфер обмена!');
+          }
+        } catch {
+          alert('Ошибка отправки счета');
+        }
+      }}
+      className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+      title="Отправить счет клиенту"
+    >
+      💬 В Telegram
+    </button>
+
+    {/* Кнопка отмены заказа */}
+    <button
+      type="button"
+      onClick={async () => {
+        const reason = prompt('Укажите причину отмены заказа:');
+        if (reason !== null) {
+          await fetch('/api/orders', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: form.id, status: 'CANCELLED', cancelReason: reason }),
+          });
+          onClose();
+          window.location.reload();
+        }
+      }}
+      className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-3 rounded-xl text-xs transition"
+    >
+      ❌ Отменить
+    </button>
+  </>
+)}
+                    
                     {/* Кнопка отмены заказа */}
                     <button
                       type="button"
