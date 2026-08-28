@@ -4,7 +4,7 @@ import { prisma } from '../../../lib/prisma';
 export async function GET() {
   try {
     const items = await prisma.inventoryItem.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
     return NextResponse.json(items);
   } catch (error) {
@@ -16,26 +16,28 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, category, quantity, unit, minQuantity, costPrice } = body;
+    const { name, category, quantity, minQuantity, unit, location, assignedTo, notes } = body;
 
     if (!name) {
-      return NextResponse.json({ error: 'Название обязательно' }, { status: 400 });
+      return NextResponse.json({ error: 'Укажите название позиции' }, { status: 400 });
     }
 
-    const newItem = await prisma.inventoryItem.create({
+    const item = await prisma.inventoryItem.create({
       data: {
-        name,
-        category: category || 'CONSUMABLE',
-        quantity: parseFloat(quantity) || 0,
+        name: name.trim(),
+        category: category || 'CHEMISTRY',
+        quantity: Number(quantity) || 0,
+        minQuantity: Number(minQuantity) || 5,
         unit: unit || 'шт',
-        minQuantity: parseFloat(minQuantity) || 2,
-        costPrice: parseFloat(costPrice) || 0,
+        location: location || 'Главный склад',
+        assignedTo: assignedTo || null,
+        notes: notes || null,
       },
     });
 
-    return NextResponse.json(newItem, { status: 201 });
+    return NextResponse.json(item, { status: 201 });
   } catch (error) {
-    console.error('Ошибка добавления позиции на склад:', error);
+    console.error('Ошибка добавления позиции:', error);
     return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
   }
 }
@@ -43,20 +45,49 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { id, quantity } = body;
+    const { id, quantityChange, quantity, assignedTo, location, notes } = body;
 
-    if (!id || quantity === undefined) {
-      return NextResponse.json({ error: 'ID и количество обязательны' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: 'ID позиции обязателен' }, { status: 400 });
     }
 
-    const updatedItem = await prisma.inventoryItem.update({
+    let updateData: any = {};
+
+    if (quantityChange !== undefined) {
+      updateData.quantity = { increment: Number(quantityChange) };
+    } else if (quantity !== undefined) {
+      updateData.quantity = Number(quantity);
+    }
+
+    if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
+    if (location !== undefined) updateData.location = location;
+    if (notes !== undefined) updateData.notes = notes;
+
+    const updated = await prisma.inventoryItem.update({
       where: { id },
-      data: { quantity: parseFloat(quantity) },
+      data: updateData,
     });
 
-    return NextResponse.json(updatedItem);
+    return NextResponse.json(updated);
   } catch (error) {
-    console.error('Ошибка обновления остатка:', error);
+    console.error('Ошибка обновления позиции:', error);
+    return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID обязателен' }, { status: 400 });
+    }
+
+    await prisma.inventoryItem.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Ошибка удаления позиции:', error);
     return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
   }
 }
