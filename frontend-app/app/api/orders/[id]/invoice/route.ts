@@ -27,13 +27,20 @@ export async function GET(
     }
 
     const company = settings || {
+      id: 1,
       companyName: 'BrightHouse Cleaning',
       nip: '',
       phone: '+48 000 000 000',
       email: 'contact@brighthouse.pl',
-      address: 'Warszawa',
+      city: '',
+      address: '',
+      instagram: '@brighthouse.pl',
       bankName: 'Santander',
       accountNumber: '',
+      blikPhone: '',
+      recipientName: '',
+      cleanerRatePercent: 40,
+      updatedAt: new Date(),
     };
 
     const dateFormatted = new Date(order.date).toLocaleDateString('pl-PL');
