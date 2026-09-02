@@ -87,11 +87,11 @@ export default function MapDayPage() {
 
         const map = L.map(mapContainerRef.current).setView([52.2297, 21.0122], 11);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-          attribution: '© OpenStreetMap & CartoDB',
-          maxZoom: 19,
-        }).addTo(map);
-
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 19,
+}).addTo(map);
+        
         markersLayerRef.current = L.layerGroup().addTo(map);
         mapInstanceRef.current = map;
       } catch (e) {
