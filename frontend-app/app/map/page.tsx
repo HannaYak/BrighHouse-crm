@@ -15,14 +15,64 @@ interface MapPoint {
 }
 
 const districtCoordinates: Record<string, { lat: number; lng: number }> = {
+  // Mokotów
   'Mokotów': { lat: 52.1936, lng: 21.0305 },
+  'Мокотув': { lat: 52.1936, lng: 21.0305 },
+
+  // Wola
   'Wola': { lat: 52.2366, lng: 20.9540 },
+  'Воля': { lat: 52.2366, lng: 20.9540 },
+
+  // Praga
   'Praga': { lat: 52.2530, lng: 21.0360 },
+  'Praga-Północ': { lat: 52.2530, lng: 21.0360 },
+  'Praga-Południe': { lat: 52.2380, lng: 21.0800 },
+  'Прага': { lat: 52.2530, lng: 21.0360 },
+
+  // Śródmieście / Центр
   'Śródmieście': { lat: 52.2319, lng: 21.0067 },
-  'Центр': { lat: 52.2297, lng: 21.0122 },
+  'Центр': { lat: 52.2319, lng: 21.0067 },
+
+  // Ursynów
   'Ursynów': { lat: 52.1415, lng: 21.0336 },
+  'Урсынув': { lat: 52.1415, lng: 21.0336 },
+
+  // Bielany
   'Bielany': { lat: 52.2858, lng: 20.9328 },
+  'Беляны': { lat: 52.2858, lng: 20.9328 },
+
+  // Białołęka
   'Białołęka': { lat: 52.3210, lng: 20.9900 },
+  'Белоленка': { lat: 52.3210, lng: 20.9900 },
+  'Бялоленка': { lat: 52.3210, lng: 20.9900 },
+
+  // Ochota
+  'Ochota': { lat: 52.2130, lng: 20.9750 },
+  'Охота': { lat: 52.2130, lng: 20.9750 },
+
+  // Targówek
+  'Targówek': { lat: 52.2800, lng: 21.0500 },
+  'Таргувек': { lat: 52.2800, lng: 21.0500 },
+
+  // Bemowo
+  'Bemowo': { lat: 52.2400, lng: 20.9100 },
+  'Бемово': { lat: 52.2400, lng: 20.9100 },
+
+  // Ursus
+  'Ursus': { lat: 52.1950, lng: 20.8850 },
+  'Урсус': { lat: 52.1950, lng: 20.8850 },
+
+  // Włochy
+  'Włochy': { lat: 52.1900, lng: 20.9300 },
+  'Влохи': { lat: 52.1900, lng: 20.9300 },
+
+  // Wilanów
+  'Wilanów': { lat: 52.1650, lng: 21.0900 },
+  'Вилянув': { lat: 52.1650, lng: 21.0900 },
+
+  // Wawer
+  'Wawer': { lat: 52.2000, lng: 21.1600 },
+  'Вавер': { lat: 52.2000, lng: 21.1600 },
 };
 
 export default function MapDayPage() {
