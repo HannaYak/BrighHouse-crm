@@ -54,6 +54,13 @@ model Cleaner {
   tags             String[]
   incompatibleWith String[]
   status           String         @default("active")
+  
+  // Базовый график (Пн, Вт, Ср...) и стандартные часы
+  workDays         Int[]          @default([1, 2, 3, 4, 5]) // 1 = Пн, 7 = Вс
+  defaultStartTime String         @default("08:00")
+  defaultEndTime   String         @default("20:00")
+
+  shifts           CleanerShift[]
   assignments      OrderCleaner[]
   createdAt        DateTime       @default(now())
 }
