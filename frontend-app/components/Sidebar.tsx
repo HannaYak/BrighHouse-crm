@@ -7,7 +7,7 @@ const navigationGroups = [
   {
     title: 'Операции',
     items: [
-      { name: 'Журнал', href: '/orders', icon: '📑' },
+      { name: 'Журнал', href: '/', icon: '📑' },
       { name: 'Расписание', href: '/schedule', icon: '📅' },
       { name: 'Канбан', href: '/kanban', icon: '📋' },
       { name: 'Карта', href: '/map', icon: '📍' },
