@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma';
+import { prisma } from '../../../../../lib/prisma';
 
 // Сохранить базовый шаблон графика клинера или добавить смену
 export async function POST(
