@@ -72,9 +72,12 @@ export async function POST(
     for (const assignment of order.assignedCleaners) {
       const cleaner = assignment.cleaner;
       if (cleaner.telegramChatId) {
+        const orderAny = order as any;
+        const timeDisplay = order.timeSlot || orderAny.startTime || '10:00';
+        
         const message = `🧹 Новый заказ #${order.orderNumber}
 📅 Дата: ${new Date(order.date).toLocaleDateString('ru-RU')}
-⏱️ Время: ${order.timeSlot || order.startTime || '10:00'}
+⏱️ Время: ${timeDisplay}
 📍 Адрес: ${order.addressLine1}${order.addressLine2 ? ', ' + order.addressLine2 : ''}
 🏠 Параметры: ${order.roomsCount || 1} комн., ${order.bathroomsCount || 1} сануз., ${order.areaM2 || 40} м²
 ✨ Дополнительные услуги:
@@ -88,7 +91,7 @@ ${extrasText}
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: cleaner.telegramChatId,
-            text: message, // ✅ Исправлено: передаем сформированный message
+            text: message,
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [
