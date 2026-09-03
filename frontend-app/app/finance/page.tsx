@@ -11,10 +11,11 @@ export default function FinancesPage() {
       setLoading(true);
       const res = await fetch('/api/orders');
       if (res.ok) {
-        setOrders(await res.json());
+        const data = await res.json();
+        setOrders(Array.isArray(data) ? data : []);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Ошибка загрузки заказов для финансов:', e);
     } finally {
       setLoading(false);
     }
@@ -28,8 +29,9 @@ export default function FinancesPage() {
     window.open(`/api/export?month=${exportMonth}`, '_blank');
   };
 
-  const completedOrders = orders.filter((o: any) => o.status === 'COMPLETED');
-  const totalRevenue = completedOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+  // Безопасная фильтрация и расчет без риска NaN
+  const completedOrders = orders.filter((o: any) => o && o.status === 'COMPLETED');
+  const totalRevenue = completedOrders.reduce((sum, o) => sum + (Number(o?.price) || 0), 0);
   const cleanerPayouts = Math.round(totalRevenue * 0.4);
   const netProfit = totalRevenue - cleanerPayouts;
 
@@ -96,8 +98,8 @@ export default function FinancesPage() {
                 <p className="text-[11px] text-slate-500 mt-0.5">📍 {o.addressLine1}</p>
               </div>
               <div className="text-right">
-                <span className="font-extrabold text-slate-900 block">{o.price} zł</span>
-                <span className="text-[10px] text-slate-400">Клинеру: {Math.round((o.price || 0) * 0.4)} zł</span>
+                <span className="font-extrabold text-slate-900 block">{Number(o.price) || 0} zł</span>
+                <span className="text-[10px] text-slate-400">Клинеру: {Math.round((Number(o.price) || 0) * 0.4)} zł</span>
               </div>
             </div>
           ))}
