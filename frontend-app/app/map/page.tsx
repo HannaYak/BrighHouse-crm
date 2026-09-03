@@ -194,26 +194,36 @@ export default function MapDayPage() {
       };
     });
 
-   const cleanerPoints: MapPoint[] = cleaners.map((c) => {
-      // Приводим строку из базы к точному виду
-      const rawDistrict = (c.district || 'Центр').trim();
-      
-      // Ищем точное совпадение, либо пробуем найти ключ без учета регистра
-      const foundKey = Object.keys(districtCoordinates).find(
-        key => key.toLowerCase() === rawDistrict.toLowerCase()
-      );
+ const cleanerPoints: MapPoint[] = cleaners.map((c) => {
+      const rawLoc = (c.district || c.phone || '').trim().toLowerCase();
 
-      const base = foundKey ? districtCoordinates[foundKey] : districtCoordinates['Центр'];
+      // Точная карта соответствия строк из базы к координатам в Варшаве
+      let lat = 52.2297; 
+      let lng = 21.0122;
 
-      // Никаких случайных смещений — ставим ровно по координатам дома/метро
+      if (rawLoc.includes('afrikanska')) { lat = 52.2272; lng = 21.0741; }
+      else if (rawLoc.includes('kondratowicza')) { lat = 52.3032; lng = 21.0454; }
+      else if (rawLoc.includes('kaspszaka')) { lat = 52.2268; lng = 20.9632; }
+      else if (rawLoc.includes('arkadia') || rawLoc.includes('okopowa')) { lat = 52.2571; lng = 20.9859; }
+      else if (rawLoc.includes('rembiertow')) { lat = 52.2705; lng = 21.1714; }
+      else if (rawLoc.includes('marki') || rawLoc.includes('nauczycielska')) { lat = 52.3245; lng = 21.1118; }
+      else if (rawLoc.includes('wola')) { lat = 52.2366; lng = 20.9540; }
+      else if (rawLoc.includes('janusza')) { lat = 52.2452; lng = 20.9451; }
+      else if (rawLoc.includes('płochocińska') || rawLoc.includes('plochocinska')) { lat = 52.3289; lng = 20.9702; }
+      else if (rawLoc.includes('gocławek') || rawLoc.includes('goclawek')) { lat = 52.2361; lng = 21.1012; }
+      else if (rawLoc.includes('stare bielany')) { lat = 52.2798; lng = 20.9565; }
+      else if (rawLoc.includes('wilanowska')) { lat = 52.1819; lng = 21.0322; }
+      else if (rawLoc.includes('mlynow') || rawLoc.includes('młynów')) { lat = 52.2392; lng = 20.9754; }
+      else if (rawLoc.includes('zaczisze') || rawLoc.includes('zacisze')) { lat = 52.2879; lng = 21.0721; }
+
       return {
         id: c.id,
         type: 'cleaner',
         title: `🙋‍♀️ ${c.name}`,
         subtitle: `📍 Локация: ${c.district || 'Центр'} • ${c.phone || ''}`,
-        address: `Дом/Локация: ${c.district || 'Центр'}`,
-        lat: base.lat,
-        lng: base.lng,
+        address: `Локация: ${c.district || 'Центр'}`,
+        lat,
+        lng,
       };
     });
     
