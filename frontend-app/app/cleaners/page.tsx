@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import CleanerScheduleModal from '../../components/CleanerScheduleModal';
 
 export default function CleanersPage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
