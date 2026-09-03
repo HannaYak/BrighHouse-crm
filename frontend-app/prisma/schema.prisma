@@ -221,3 +221,16 @@ model InventoryItem {
   createdAt   DateTime          @default(now())
 }
 
+model CleanerShift {
+  id        String   @id @default(cuid())
+  cleanerId Int
+  date      DateTime @db.Date
+  startTime String   @default("08:00")
+  endTime   String   @default("20:00")
+  isWorking Boolean  @default(true) // true = работает, false = выходной / отгул
+
+  cleaner   Cleaner  @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
+
+  @@unique([cleanerId, date])
+}
+
