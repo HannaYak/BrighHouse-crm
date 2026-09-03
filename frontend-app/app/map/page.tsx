@@ -160,7 +160,7 @@ export default function MapDayPage() {
     };
   }, []);
 
-  // 3. Формирование точек и отрисовка
+ // 3. Формирование точек и отрисовка
   useEffect(() => {
     const dayOrders = allOrders.filter((o) => {
       if (o.status === 'CANCELLED') return false;
@@ -168,10 +168,51 @@ export default function MapDayPage() {
       return orderDate === selectedDate;
     });
 
+    // Словарь ключевых улиц Варшавы для точного позиционирования
+    const streetCoordinates: Record<string, { lat: number; lng: number }> = {
+      'marszałkowska': { lat: 52.2319, lng: 21.0100 },
+      'jerozolimskie': { lat: 52.2289, lng: 21.0050 },
+      'nowy świat': { lat: 52.2350, lng: 21.0180 },
+      'chmielna': { lat: 52.2310, lng: 21.0120 },
+      'puławska': { lat: 52.2000, lng: 21.0250 },
+      'niepodległości': { lat: 52.2100, lng: 21.0030 },
+      'jana pawła': { lat: 52.2400, lng: 20.9920 },
+      'grzybowska': { lat: 52.2380, lng: 20.9950 },
+      'prosta': { lat: 52.2350, lng: 20.9850 },
+      'twarda': { lat: 52.2360, lng: 21.0000 },
+      'al.': { lat: 52.2290, lng: 21.0100 },
+      'mickiewicza': { lat: 52.2650, lng: 20.9850 },
+    };
+
     const orderPoints: MapPoint[] = dayOrders.map((o) => {
-      const base = districtCoordinates['Центр'];
-      const lat = o.latitude || base.lat + (Math.random() - 0.5) * 0.08;
-      const lng = o.longitude || base.lng + (Math.random() - 0.5) * 0.08;
+      const addressText = `${o.addressLine1 || ''} ${o.addressLine2 || ''}`.toLowerCase();
+      
+      let base = districtCoordinates['Центр'];
+      let foundMatch = false;
+
+      // 1. Ищем улицу в адресе нового или старого заказа
+      for (const [street, coords] of Object.entries(streetCoordinates)) {
+        if (addressText.includes(street.toLowerCase())) {
+          base = coords;
+          foundMatch = true;
+          break;
+        }
+      }
+
+      // 2. Если улицы нет, ищем район
+      if (!foundMatch) {
+        const matchedDistrict = Object.keys(districtCoordinates).find(district => 
+          addressText.includes(district.toLowerCase())
+        );
+        if (matchedDistrict) {
+          base = districtCoordinates[matchedDistrict];
+        }
+      }
+
+      // Если в базе уже есть координаты (lat/lng), берем их, иначе ставим по найденному адресу
+      const lat = o.latitude || base.lat;
+      const lng = o.longitude || base.lng;
+      
       const assigned = o.assignedCleaners?.map((ac: any) => ac.cleaner?.name).join(', ');
 
       return {
@@ -179,7 +220,7 @@ export default function MapDayPage() {
         type: 'order',
         title: `${o.orderNumber} — ${o.clientName || 'Клиент'}`,
         subtitle: `⏱️ ${o.timeSlot || o.startTime || '10:00'} • 💰 ${o.price} zł • 👥 ${assigned || 'Не назначен'}`,
-        address: `${o.addressLine1 || ''}${o.addressLine2 ? ', ' + o.addressLine2 : ''}`,
+        address: `${o.addressLine1 || ''}${o.addressLine2 ? ', ' + o.addressLine2 : ''}`.trim() || 'Адрес не указан',
         date: selectedDate,
         lat,
         lng,
@@ -187,25 +228,24 @@ export default function MapDayPage() {
       };
     });
 
-   const cleanerPoints: MapPoint[] = cleaners.map((c) => {
-  const districtKey = (c.district || 'Центр').trim();
-  const base = districtCoordinates[districtKey] || districtCoordinates['Центр'];
+    const cleanerPoints: MapPoint[] = cleaners.map((c) => {
+      const districtKey = (c.district || 'Центр').trim();
+      const base = districtCoordinates[districtKey] || districtCoordinates['Центр'];
 
-  // Небольшое смещение по id, чтобы два клинера из одного района не слипались в один пиксель
-  const offset = ((Number(c.id) || 1) % 5) * 0.003;
-  const lat = base.lat + offset;
-  const lng = base.lng + offset;
+      const offset = ((Number(c.id) || 1) % 5) * 0.003;
+      const lat = base.lat + offset;
+      const lng = base.lng + offset;
 
-  return {
-    id: c.id,
-    type: 'cleaner',
-    title: `🙋‍♀️ ${c.name}`,
-    subtitle: `📍 Район: ${c.district || 'Центр'} • ${c.phone || ''}`,
-    address: `Базовый район: ${c.district || 'Центр'}`,
-    lat,
-    lng,
-  };
-});
+      return {
+        id: c.id,
+        type: 'cleaner',
+        title: `🙋‍♀️ ${c.name}`,
+        subtitle: `📍 Район: ${c.district || 'Центр'} • ${c.phone || ''}`,
+        address: `Базовый район: ${c.district || 'Центр'}`,
+        lat,
+        lng,
+      };
+    });
 
     const currentPoints = [...orderPoints, ...cleanerPoints];
     setFilteredPoints(currentPoints);
