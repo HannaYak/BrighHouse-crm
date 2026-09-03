@@ -7,16 +7,28 @@ interface ExtraOption {
   price: number;
 }
 
-const EXTRAS: ExtraOption[] = [
-  { id: 'oven', name: '🧽 Духовка', price: 50 },
-  { id: 'fridge', name: '🧊 Холодильник', price: 50 },
-  { id: 'microwave', name: '📻 Микроволновка', price: 25 },
-  { id: 'hood', name: '💨 Вытяжка', price: 40 },
-  { id: 'dishes', name: '🍽 Мытье посуды', price: 40 },
-  { id: 'balcony', name: '🌿 Балкон', price: 60 },
-  { id: 'ironing', name: '👔 Глажка (1 час)', price: 50 },
-  { id: 'pets', name: '🐾 Уборка за питомцами', price: 30 },
-];
+body: JSON.stringify({
+  clientName: name,
+  clientPhone: phone,
+  addressLine1: address,
+  serviceType: getTypeNameRu(),
+  roomsCount: rooms,
+  bathroomsCount: bathrooms,
+  areaM2: area,
+  price: totalPrice,
+  date,
+  startTime: time,
+  notes: extrasSummary,
+  hasOven: selectedExtras.includes('oven'),
+  hasFridge: selectedExtras.includes('fridge'),
+  hasMicrowave: selectedExtras.includes('microwave'),
+  hasKitchenClosets: selectedExtras.includes('hood'),
+  hasDishesHours: selectedExtras.includes('dishes') ? 1 : 0,
+  hasBalcony: selectedExtras.includes('balcony'),
+  hasIroningHours: selectedExtras.includes('ironing') ? 1 : 0,
+  hasPets: selectedExtras.includes('pets'),
+  windowsCount: standardWindows + balconyWindows,
+}),
 
 export default function PublicBookingPage() {
   const [cleaningType, setCleaningType] = useState<'STANDARD' | 'STANDARD_PLUS' | 'GENERAL' | 'POST_CONSTRUCTION'>('STANDARD');
