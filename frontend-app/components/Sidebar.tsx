@@ -30,7 +30,7 @@ const navigationGroups = [
     title: 'Бизнес и склад',
     items: [
       { name: 'Склад', href: '/inventory', icon: '📦' },
-      { name: 'Финансы', href: '/finances', icon: '💰' },
+      { name: 'Финансы', href: '/finance', icon: '💰' },
       { name: 'Калькулятор', href: '/calculator', icon: '🧮' },
       { name: 'Скидки', href: '/discounts', icon: '🏷️' },
       { name: 'Чек-листы', href: '/checklists', icon: '✅' },
