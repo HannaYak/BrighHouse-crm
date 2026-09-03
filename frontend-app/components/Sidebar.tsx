@@ -10,7 +10,7 @@ const navigationGroups = [
       { name: 'Журнал', href: '/schedule', icon: '📅' },
       { name: 'Канбан', href: '/kanban', icon: '📋' },
       { name: 'Карта', href: '/map', icon: '📍' },
-      { name: 'Бронирование', href: '/booking', icon: '🌐' },
+      { name: 'Бронирование', href: '/book', icon: '🌐' },
     ],
   },
   {
@@ -30,7 +30,7 @@ const navigationGroups = [
     title: 'Бизнес и склад',
     items: [
       { name: 'Склад', href: '/inventory', icon: '📦' },
-      { name: 'Финансы', href: '/finance', icon: '💰' },
+      { name: 'Финансы', href: '/finances', icon: '💰' },
       { name: 'Калькулятор', href: '/calculator', icon: '🧮' },
       { name: 'Скидки', href: '/discounts', icon: '🏷️' },
       { name: 'Чек-листы', href: '/checklists', icon: '✅' },
