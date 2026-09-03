@@ -6,6 +6,9 @@ export default function CleanersPage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Стейт для модалки графика
+  const [selectedCleanerForSchedule, setSelectedCleanerForSchedule] = useState<any>(null);
+
   // Форма добавления клинера
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -147,6 +150,15 @@ export default function CleanersPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                  {/* Кнопка открытия графика */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCleanerForSchedule(cleaner)}
+                    className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                  >
+                    📅 График смен
+                  </button>
+
                   {!isLinked && (
                     <div className="text-right">
                       <span className="text-[10px] text-slate-400 font-bold block">PIN для бота:</span>
@@ -158,6 +170,7 @@ export default function CleanersPage() {
 
                   {!isLinked && (
                     <button
+                      type="button"
                       onClick={() => handleRegeneratePin(cleaner.id)}
                       className="text-xs text-slate-500 hover:text-slate-800 p-2 rounded-lg hover:bg-slate-100 transition"
                       title="Сгенерировать новый PIN"
@@ -175,6 +188,17 @@ export default function CleanersPage() {
           )}
         </div>
       </div>
+
+      {/* Модальное окно графика клинера */}
+      <CleanerScheduleModal
+        cleaner={selectedCleanerForSchedule}
+        isOpen={Boolean(selectedCleanerForSchedule)}
+        onClose={() => setSelectedCleanerForSchedule(null)}
+        onSaved={() => {
+          setSelectedCleanerForSchedule(null);
+          fetchCleaners();
+        }}
+      />
     </div>
   );
 }
