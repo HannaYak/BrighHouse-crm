@@ -15,64 +15,30 @@ interface MapPoint {
 }
 
 const districtCoordinates: Record<string, { lat: number; lng: number }> = {
-  // Mokotów
+  // Точные локации и дома клинеров из базы
+  'afrikanska': { lat: 52.2272, lng: 21.0741 }, // Saska Kępa / ul. Afrykańska
+  'metro kondratowicza': { lat: 52.3032, lng: 21.0454 }, // Stacja metra Kondratowicza
+  'kaspszaka 29': { lat: 52.2268, lng: 20.9632 }, // ul. Kasprzaka 29
+  'Arkadia, okopowa': { lat: 52.2571, lng: 20.9859 }, // CH Arkadia / Okopowa
+  'rembiertow': { lat: 52.2705, lng: 21.1714 }, // Rembertów
+  'Marki, nauczycielska': { lat: 52.3245, lng: 21.1118 }, // Marki, ul. Nauczycielska
+  'wola': { lat: 52.2366, lng: 20.9540 }, // Wola
+  'metro Księdza Janusza': { lat: 52.2452, lng: 20.9451 }, // Stacja metra Księdza Janusza
+  'Płochocińska 101H': { lat: 52.3289, lng: 20.9702 }, // ul. Płochocińska
+  'Gocławek': { lat: 52.2361, lng: 21.1012 }, // Gocławek
+  'metro stare bielany': { lat: 52.2798, lng: 20.9565 }, // Stacja metra Stare Bielany
+  'metro wilanowska': { lat: 52.1819, lng: 21.0322 }, // Stacja metra Wilanowska
+  'metro mlynow': { lat: 52.2392, lng: 20.9754 }, // Stacja metra Młynów
+  'metro Zaczisze': { lat: 52.2879, lng: 21.0721 }, // Stacja metra Zacisze
+  'Okopowa': { lat: 52.2421, lng: 20.9852 }, // ul. Okopowa
+
+  // Базовые районы на всякий случай
   'Mokotów': { lat: 52.1936, lng: 21.0305 },
-  'Мокотув': { lat: 52.1936, lng: 21.0305 },
-
-  // Wola
-  'Wola': { lat: 52.2366, lng: 20.9540 },
-  'Воля': { lat: 52.2366, lng: 20.9540 },
-
-  // Praga
   'Praga': { lat: 52.2530, lng: 21.0360 },
-  'Praga-Północ': { lat: 52.2530, lng: 21.0360 },
-  'Praga-Południe': { lat: 52.2380, lng: 21.0800 },
-  'Прага': { lat: 52.2530, lng: 21.0360 },
-
-  // Śródmieście / Центр
   'Śródmieście': { lat: 52.2319, lng: 21.0067 },
   'Центр': { lat: 52.2319, lng: 21.0067 },
-
-  // Ursynów
-  'Ursynów': { lat: 52.1415, lng: 21.0336 },
-  'Урсынув': { lat: 52.1415, lng: 21.0336 },
-
-  // Bielany
   'Bielany': { lat: 52.2858, lng: 20.9328 },
-  'Беляны': { lat: 52.2858, lng: 20.9328 },
-
-  // Białołęka
   'Białołęka': { lat: 52.3210, lng: 20.9900 },
-  'Белоленка': { lat: 52.3210, lng: 20.9900 },
-  'Бялоленка': { lat: 52.3210, lng: 20.9900 },
-
-  // Ochota
-  'Ochota': { lat: 52.2130, lng: 20.9750 },
-  'Охота': { lat: 52.2130, lng: 20.9750 },
-
-  // Targówek
-  'Targówek': { lat: 52.2800, lng: 21.0500 },
-  'Таргувек': { lat: 52.2800, lng: 21.0500 },
-
-  // Bemowo
-  'Bemowo': { lat: 52.2400, lng: 20.9100 },
-  'Бемово': { lat: 52.2400, lng: 20.9100 },
-
-  // Ursus
-  'Ursus': { lat: 52.1950, lng: 20.8850 },
-  'Урсус': { lat: 52.1950, lng: 20.8850 },
-
-  // Włochy
-  'Włochy': { lat: 52.1900, lng: 20.9300 },
-  'Влохи': { lat: 52.1900, lng: 20.9300 },
-
-  // Wilanów
-  'Wilanów': { lat: 52.1650, lng: 21.0900 },
-  'Вилянув': { lat: 52.1650, lng: 21.0900 },
-
-  // Wawer
-  'Wawer': { lat: 52.2000, lng: 21.1600 },
-  'Вавер': { lat: 52.2000, lng: 21.1600 },
 };
 
 export default function MapDayPage() {
@@ -228,25 +194,29 @@ export default function MapDayPage() {
       };
     });
 
-    const cleanerPoints: MapPoint[] = cleaners.map((c) => {
-      const districtKey = (c.district || 'Центр').trim();
-      const base = districtCoordinates[districtKey] || districtCoordinates['Центр'];
+   const cleanerPoints: MapPoint[] = cleaners.map((c) => {
+      // Приводим строку из базы к точному виду
+      const rawDistrict = (c.district || 'Центр').trim();
+      
+      // Ищем точное совпадение, либо пробуем найти ключ без учета регистра
+      const foundKey = Object.keys(districtCoordinates).find(
+        key => key.toLowerCase() === rawDistrict.toLowerCase()
+      );
 
-      const offset = ((Number(c.id) || 1) % 5) * 0.003;
-      const lat = base.lat + offset;
-      const lng = base.lng + offset;
+      const base = foundKey ? districtCoordinates[foundKey] : districtCoordinates['Центр'];
 
+      // Никаких случайных смещений — ставим ровно по координатам дома/метро
       return {
         id: c.id,
         type: 'cleaner',
         title: `🙋‍♀️ ${c.name}`,
-        subtitle: `📍 Район: ${c.district || 'Центр'} • ${c.phone || ''}`,
-        address: `Базовый район: ${c.district || 'Центр'}`,
-        lat,
-        lng,
+        subtitle: `📍 Локация: ${c.district || 'Центр'} • ${c.phone || ''}`,
+        address: `Дом/Локация: ${c.district || 'Центр'}`,
+        lat: base.lat,
+        lng: base.lng,
       };
     });
-
+    
     const currentPoints = [...orderPoints, ...cleanerPoints];
     setFilteredPoints(currentPoints);
 
