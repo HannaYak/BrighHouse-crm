@@ -187,21 +187,25 @@ export default function MapDayPage() {
       };
     });
 
-    const cleanerPoints: MapPoint[] = cleaners.map((c) => {
-      const base = districtCoordinates[c.district] || districtCoordinates['Центр'];
-      const lat = base.lat + (Math.random() - 0.5) * 0.03;
-      const lng = base.lng + (Math.random() - 0.5) * 0.03;
+   const cleanerPoints: MapPoint[] = cleaners.map((c) => {
+  const districtKey = (c.district || 'Центр').trim();
+  const base = districtCoordinates[districtKey] || districtCoordinates['Центр'];
 
-      return {
-        id: c.id,
-        type: 'cleaner',
-        title: `🙋‍♀️ ${c.name}`,
-        subtitle: `📍 Район: ${c.district || 'Центр'} • ${c.phone || ''}`,
-        address: `Базовый район: ${c.district || 'Центр'}`,
-        lat,
-        lng,
-      };
-    });
+  // Небольшое смещение по id, чтобы два клинера из одного района не слипались в один пиксель
+  const offset = ((Number(c.id) || 1) % 5) * 0.003;
+  const lat = base.lat + offset;
+  const lng = base.lng + offset;
+
+  return {
+    id: c.id,
+    type: 'cleaner',
+    title: `🙋‍♀️ ${c.name}`,
+    subtitle: `📍 Район: ${c.district || 'Центр'} • ${c.phone || ''}`,
+    address: `Базовый район: ${c.district || 'Центр'}`,
+    lat,
+    lng,
+  };
+});
 
     const currentPoints = [...orderPoints, ...cleanerPoints];
     setFilteredPoints(currentPoints);
