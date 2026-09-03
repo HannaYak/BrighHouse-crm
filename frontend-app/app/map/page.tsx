@@ -195,45 +195,19 @@ export default function MapDayPage() {
     });
 
 const cleanerPoints: MapPoint[] = cleaners.map((c) => {
-      const rawLoc = (c.district || c.phone || '').trim().toLowerCase();
+      const districtKey = (c.district || '').trim();
+      
+      // Ищем точное совпадение или без учета регистра в нашем словаре
+      const foundKey = Object.keys(districtCoordinates).find(
+        (key) => key.toLowerCase() === districtKey.toLowerCase()
+      );
 
-      let lat = 52.2297; 
-      let lng = 21.0122;
-
-      // Точная привязка каждого клинера
-      if (rawLoc.includes('afrikanska')) { 
-        lat = 52.2272; lng = 21.0741; // Саска Кэпа / Африканская
-      } else if (rawLoc.includes('kondratowicza')) { 
-        lat = 52.3032; lng = 21.0454; // Метро Кондратовича
-      } else if (rawLoc.includes('kaspszaka')) { 
-        lat = 52.2268; lng = 20.9632; // Каспшака 29
-      } else if (rawLoc.includes('arkadia') || (rawLoc.includes('okopowa') && !rawLoc.includes('2'))) { 
-        lat = 52.2571; lng = 20.9859; // Аркадия
-      } else if (rawLoc.includes('rembiertow')) { 
-        lat = 52.2705; lng = 21.1714; // Рембертув
-      } else if (rawLoc.includes('marki') || rawLoc.includes('nauczycielska')) { 
-        lat = 52.3245; lng = 21.1118; // Марки
-      } else if (rawLoc.includes('wola')) { 
-        lat = 52.2366; lng = 20.9540; // Воля
-      } else if (rawLoc.includes('janusza')) { 
-        lat = 52.2452; lng = 20.9451; // Метро Ксендза Януша
-      } else if (rawLoc.includes('płochocińska') || rawLoc.includes('plochocinska')) { 
-        lat = 52.3289; lng = 20.9702; // Плохоциньска
-      } else if (rawLoc.includes('gocławek') || rawLoc.includes('goclawek')) { 
-        lat = 52.2361; lng = 21.1012; // Гоцлавек
-      } else if (rawLoc.includes('stare bielany')) { 
-        lat = 52.2798; lng = 20.9565; // Метро Старе Беляны
-      } else if (rawLoc.includes('wilanowska')) { 
-        lat = 52.1819; lng = 21.0322; // Метро Виляновска
-      } else if (rawLoc.includes('mlynow') || rawLoc.includes('młynów')) { 
-        lat = 52.2392; lng = 20.9754; // Метро Млынув (исправлено на правильные координаты!)
-      } else if (rawLoc.includes('zaczisze') || rawLoc.includes('zacisze')) { 
-        lat = 52.2879; lng = 21.0721; // Зачише
-      } else if (rawLoc.includes('white_lotus') || (rawLoc.includes('okopowa'))) { 
-        lat = 52.2421; lng = 20.9852; // Окопова (Химчистка 2)
-      } else if (rawLoc.includes('mokotów') || rawLoc.includes('мокотув')) {
-        lat = 52.1936; lng = 21.0305; // Мокотув (если появится в базе)
-      }
+      // Если нашли — берем его координаты, если нет — берем Центр (но с уникальным сдвигом по ID, чтобы точки не слипались)
+      const base = foundKey ? districtCoordinates[foundKey] : districtCoordinates['Центр'];
+      
+      const offset = foundKey ? 0 : ((Number(c.id) || 1) % 5) * 0.002;
+      const lat = base.lat + offset;
+      const lng = base.lng + offset;
 
       return {
         id: c.id,
