@@ -7,28 +7,16 @@ interface ExtraOption {
   price: number;
 }
 
-body: JSON.stringify({
-  clientName: name,
-  clientPhone: phone,
-  addressLine1: address,
-  serviceType: getTypeNameRu(),
-  roomsCount: rooms,
-  bathroomsCount: bathrooms,
-  areaM2: area,
-  price: totalPrice,
-  date,
-  startTime: time,
-  notes: extrasSummary,
-  hasOven: selectedExtras.includes('oven'),
-  hasFridge: selectedExtras.includes('fridge'),
-  hasMicrowave: selectedExtras.includes('microwave'),
-  hasKitchenClosets: selectedExtras.includes('hood'),
-  hasDishesHours: selectedExtras.includes('dishes') ? 1 : 0,
-  hasBalcony: selectedExtras.includes('balcony'),
-  hasIroningHours: selectedExtras.includes('ironing') ? 1 : 0,
-  hasPets: selectedExtras.includes('pets'),
-  windowsCount: standardWindows + balconyWindows,
-}),
+const EXTRAS: ExtraOption[] = [
+  { id: 'oven', name: '🧽 Духовка', price: 50 },
+  { id: 'fridge', name: '🧊 Холодильник', price: 50 },
+  { id: 'microwave', name: '📻 Микроволновка', price: 25 },
+  { id: 'hood', name: '💨 Вытяжка', price: 40 },
+  { id: 'dishes', name: '🍽 Мытье посуды', price: 40 },
+  { id: 'balcony', name: '🌿 Балкон', price: 60 },
+  { id: 'ironing', name: '👔 Глажка (1 час)', price: 50 },
+  { id: 'pets', name: '🐾 Уборка за питомцами', price: 30 },
+];
 
 export default function PublicBookingPage() {
   const [cleaningType, setCleaningType] = useState<'STANDARD' | 'STANDARD_PLUS' | 'GENERAL' | 'POST_CONSTRUCTION'>('STANDARD');
@@ -55,7 +43,6 @@ export default function PublicBookingPage() {
   const [success, setSuccess] = useState(false);
   const [orderNumber, setOrderNumber] = useState('');
 
-  // Расчет стоимости
   const calculateBase = () => {
     if (cleaningType === 'STANDARD') return 160 + (rooms - 1) * 35 + (bathrooms - 1) * 45;
     if (cleaningType === 'STANDARD_PLUS') return 210 + (rooms - 1) * 45 + (bathrooms - 1) * 55;
@@ -118,6 +105,15 @@ export default function PublicBookingPage() {
           date,
           startTime: time,
           notes: extrasSummary,
+          hasOven: selectedExtras.includes('oven'),
+          hasFridge: selectedExtras.includes('fridge'),
+          hasMicrowave: selectedExtras.includes('microwave'),
+          hasKitchenClosets: selectedExtras.includes('hood'),
+          hasDishesHours: selectedExtras.includes('dishes') ? 1 : 0,
+          hasBalcony: selectedExtras.includes('balcony'),
+          hasIroningHours: selectedExtras.includes('ironing') ? 1 : 0,
+          hasPets: selectedExtras.includes('pets'),
+          windowsCount: standardWindows + balconyWindows,
         }),
       });
 
@@ -165,7 +161,6 @@ export default function PublicBookingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/70 py-10 px-4">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Шапка бренда */}
         <div className="text-center space-y-2">
           <span className="text-xs font-extrabold tracking-widest text-brand-600 uppercase bg-brand-50 border border-brand-100 px-3 py-1 rounded-full">
             BrightHouse Cleaning
@@ -177,9 +172,7 @@ export default function PublicBookingPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Левая колонка: Опции */}
           <div className="lg:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-            {/* 4 типа уборки */}
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">1. Выберите тариф</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -205,7 +198,6 @@ export default function PublicBookingPage() {
               </div>
             </div>
 
-            {/* Комнаты и санузлы */}
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">2. Параметры жилья</label>
               <div className="grid grid-cols-3 gap-3">
@@ -239,7 +231,6 @@ export default function PublicBookingPage() {
               </div>
             </div>
 
-            {/* Мытье окон */}
             <div className="p-4 bg-blue-50/50 border border-blue-200 rounded-2xl space-y-2">
               <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider block">🪟 Мытье окон с двух сторон</span>
               <div className="grid grid-cols-2 gap-3">
@@ -267,7 +258,6 @@ export default function PublicBookingPage() {
               </div>
             </div>
 
-            {/* Дополнительные услуги */}
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">3. Дополнительные опции</label>
               <div className="grid grid-cols-2 gap-2">
@@ -292,7 +282,6 @@ export default function PublicBookingPage() {
             </div>
           </div>
 
-          {/* Правая колонка: Итог и контакты */}
           <div className="lg:col-span-5 space-y-4">
             <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-lg">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Стоимость вашей уборки</span>
