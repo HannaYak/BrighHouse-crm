@@ -108,7 +108,11 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   const [durationText, setDurationText] = useState('3 ч');
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
-  // Загрузка актуального прайс-листа из Настроек
+  // Стейт проверки доступности клинеров
+  const [availabilityMap, setAvailabilityMap] = useState<Record<number, any>>({});
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+
+  // Загрузка актуального прайс-листа
   useEffect(() => {
     fetch('/api/settings/addons')
       .then((res) => res.json())
@@ -131,6 +135,35 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       .then((data) => setAllCleaners(data))
       .catch((err) => console.error('Ошибка загрузки клинеров:', err));
   }, []);
+
+  // Загрузка доступности клинеров по графику при смене даты или времени
+  useEffect(() => {
+    if (!form.date) return;
+
+    const checkAvailability = async () => {
+      try {
+        setLoadingAvailability(true);
+        const dateStr = new Date(form.date).toISOString().slice(0, 10);
+        const timeStr = (form.startTime || '10:00').slice(0, 5);
+
+        const res = await fetch(`/api/cleaners/available?date=${dateStr}&time=${timeStr}`);
+        if (res.ok) {
+          const data = await res.json();
+          const map: Record<number, any> = {};
+          data.forEach((item: any) => {
+            map[item.id] = item;
+          });
+          setAvailabilityMap(map);
+        }
+      } catch (err) {
+        console.error('Ошибка загрузки доступности клинеров:', err);
+      } finally {
+        setLoadingAvailability(false);
+      }
+    };
+
+    checkAvailability();
+  }, [form.date, form.startTime]);
 
   // Автоматический пересчёт времени и стоимости
   useEffect(() => {
@@ -251,9 +284,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
         {/* Двухколоночный контент */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Левая часть: Тариф, Параметры, Допы и Химчистка (55%) */}
+          {/* Левая часть: Тариф, Параметры, Допы и Химчистка */}
           <div className="w-[55%] p-6 border-r border-slate-100 overflow-y-auto space-y-4">
-            {/* Выбор тарифа */}
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Тариф уборки</label>
               <div className="grid grid-cols-4 gap-2">
@@ -274,7 +306,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
-            {/* Метраж, Комнаты, Санузлы, Окна */}
             <div className="grid grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Метраж (м²)</label>
@@ -314,7 +345,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
-            {/* Дополнительные услуги BrightHouse */}
             <div>
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Дополнительные опции</label>
               <div className="grid grid-cols-3 gap-2">
@@ -351,7 +381,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
-            {/* Блок химчистки */}
             <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-3 space-y-2">
               <span className="text-[11px] font-bold text-amber-900 uppercase block">🛋️ Химчистка мебели</span>
               <div className="grid grid-cols-3 gap-2">
@@ -388,7 +417,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
-            {/* Клиент и Адрес */}
             <div className="space-y-3 pt-2">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -434,10 +462,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             </div>
           </div>
 
-          {/* Правая часть: Тайминг, Бригада, Напарники, Итог (45%) */}
+          {/* Правая часть: Тайминг, Бригада, Итог */}
           <div className="w-[45%] p-6 flex flex-col justify-between bg-slate-50/40 overflow-y-auto space-y-4">
             <div className="space-y-4">
-              {/* Дата, Время старта и Время финиша (Авто) */}
               <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Дата</label>
@@ -468,7 +495,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               </div>
 
-              {/* Индикатор длительности уборки */}
               <div className="flex items-center justify-between px-3 py-2 bg-blue-50/80 border border-blue-200 rounded-lg text-xs font-semibold text-blue-900">
                 <span>⏱️ Оценочное время на объекте:</span>
                 <span className="font-bold bg-white px-2 py-0.5 rounded border border-blue-200">{durationText}</span>
@@ -480,16 +506,21 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               )}
 
-              {/* Назначение клинеров */}
+              {/* Назначение клинеров с проверкой доступности по графику */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] font-bold text-slate-500 uppercase">Бригада ({form.assignedCleaners.length})</label>
-                  <span className="text-[10px] text-slate-400">Доступно: {eligibleCleaners.length}</span>
+                  <span className="text-[10px] text-slate-400">
+                    {loadingAvailability ? 'Проверка смен...' : `В базе: ${eligibleCleaners.length}`}
+                  </span>
                 </div>
 
-                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   {eligibleCleaners.map((cleaner) => {
                     const isSelected = form.assignedCleaners.some((c) => c.id === cleaner.id);
+                    const info = availabilityMap[cleaner.id];
+                    const isAvailable = info ? info.available : true;
+
                     return (
                       <button
                         type="button"
@@ -497,12 +528,36 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                         onClick={() => toggleCleaner(cleaner)}
                         className={`w-full px-3 py-2 rounded-lg text-xs flex items-center justify-between border transition ${
                           isSelected
-                            ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-bold shadow-sm'
+                            ? 'bg-blue-50 border-blue-500 text-blue-900 font-bold shadow-sm'
+                            : !isAvailable
+                            ? 'bg-slate-100 border-slate-200 text-slate-400 opacity-60'
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
-                        <span>🙋‍♀️ {cleaner.name}</span>
-                        <span className="text-[10px] text-slate-400">📍 {cleaner.district}</span>
+                        <div className="text-left">
+                          <span>🙋‍♀️ {cleaner.name}</span>
+                          <span className="text-[10px] text-slate-400 ml-1.5">📍 {cleaner.district || 'Центр'}</span>
+                        </div>
+
+                        <div className="text-[10px] font-bold">
+                          {info ? (
+                            info.available ? (
+                              <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                                ✅ Свободен ({info.workHours})
+                              </span>
+                            ) : info.isBusy ? (
+                              <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                                ⚠️ Занят ({info.busyOrders.join(', ')})
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 bg-slate-200 px-2 py-0.5 rounded">
+                                🚫 Выходной
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
@@ -515,7 +570,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 )}
               </div>
 
-              {/* Заметки и ТЗ */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">ТЗ / Особенности клиента</label>
                 <textarea
@@ -528,7 +582,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
-            {/* Итоговая стоимость и кнопки действий */}
             <div className="border-t border-slate-200 pt-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 font-medium">Итоговая стоимость:</span>
@@ -543,11 +596,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               </div>
 
-              {/* Кнопки управления заказом */}
               <div className="flex items-center gap-2 pt-2 flex-wrap">
                 {form.id && (
                   <>
-                    {/* Кнопка открытия счета / PDF */}
                     <button
                       type="button"
                       onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
@@ -557,7 +608,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       📄 Счет
                     </button>
 
-                    {/* Отправка счета клиенту в Telegram */}
                     <button
                       type="button"
                       onClick={async () => {
@@ -568,7 +618,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                             alert('✅ Счет успешно отправлен клиенту в Telegram!');
                           } else if (data.messageText) {
                             navigator.clipboard.writeText(data.messageText);
-                            alert('📋 Чат клиента не найден, но текст счета с реквизитами скопирован в буфер!');
+                            alert('📋 Чат клиента не найден, но текст счета скопирован в буфер!');
                           }
                         } catch {
                           alert('Ошибка отправки счета');
@@ -580,7 +630,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       💬 В Telegram
                     </button>
 
-                    {/* Отправка наряда клинерам */}
                     {form.assignedCleaners && form.assignedCleaners.length > 0 && (
                       <button
                         type="button"
@@ -605,7 +654,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       </button>
                     )}
 
-                    {/* Запрос отзыва */}
                     <button
                       type="button"
                       onClick={async () => {
@@ -628,7 +676,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       ⭐️ Отзыв
                     </button>
 
-                    {/* Отмена заказа */}
                     <button
                       type="button"
                       onClick={async () => {
@@ -650,7 +697,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   </>
                 )}
 
-                {/* Сохранение */}
                 <button
                   type="button"
                   onClick={() => {
