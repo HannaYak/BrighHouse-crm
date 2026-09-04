@@ -30,18 +30,23 @@ export default function SchedulePage() {
     loadData();
   }, []);
 
-  // Фильтруем заказы строго на выбранную дату
+  // Фильтруем заказы на выбранную дату
   const dayOrders = orders.filter((o: any) => {
     if (!o.date) return false;
     const orderDateStr = new Date(o.date).toISOString().slice(0, 10);
     return orderDateStr === selectedDate && o.status !== 'CANCELLED';
   });
 
+  // Динамическая сетка: 80px под время + равные колонки под каждого клинера
+  const gridStyle = {
+    gridTemplateColumns: `80px repeat(${Math.max(cleaners.length, 1)}, minmax(160px, 1fr))`,
+  };
+
   if (loading) return <div className="p-10 text-center text-xs text-slate-500">Загрузка расписания...</div>;
 
   return (
     <div className="space-y-6 max-w-full mx-auto pb-12 px-4">
-      {/* Шапка с переключателем дат */}
+      {/* Шапка с выбором даты */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <h1 className="text-xl font-bold text-slate-900">📅 Календарь-таймлайн смен</h1>
@@ -80,35 +85,36 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Таймлайн сетка (Колонки = Клинеры, Строки = Часы) */}
+      {/* Таймлайн сетка */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
-        <div className="min-w-[800px]">
-          {/* Шапка таблицы с именами клинеров */}
-          <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
-            <div className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-200">Время</div>
+        <div className="min-w-[900px]">
+          {/* Шапка с именами клинеров */}
+          <div className="grid border-b border-slate-200 bg-slate-50 sticky top-0 z-10" style={gridStyle}>
+            <div className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-200 flex items-center justify-center">
+              Время
+            </div>
             {cleaners.map((cleaner) => (
               <div key={cleaner.id} className="p-3 text-center border-r border-slate-200 last:border-r-0">
-                <div className="font-bold text-xs text-slate-900">{cleaner.name}</div>
-                <span className="text-[10px] text-slate-400">📍 {cleaner.district || 'Центр'}</span>
+                <div className="font-bold text-xs text-slate-900 truncate">{cleaner.name}</div>
+                <span className="text-[10px] text-slate-400 block truncate">📍 {cleaner.district || 'Центр'}</span>
               </div>
             ))}
           </div>
 
-          {/* Тело сетки по часам */}
+          {/* Строки часов */}
           <div className="divide-y divide-slate-100">
             {HOURS.map((hour) => {
               const hourStr = `${hour < 10 ? '0' + hour : hour}:00`;
 
               return (
-                <div key={hour} className="grid grid-cols-[80px_repeat(auto-fit,minmax(180px,1fr))] min-h-[64px]">
-                  {/* Колонка времени */}
+                <div key={hour} className="grid min-h-[64px]" style={gridStyle}>
+                  {/* Время */}
                   <div className="p-2 text-center text-xs font-mono font-bold text-slate-400 border-r border-slate-100 bg-slate-50/50 flex items-center justify-center">
                     {hourStr}
                   </div>
 
-                  {/* Ячейки клинеров для этого часа */}
+                  {/* Ячейки сотрудников */}
                   {cleaners.map((cleaner) => {
-                    // Ищем заказы, которые привязаны к этому клинеру и идут в этот час
                     const cleanerOrders = dayOrders.filter((o) => {
                       const isAssigned = o.assignedCleaners?.some((ac: any) => ac.cleanerId === cleaner.id);
                       if (!isAssigned) return false;
@@ -119,11 +125,11 @@ export default function SchedulePage() {
                     });
 
                     return (
-                      <div key={cleaner.id} className="p-1.5 border-r border-slate-100 last:border-r-0 relative bg-white hover:bg-slate-50/50 transition">
+                      <div key={cleaner.id} className="p-1.5 border-r border-slate-100 last:border-r-0 bg-white hover:bg-slate-50/50 transition">
                         {cleanerOrders.map((order) => (
                           <div
                             key={order.id}
-                            className="bg-blue-600 text-white p-2.5 rounded-xl shadow-xs space-y-1 text-xs"
+                            className="bg-blue-600 text-white p-2 rounded-xl shadow-xs space-y-1 text-xs"
                           >
                             <div className="flex justify-between items-center font-bold">
                               <span>{order.orderNumber}</span>
@@ -131,9 +137,6 @@ export default function SchedulePage() {
                             </div>
                             <div className="font-medium truncate">{order.clientName}</div>
                             <div className="text-[10px] text-blue-100 truncate">📍 {order.addressLine1}</div>
-                            <div className="text-[10px] bg-blue-700/60 px-1.5 py-0.5 rounded inline-block font-mono">
-                              ⏱️ {order.timeSlot || order.startTime}
-                            </div>
                           </div>
                         ))}
                       </div>
