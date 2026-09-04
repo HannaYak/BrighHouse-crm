@@ -69,26 +69,60 @@ export default function SchedulePage() {
   };
 
   // Функция изменения времени/клинера при перетаскивании или ресайзе
+ // Безопасное обновление времени/клинера при перетаскивании или ресайзе
   const updateOrderSlot = async (order: any, newStartHour: number, newDurationHours: number, newCleanerId?: number) => {
-    const startStr = `${newStartHour < 10 ? '0' + newStartHour : newStartHour}:00`;
-    const endH = Math.min(20, newStartHour + Math.max(1, newDurationHours));
-    const endStr = `${endH < 10 ? '0' + endH : endH}:00`;
+    try {
+      const startStr = `${newStartHour < 10 ? '0' + newStartHour : newStartHour}:00`;
+      const endH = Math.min(20, newStartHour + Math.max(1, newDurationHours));
+      const endStr = `${endH < 10 ? '0' + endH : endH}:00`;
 
-    const updatedCleaners = newCleanerId 
-      ? [{ id: newCleanerId }] 
-      : (order.assignedCleaners || []).map((c: any) => ({ id: c.cleanerId || c.id }));
+      // Собираем ID клинеров в правильном формате для бэкенда
+      let cleanIds: number[] = [];
+      if (newCleanerId) {
+        cleanIds = [newCleanerId];
+      } else if (order.assignedCleaners) {
+        cleanIds = order.assignedCleaners.map((c: any) => c.cleanerId || c.id).filter(Boolean);
+      }
 
-    const payload = {
-      ...order,
-      startTime: startStr,
-      endTime: endStr,
-      timeSlot: `${startStr} — ${endStr}`,
-      assignedCleaners: updatedCleaners,
-    };
+      const payload = {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        clientName: order.clientName || 'Клиент',
+        clientPhone: order.clientPhone || '',
+        addressLine1: order.addressLine1 || '',
+        addressLine2: order.addressLine2 || '',
+        serviceType: order.serviceType || 'STANDARD',
+        status: order.status || 'NEW',
+        price: Number(order.price) || 0,
+        areaM2: Number(order.areaM2) || 45,
+        roomsCount: Number(order.roomsCount) || 1,
+        bathroomsCount: Number(order.bathroomsCount) || 1,
+        windowsCount: Number(order.windowsCount) || 0,
+        date: order.date,
+        startTime: startStr,
+        endTime: endStr,
+        timeSlot: `${startStr} — ${endStr}`,
+        assignedCleaners: cleanIds.map(id => ({ id })),
+      };
 
-    await handleSaveOrder(payload);
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        loadData();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error('Ошибка от сервера:', errData);
+        alert('Не удалось сохранить изменения заказа');
+      }
+    } catch (e) {
+      console.error('Ошибка сети при обновлении заказа:', e);
+      alert('Ошибка соединения с сервером');
+    }
   };
-
   if (loading) return <div className="p-10 text-center text-xs text-slate-500">Загрузка расписания...</div>;
 
   return (
