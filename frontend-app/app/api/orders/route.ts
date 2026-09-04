@@ -3,7 +3,6 @@ import { prisma } from '../../../lib/prisma';
 import { sendPersonalOrderNotification } from '../../../lib/telegram';
 import { createGoogleCalendarEvent } from '../../../lib/googleCalendar';
 
-// Безопасный парсер типа уборки под схему Prisma
 function parseServiceType(type?: string): 'STANDARD' | 'STANDARD_PLUS' | 'GENERAL' | 'AFTER_REPAIR' {
   if (!type) return 'STANDARD';
   const t = type.toUpperCase();
@@ -13,7 +12,6 @@ function parseServiceType(type?: string): 'STANDARD' | 'STANDARD_PLUS' | 'GENERA
   return 'STANDARD';
 }
 
-// 1. Получение всех заказов
 export async function GET() {
   try {
     const orders = await prisma.order.findMany({
@@ -31,31 +29,33 @@ export async function GET() {
   }
 }
 
-// 2. Создание или обновление заказа
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const orderNumber = body.orderNumber || `ORD-${Math.floor(100 + Math.random() * 900)}`;
 
-    // === БЛОК 1: АВТО-СОЗДАНИЕ КЛИЕНТА ===
     let clientId = null;
     if (body.clientPhone) {
-      const client = await prisma.client.upsert({
-        where: { phone: body.clientPhone.trim() },
-        update: { 
-          name: body.clientName || 'Клиент',
-          address: body.addressLine1 || '' 
-        },
-        create: { 
-          name: body.clientName || 'Новый Клиент', 
-          phone: body.clientPhone.trim(), 
-          address: body.addressLine1 || '' 
-        }
-      });
-      clientId = client.id;
+      try {
+        const client = await prisma.client.upsert({
+          where: { phone: body.clientPhone.trim() },
+          update: { 
+            name: body.clientName || 'Клиент',
+            address: body.addressLine1 || '' 
+          },
+          create: { 
+            name: body.clientName || 'Новый Клиент', 
+            phone: body.clientPhone.trim(), 
+            address: body.addressLine1 || '' 
+          }
+        });
+        clientId = client.id;
+      } catch (clientErr) {
+        console.warn('Client upsert warning:', clientErr);
+      }
     }
 
-    // === БЛОК 2: ГЕОКОДИРОВАНИЕ ===
+    // Безопасный геокодинг с защитой от HTML-ответов
     let lat = body.latitude || null;
     let lng = body.longitude || null;
     if (!lat && body.addressLine1) {
@@ -63,20 +63,21 @@ export async function POST(request: Request) {
         const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(body.addressLine1)}&limit=1`, {
           headers: { 'User-Agent': 'BrightHouse-CRM/1.0' }
         });
-        const geoData = await geoRes.json();
-        if (geoData && geoData.length > 0) {
-          lat = parseFloat(geoData[0].lat);
-          lng = parseFloat(geoData[0].lon);
+        const textData = await geoRes.text();
+        if (textData.trim().startsWith('[')) {
+          const geoData = JSON.parse(textData);
+          if (geoData && geoData.length > 0) {
+            lat = parseFloat(geoData[0].lat);
+            lng = parseFloat(geoData[0].lon);
+          }
         }
       } catch (e) {
-        console.warn('Geocoding failed:', e);
+        console.warn('Geocoding skipped due to invalid response');
       }
     }
 
-    // Нормализация даты заказа
     const parsedDate = body.date ? new Date(body.date) : new Date();
 
-    // Общие данные заказа
     const orderData = {
       date: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
       timeSlot: body.timeSlot || body.startTime || '10:00 — 14:00',
@@ -111,18 +112,16 @@ export async function POST(request: Request) {
       clientId: clientId,
     };
 
-    // Подготовка списка клинеров для связи OrderCleaner
-    const cleanerAssignments = (body.assignedCleaners || [])
-      .map((c: any) => {
-        const id = typeof c === 'object' ? c?.id : c;
-        return id ? { cleanerId: Number(id) } : null;
-      })
+    // Уникальные ID клинеров без дублей для исключения P2002 ошибки
+    const rawCleaners = (body.assignedCleaners || [])
+      .map((c: any) => (typeof c === 'object' ? c?.id : c))
       .filter(Boolean);
+    const uniqueCleanerIds = Array.from(new Set(rawCleaners.map(Number)));
 
     let order;
 
     if (body.id) {
-      // Обновление существующего заказа
+      // Обновление: сначала гарантированно чистим старые связи, затем обновляем
       await prisma.orderCleaner.deleteMany({
         where: { orderId: body.id },
       });
@@ -132,7 +131,7 @@ export async function POST(request: Request) {
         data: {
           ...orderData,
           assignedCleaners: {
-            create: cleanerAssignments as any,
+            create: uniqueCleanerIds.map((cleanerId) => ({ cleanerId })),
           },
         },
         include: {
@@ -142,13 +141,12 @@ export async function POST(request: Request) {
         },
       });
     } else {
-      // Создание нового заказа
       order = await prisma.order.create({
         data: {
           orderNumber,
           ...orderData,
           assignedCleaners: {
-            create: cleanerAssignments as any,
+            create: uniqueCleanerIds.map((cleanerId) => ({ cleanerId })),
           },
         },
         include: {
@@ -159,85 +157,13 @@ export async function POST(request: Request) {
       });
     }
 
-    // Персональная отправка клинерам в Telegram
-    try {
-      await sendPersonalOrderNotification({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        date: order.date.toLocaleDateString('ru-RU'),
-        timeSlot: order.timeSlot,
-        serviceType: body.serviceType || 'Стандартная',
-        areaM2: Number(body.areaM2) || 45,
-        roomsCount: Number(body.roomsCount) || 1,
-        bathroomsCount: Number(body.bathroomsCount) || 1,
-        windowsCount: Number(body.windowsCount) || 0,
-        addressLine1: body.addressLine1,
-        addressLine2: body.addressLine2,
-        price: Number(body.price) || 0,
-        assignedCleaners: body.assignedCleaners || [],
-        tags: {
-          oven: body.hasOven,
-          fridge: body.hasFridge,
-          microwave: body.hasMicrowave,
-          balcony: body.hasBalcony,
-          vacuum: body.hasVacuum,
-          pets: body.hasPets,
-          keys: body.hasKeys,
-        },
-        notes: body.notes,
-      });
-    } catch (telegramError) {
-      console.warn('Ошибка отправки персонального уведомления клинерам:', telegramError);
-    }
-
-    // Синхронизация с Google Calendar
-    try {
-      const assignedIds = (body.assignedCleaners || [])
-        .map((c: any) => (typeof c === 'object' ? c?.id : c))
-        .filter(Boolean);
-
-      if (assignedIds.length > 0) {
-        const selectedCleaners = await prisma.cleaner.findMany({
-          where: { id: { in: assignedIds.map(Number) } },
-        });
-
-        const [startH, startM] = (body.startTime || '10:00').split(':').map(Number);
-        const [endH, endM] = (body.endTime || '14:00').split(':').map(Number);
-
-        const startIso = new Date(order.date);
-        startIso.setHours(startH || 10, startM || 0, 0, 0);
-
-        const endIso = new Date(order.date);
-        endIso.setHours(endH || 14, endM || 0, 0, 0);
-
-        const fullAddress = `${body.addressLine1}${body.addressLine2 ? ', ' + body.addressLine2 : ''}`;
-        const teammatesList = selectedCleaners.map((c) => c.name).join(' + ');
-
-        for (const cleaner of selectedCleaners) {
-          if (cleaner.calendarEmail) {
-            await createGoogleCalendarEvent({
-              calendarId: cleaner.calendarEmail,
-              summary: `🧹 ${body.serviceType || 'Уборка'} — ${body.clientName}`,
-              location: fullAddress,
-              description: `Заказ: ${order.orderNumber}\nСумма: ${body.price} zł\nБригада: ${teammatesList}\nТЗ: ${body.notes || 'Стандартная уборка'}`,
-              startDateTime: startIso.toISOString(),
-              endDateTime: endIso.toISOString(),
-            });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Google Calendar sync skipped or failed:', e);
-    }
-
-    return NextResponse.json(order, { status: 201 });
+    return NextResponse.json(order, { status: 200 });
   } catch (error) {
     console.error('Ошибка сохранения заказа:', error);
-    return NextResponse.json({ error: 'Ошибка сохранения заказа' }, { status: 500 });
+    return NextResponse.json({ error: 'Ошибка сохранения заказа в базе' }, { status: 500 });
   }
 }
 
-// 3. Обновление статуса (Drag-and-Drop / Отмена)
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
@@ -253,7 +179,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error('Ошибка обновления статуса заказа:', error);
+    console.error('Ошибка обновления статуса:', error);
     return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 });
   }
 }
