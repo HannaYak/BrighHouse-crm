@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // с 8:00 до 20:00
-const ROW_HEIGHT = 64; // высота одной часовой строки в пикселях
+const ROW_HEIGHT = 64; // высота одного часа в пикселях
 
 export default function SchedulePage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
@@ -11,9 +11,13 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Стейт для модалки редактирования заказа при клике на карточку
+  // Модалка редактирования
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Стейты для перетаскивания и ресайза карточки мышкой
+  const [draggingOrder, setDraggingOrder] = useState<any>(null);
+  const [resizingOrder, setResizingOrder] = useState<any>(null);
 
   const loadData = async () => {
     try {
@@ -36,7 +40,6 @@ export default function SchedulePage() {
     loadData();
   }, []);
 
-  // Фильтрация заказов на выбранный день
   const dayOrders = orders.filter((o: any) => {
     if (!o.date) return false;
     const orderDateStr = new Date(o.date).toISOString().slice(0, 10);
@@ -65,15 +68,36 @@ export default function SchedulePage() {
     }
   };
 
+  // Функция изменения времени/клинера при перетаскивании или ресайзе
+  const updateOrderSlot = async (order: any, newStartHour: number, newDurationHours: number, newCleanerId?: number) => {
+    const startStr = `${newStartHour < 10 ? '0' + newStartHour : newStartHour}:00`;
+    const endH = Math.min(20, newStartHour + Math.max(1, newDurationHours));
+    const endStr = `${endH < 10 ? '0' + endH : endH}:00`;
+
+    const updatedCleaners = newCleanerId 
+      ? [{ id: newCleanerId }] 
+      : (order.assignedCleaners || []).map((c: any) => ({ id: c.cleanerId || c.id }));
+
+    const payload = {
+      ...order,
+      startTime: startStr,
+      endTime: endStr,
+      timeSlot: `${startStr} — ${endStr}`,
+      assignedCleaners: updatedCleaners,
+    };
+
+    await handleSaveOrder(payload);
+  };
+
   if (loading) return <div className="p-10 text-center text-xs text-slate-500">Загрузка расписания...</div>;
 
   return (
     <div className="space-y-6 max-w-full mx-auto pb-12 px-4">
-      {/* Шапка с выбором даты */}
+      {/* Шапка */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">📅 Календарь-таймлайн смен</h1>
-          <p className="text-xs text-slate-500">Интерактивная сетка заказов. Кликните на карточку для редактирования.</p>
+          <h1 className="text-xl font-bold text-slate-900">📅 Календарь-таймлайн смен (BeautyPro стиль)</h1>
+          <p className="text-xs text-slate-500">Кликните для открытия, тяните за нижний край для изменения длительности или перетаскивайте между клинерами.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -109,9 +133,9 @@ export default function SchedulePage() {
       </div>
 
       {/* Таймлайн сетка */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto select-none">
         <div className="min-w-[900px] relative">
-          {/* Шапка с именами клинеров */}
+          {/* Шапка клинеров */}
           <div className="grid border-b border-slate-200 bg-slate-50 sticky top-0 z-20" style={gridStyle}>
             <div className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-200 flex items-center justify-center">
               Время
@@ -124,9 +148,8 @@ export default function SchedulePage() {
             ))}
           </div>
 
-          {/* Строки часов и колонки */}
+          {/* Строки часов */}
           <div className="relative">
-            {/* Фоновая сетка часов */}
             <div className="divide-y divide-slate-100">
               {HOURS.map((hour) => {
                 const hourStr = `${hour < 10 ? '0' + hour : hour}:00`;
@@ -136,19 +159,33 @@ export default function SchedulePage() {
                       {hourStr}
                     </div>
                     {cleaners.map((cleaner) => (
-                      <div key={cleaner.id} className="border-r border-slate-100 last:border-r-0 bg-white hover:bg-slate-50/30 transition"></div>
+                      <div
+                        key={cleaner.id}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (draggingOrder) {
+                            const order = JSON.parse(e.dataTransfer.getData('text/plain'));
+                            const slot = order.timeSlot || order.startTime || '10:00 — 14:00';
+                            const [startH] = slot.split(':').map(Number);
+                            const [endH] = slot.split('—')[1]?.trim().split(':').map(Number) || [startH + 3];
+                            const duration = Math.max(1, endH - startH);
+                            updateOrderSlot(order, hour, duration, cleaner.id);
+                            setDraggingOrder(null);
+                          }
+                        }}
+                        className="border-r border-slate-100 last:border-r-0 bg-white hover:bg-blue-50/20 transition"
+                      ></div>
                     ))}
                   </div>
                 );
               })}
             </div>
 
-            {/* Карточки заказов с правильной высотой (абсолютное позиционирование) */}
+            {/* Карточки заказов */}
             <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
-              {/* Пустая колонка под время */}
               <div></div>
 
-              {/* Колонки клинеров с их заказами */}
               {cleaners.map((cleaner) => {
                 const cleanerOrders = dayOrders.filter((o) =>
                   o.assignedCleaners?.some((ac: any) => ac.cleanerId === cleaner.id)
@@ -158,7 +195,6 @@ export default function SchedulePage() {
                   <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0 pointer-events-auto">
                     {cleanerOrders.map((order) => {
                       const slot = order.timeSlot || order.startTime || '10:00 — 14:00';
-                      // Парсим время начала и конца (например, "10:00 — 14:00" или "10:00")
                       const parts = slot.split('—').map((s: string) => s.trim());
                       const startTime = parts[0] || '10:00';
                       const endTime = parts[1] || '14:00';
@@ -170,30 +206,69 @@ export default function SchedulePage() {
                       const durationMinutes = Math.max(60, (endH * 60 + (endM || 0)) - (startH * 60 + (startM || 0)));
 
                       const topPx = (startMinutes / 60) * ROW_HEIGHT;
-                      const heightPx = (durationMinutes / 60) * ROW_HEIGHT - 4; // минус отступы
+                      const heightPx = (durationMinutes / 60) * ROW_HEIGHT - 4;
 
                       return (
                         <div
                           key={order.id}
-                          onClick={() => {
-                            setEditingOrder(order);
-                            setIsModalOpen(true);
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', JSON.stringify(order));
+                            setDraggingOrder(order);
+                          }}
+                          onClick={(e) => {
+                            // Открываем модалку только если не кликнули на ручку ресайза
+                            if (!(e.target as HTMLElement).classList.contains('resize-handle')) {
+                              setEditingOrder(order);
+                              setIsModalOpen(true);
+                            }
                           }}
                           style={{
                             top: `${topPx}px`,
                             height: `${Math.max(heightPx, 50)}px`,
                           }}
-                          className="absolute left-1 right-1 bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-xl shadow-md cursor-pointer transition overflow-hidden flex flex-col justify-between border border-blue-400"
+                          className="absolute left-1 right-1 bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-xl shadow-md cursor-grab active:cursor-grabbing transition overflow-hidden flex flex-col justify-between border border-blue-400 group"
                         >
-                          <div className="flex justify-between items-center font-bold text-xs">
-                            <span className="truncate">{order.orderNumber}</span>
-                            <span className="bg-blue-500/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">{order.price} zł</span>
+                          <div>
+                            <div className="flex justify-between items-center font-bold text-xs">
+                              <span className="truncate">{order.orderNumber}</span>
+                              <span className="bg-blue-500/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">{order.price} zł</span>
+                            </div>
+                            <div className="font-semibold text-xs truncate mt-0.5">{order.clientName}</div>
+                            <div className="text-[10px] text-blue-100 truncate">📍 {order.addressLine1}</div>
                           </div>
-                          <div className="font-semibold text-xs truncate">{order.clientName}</div>
-                          <div className="text-[10px] text-blue-100 truncate">📍 {order.addressLine1}</div>
-                          <div className="text-[9px] bg-blue-800/80 px-1 py-0.5 rounded inline-block font-mono mt-0.5">
-                            ⏱️ {startTime} - {endTime}
+
+                          <div className="flex justify-between items-center mt-1">
+                            <span className="text-[9px] bg-blue-800/80 px-1.5 py-0.5 rounded font-mono">
+                              ⏱️ {startTime} - {endTime}
+                            </span>
                           </div>
+
+                          {/* Ручка изменения длительности мышкой внизу карточки */}
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              const startY = e.clientY;
+                              const initialHeight = heightPx;
+
+                              const onMouseMove = (moveEvent: MouseEvent) => {
+                                const deltaY = moveEvent.clientY - startY;
+                                const newHeight = Math.max(50, initialHeight + deltaY);
+                                const newDurationHours = Math.max(1, Math.round(newHeight / ROW_HEIGHT));
+                                updateOrderSlot(order, startH, newDurationHours);
+                              };
+
+                              const onMouseUp = () => {
+                                window.removeEventListener('mousemove', onMouseMove);
+                                window.removeEventListener('mouseup', onMouseUp);
+                              };
+
+                              window.addEventListener('mousemove', onMouseMove);
+                              window.addEventListener('mouseup', onMouseUp);
+                            }}
+                            className="resize-handle absolute bottom-0 left-0 right-0 h-2 bg-blue-400/50 hover:bg-blue-300 cursor-s-resize opacity-0 group-hover:opacity-100 transition"
+                            title="Потяните для изменения длительности"
+                          ></div>
                         </div>
                       );
                     })}
@@ -205,7 +280,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Модалка редактирования заказа при клике */}
+      {/* Модалка редактирования заказа */}
       <OrderModal
         order={editingOrder}
         isOpen={isModalOpen}
