@@ -31,16 +31,16 @@ export interface OrderDetail {
   hasKeys: boolean;
 
   // Химчистка
-  // Расширенная химчистка
   drySofa2: number;
   drySofa3: number;
   drySofaCorner4: number;
-  drySofaU: number;          // П-образный диван
-  dryArmchair: number;       // Кресло
-  dryChair: number;          // Стул со спинкой
-  dryMattressSingle: number; // Матрас 1-спальный
-  dryMattressDouble: number; // Матрас 2-спальный
-  dryCarpetM2: number;       // Ковер (м²)
+  drySofaU?: number;
+  dryArmchair: number;
+  dryChair?: number;
+  dryMattressSide?: number;
+  dryMattressSingle?: number;
+  dryMattressDouble?: number;
+  dryCarpetM2?: number;
 
   clientName: string;
   clientPhone: string;
