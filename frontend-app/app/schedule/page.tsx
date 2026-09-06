@@ -2,22 +2,22 @@
 import React, { useState, useEffect } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
-const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // с 8:00 до 20:00
-const ROW_HEIGHT = 64; // высота одного часа в пикселях
+const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 - 20:00
+const ROW_HEIGHT = 64;
 
 export default function SchedulePage() {
-  const [cleaners, setCleaners] = useState<any[]>([]);
+  const [allCleaners, setAllCleaners] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Модалка редактирования
+  // Фильтр: показывать только работающих в этот день или всю команду
+  const [onlyWorkingToday, setOnlyWorkingToday] = useState(true);
+
+  // Модалка
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // Стейты для перетаскивания и ресайза карточки мышкой
-  const [draggingOrder, setDraggingOrder] = useState<any>(null);
-  const [resizingOrder, setResizingOrder] = useState<any>(null);
+  const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -27,10 +27,10 @@ export default function SchedulePage() {
         fetch('/api/orders')
       ]);
       
-      if (cleanersRes.ok) setCleaners(await cleanersRes.json());
+      if (cleanersRes.ok) setAllCleaners(await cleanersRes.json());
       if (ordersRes.ok) setOrders(await ordersRes.json());
     } catch (e) {
-      console.error(e);
+      console.error('Ошибка загрузки расписания:', e);
     } finally {
       setLoading(false);
     }
@@ -40,6 +40,20 @@ export default function SchedulePage() {
     loadData();
   }, []);
 
+  // День недели выбранной даты (1 = Пн, ..., 7 = Вс)
+  const currentDayOfWeek = (() => {
+    const d = new Date(selectedDate).getDay();
+    return d === 0 ? 7 : d;
+  })();
+
+  // Отфильтрованные клинеры: работающие сегодня (по workDays) или все
+  const visibleCleaners = allCleaners.filter((c) => {
+    if (!onlyWorkingToday) return true;
+    const days: number[] = c.workDays && c.workDays.length > 0 ? c.workDays : [1, 2, 3, 4, 5];
+    return days.includes(currentDayOfWeek);
+  });
+
+  // Заказы строго на выбранную дату
   const dayOrders = orders.filter((o: any) => {
     if (!o.date) return false;
     const orderDateStr = new Date(o.date).toISOString().slice(0, 10);
@@ -47,62 +61,65 @@ export default function SchedulePage() {
   });
 
   const gridStyle = {
-    gridTemplateColumns: `80px repeat(${Math.max(cleaners.length, 1)}, minmax(180px, 1fr))`,
+    gridTemplateColumns: `80px repeat(${Math.max(visibleCleaners.length, 1)}, minmax(190px, 1fr))`,
   };
 
+  // Клик по пустой ячейке: создание нового заказа на это время и этого клинера
+  const handleCellClick = (hour: number, cleaner: any) => {
+    const startStr = `${hour < 10 ? '0' + hour : hour}:00`;
+    const endHour = Math.min(20, hour + 3);
+    const endStr = `${endHour < 10 ? '0' + endHour : endHour}:00`;
+
+    const newOrderTemplate: OrderDetail = {
+      date: selectedDate,
+      startTime: startStr,
+      endTime: endStr,
+      timeSlot: `${startStr} — ${endStr}`,
+      serviceType: 'STANDARD',
+      areaM2: 45,
+      roomsCount: 1,
+      bathroomsCount: 1,
+      windowsCount: 0,
+      hasOven: false,
+      hasFridge: false,
+      hasFridgeFreeze: false,
+      hasMicrowave: false,
+      hasBalcony: false,
+      hasKitchenClosets: false,
+      hasStairs: false,
+      hasSteamer: false,
+      hasDishesHours: 0,
+      hasIroningHours: 0,
+      hasVacuum: false,
+      hasPets: false,
+      hasKeys: false,
+      drySofa2: 0,
+      drySofa3: 0,
+      drySofaCorner4: 0,
+      dryArmchair: 0,
+      dryMattressSide: 0,
+      clientName: '',
+      clientPhone: '',
+      addressLine1: '',
+      price: 200,
+      cleanersCount: 1,
+      assignedCleaners: [{ id: cleaner.id, name: cleaner.name, district: cleaner.district }],
+      notes: '',
+    };
+
+    setEditingOrder(newOrderTemplate);
+    setIsModalOpen(true);
+  };
+
+  // Сохранение из модалки
   const handleSaveOrder = async (saved: OrderDetail) => {
     try {
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saved),
-      });
-      if (res.ok) {
-        loadData();
-        setIsModalOpen(false);
-      } else {
-        alert('Ошибка сохранения заказа');
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // Функция изменения времени/клинера при перетаскивании или ресайзе
- // Безопасное обновление времени/клинера при перетаскивании или ресайзе
-  const updateOrderSlot = async (order: any, newStartHour: number, newDurationHours: number, newCleanerId?: number) => {
-    try {
-      const startStr = `${newStartHour < 10 ? '0' + newStartHour : newStartHour}:00`;
-      const endH = Math.min(20, newStartHour + Math.max(1, newDurationHours));
-      const endStr = `${endH < 10 ? '0' + endH : endH}:00`;
-
-      // Собираем ID клинеров в правильном формате для бэкенда
-      let cleanIds: number[] = [];
-      if (newCleanerId) {
-        cleanIds = [newCleanerId];
-      } else if (order.assignedCleaners) {
-        cleanIds = order.assignedCleaners.map((c: any) => c.cleanerId || c.id).filter(Boolean);
-      }
-
       const payload = {
-        id: order.id,
-        orderNumber: order.orderNumber,
-        clientName: order.clientName || 'Клиент',
-        clientPhone: order.clientPhone || '',
-        addressLine1: order.addressLine1 || '',
-        addressLine2: order.addressLine2 || '',
-        serviceType: order.serviceType || 'STANDARD',
-        status: order.status || 'NEW',
-        price: Number(order.price) || 0,
-        areaM2: Number(order.areaM2) || 45,
-        roomsCount: Number(order.roomsCount) || 1,
-        bathroomsCount: Number(order.bathroomsCount) || 1,
-        windowsCount: Number(order.windowsCount) || 0,
-        date: order.date,
-        startTime: startStr,
-        endTime: endStr,
-        timeSlot: `${startStr} — ${endStr}`,
-        assignedCleaners: cleanIds.map(id => ({ id })),
+        ...saved,
+        date: saved.date || selectedDate,
+        assignedCleaners: (saved.assignedCleaners || []).map((c: any) => ({
+          id: typeof c === 'object' ? c.id : c
+        })),
       };
 
       const res = await fetch('/api/orders', {
@@ -112,40 +129,121 @@ export default function SchedulePage() {
       });
 
       if (res.ok) {
-        loadData();
+        await loadData();
+        setIsModalOpen(false);
+        setEditingOrder(null);
       } else {
-        const errData = await res.json().catch(() => ({}));
-        console.error('Ошибка от сервера:', errData);
-        alert('Не удалось сохранить изменения заказа');
+        alert('Ошибка при сохранении заказа');
       }
     } catch (e) {
-      console.error('Ошибка сети при обновлении заказа:', e);
+      console.error(e);
       alert('Ошибка соединения с сервером');
     }
   };
+
+  // Перемещение заказа Drag-and-Drop
+  const handleMoveOrder = async (orderId: string, newHour: number, targetCleanerId: number) => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (!targetOrder) return;
+
+    const slot = targetOrder.timeSlot || targetOrder.startTime || '10:00 — 14:00';
+    const parts = slot.split('—').map((s: string) => s.trim());
+    const [oldStartH] = (parts[0] || '10:00').split(':').map(Number);
+    const [oldEndH] = (parts[1] || '13:00').split(':').map(Number);
+    const durationHours = Math.max(1, (oldEndH || oldStartH + 3) - oldStartH);
+
+    const newStartStr = `${newHour < 10 ? '0' + newHour : newHour}:00`;
+    const newEndH = Math.min(20, newHour + durationHours);
+    const newEndStr = `${newEndH < 10 ? '0' + newEndH : newEndH}:00`;
+
+    const payload = {
+      ...targetOrder,
+      date: selectedDate,
+      startTime: newStartStr,
+      endTime: newEndStr,
+      timeSlot: `${newStartStr} — ${newEndStr}`,
+      assignedCleaners: [{ id: targetCleanerId }],
+    };
+
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        await loadData();
+      }
+    } catch (e) {
+      console.error('Ошибка перемещения заказа:', e);
+    }
+  };
+
+  // Ресайз длительности
+  const handleResizeOrder = async (order: any, newDurationHours: number) => {
+    const slot = order.timeSlot || order.startTime || '10:00 — 14:00';
+    const [startH] = slot.split(':').map(Number);
+    const endH = Math.min(20, startH + Math.max(1, newDurationHours));
+    const startStr = `${startH < 10 ? '0' + startH : startH}:00`;
+    const endStr = `${endH < 10 ? '0' + endH : endH}:00`;
+
+    const payload = {
+      ...order,
+      date: selectedDate,
+      startTime: startStr,
+      endTime: endStr,
+      timeSlot: `${startStr} — ${endStr}`,
+      assignedCleaners: (order.assignedCleaners || []).map((c: any) => ({ id: c.cleanerId || c.id })),
+    };
+
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) await loadData();
+    } catch (e) {
+      console.error('Ошибка изменения размера:', e);
+    }
+  };
+
   if (loading) return <div className="p-10 text-center text-xs text-slate-500">Загрузка расписания...</div>;
 
   return (
     <div className="space-y-6 max-w-full mx-auto pb-12 px-4">
-      {/* Шапка */}
+      {/* Панель управления датой и фильтром */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">📅 Календарь-таймлайн смен (BeautyPro стиль)</h1>
-          <p className="text-xs text-slate-500">Кликните для открытия, тяните за нижний край для изменения длительности или перетаскивайте между клинерами.</p>
+          <h1 className="text-xl font-bold text-slate-900">📅 Сетка смен и расписание уборок</h1>
+          <p className="text-xs text-slate-500">Кликните на свободное время для создания заявки или перетащите карточку</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
+            type="button"
+            onClick={() => setOnlyWorkingToday(!onlyWorkingToday)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+              onlyWorkingToday
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : 'bg-slate-100 text-slate-700 border-slate-200'
+            }`}
+          >
+            {onlyWorkingToday ? '✅ Только работающие сегодня' : '👥 Все сотрудники'}
+          </button>
+
+          <button
+            type="button"
             onClick={() => {
               const d = new Date(selectedDate);
               d.setDate(d.getDate() - 1);
               setSelectedDate(d.toISOString().slice(0, 10));
             }}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold transition"
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold"
           >
-            ← Предыдущий день
+            ←
           </button>
-          
+
           <input
             type="date"
             value={selectedDate}
@@ -154,14 +252,15 @@ export default function SchedulePage() {
           />
 
           <button
+            type="button"
             onClick={() => {
               const d = new Date(selectedDate);
               d.setDate(d.getDate() + 1);
               setSelectedDate(d.toISOString().slice(0, 10));
             }}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold transition"
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold"
           >
-            Следующий день →
+            →
           </button>
         </div>
       </div>
@@ -169,64 +268,69 @@ export default function SchedulePage() {
       {/* Таймлайн сетка */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto select-none">
         <div className="min-w-[900px] relative">
-          {/* Шапка клинеров */}
+          {/* Шапка с клинерами */}
           <div className="grid border-b border-slate-200 bg-slate-50 sticky top-0 z-20" style={gridStyle}>
             <div className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-200 flex items-center justify-center">
               Время
             </div>
-            {cleaners.map((cleaner) => (
+            {visibleCleaners.map((cleaner) => (
               <div key={cleaner.id} className="p-3 text-center border-r border-slate-200 last:border-r-0">
                 <div className="font-bold text-xs text-slate-900 truncate">{cleaner.name}</div>
                 <span className="text-[10px] text-slate-400 block truncate">📍 {cleaner.district || 'Центр'}</span>
               </div>
             ))}
+            {visibleCleaners.length === 0 && (
+              <div className="p-3 text-xs text-slate-400 col-span-full text-center">На этот день нет работающих клинеров по графику</div>
+            )}
           </div>
 
-          {/* Строки часов */}
+          {/* Строки часов и активные ячейки */}
           <div className="relative">
             <div className="divide-y divide-slate-100">
               {HOURS.map((hour) => {
                 const hourStr = `${hour < 10 ? '0' + hour : hour}:00`;
+
                 return (
                   <div key={hour} className="grid" style={{ ...gridStyle, height: `${ROW_HEIGHT}px` }}>
                     <div className="p-2 text-center text-xs font-mono font-bold text-slate-400 border-r border-slate-100 bg-slate-50/50 flex items-center justify-center">
                       {hourStr}
                     </div>
-                    {cleaners.map((cleaner) => (
+
+                    {visibleCleaners.map((cleaner) => (
                       <div
                         key={cleaner.id}
+                        onClick={() => handleCellClick(hour, cleaner)}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => {
                           e.preventDefault();
-                          if (draggingOrder) {
-                            const order = JSON.parse(e.dataTransfer.getData('text/plain'));
-                            const slot = order.timeSlot || order.startTime || '10:00 — 14:00';
-                            const [startH] = slot.split(':').map(Number);
-                            const [endH] = slot.split('—')[1]?.trim().split(':').map(Number) || [startH + 3];
-                            const duration = Math.max(1, endH - startH);
-                            updateOrderSlot(order, hour, duration, cleaner.id);
-                            setDraggingOrder(null);
+                          const orderId = e.dataTransfer.getData('text/order-id') || draggingOrderId;
+                          if (orderId) {
+                            handleMoveOrder(orderId, hour, cleaner.id);
+                            setDraggingOrderId(null);
                           }
                         }}
-                        className="border-r border-slate-100 last:border-r-0 bg-white hover:bg-blue-50/20 transition"
-                      ></div>
+                        className="border-r border-slate-100 last:border-r-0 bg-white hover:bg-emerald-50/30 cursor-pointer transition relative"
+                        title={`Создать заказ на ${hourStr} для ${cleaner.name}`}
+                      >
+                        <span className="absolute bottom-1 right-2 text-[9px] text-slate-200 opacity-0 hover:opacity-100 pointer-events-none">+</span>
+                      </div>
                     ))}
                   </div>
                 );
               })}
             </div>
 
-            {/* Карточки заказов */}
+            {/* Карточки заказов поверх фоновой сетки */}
             <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
               <div></div>
 
-              {cleaners.map((cleaner) => {
+              {visibleCleaners.map((cleaner) => {
                 const cleanerOrders = dayOrders.filter((o) =>
                   o.assignedCleaners?.some((ac: any) => ac.cleanerId === cleaner.id)
                 );
 
                 return (
-                  <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0 pointer-events-auto">
+                  <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0">
                     {cleanerOrders.map((order) => {
                       const slot = order.timeSlot || order.startTime || '10:00 — 14:00';
                       const parts = slot.split('—').map((s: string) => s.trim());
@@ -247,28 +351,35 @@ export default function SchedulePage() {
                           key={order.id}
                           draggable
                           onDragStart={(e) => {
-                            e.dataTransfer.setData('text/plain', JSON.stringify(order));
-                            setDraggingOrder(order);
+                            e.stopPropagation();
+                            e.dataTransfer.setData('text/order-id', order.id);
+                            setDraggingOrderId(order.id);
                           }}
                           onClick={(e) => {
-                            // Открываем модалку только если не кликнули на ручку ресайза
+                            e.stopPropagation();
                             if (!(e.target as HTMLElement).classList.contains('resize-handle')) {
-                              setEditingOrder(order);
+                              setEditingOrder({
+                                ...order,
+                                date: selectedDate,
+                                startTime,
+                                endTime,
+                                assignedCleaners: (order.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+                              });
                               setIsModalOpen(true);
                             }
                           }}
                           style={{
                             top: `${topPx}px`,
-                            height: `${Math.max(heightPx, 50)}px`,
+                            height: `${Math.max(heightPx, 52)}px`,
                           }}
-                          className="absolute left-1 right-1 bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-xl shadow-md cursor-grab active:cursor-grabbing transition overflow-hidden flex flex-col justify-between border border-blue-400 group"
+                          className="absolute left-1 right-1 bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-xl shadow-md cursor-grab active:cursor-grabbing transition overflow-hidden flex flex-col justify-between border border-blue-400 group pointer-events-auto"
                         >
                           <div>
                             <div className="flex justify-between items-center font-bold text-xs">
                               <span className="truncate">{order.orderNumber}</span>
                               <span className="bg-blue-500/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">{order.price} zł</span>
                             </div>
-                            <div className="font-semibold text-xs truncate mt-0.5">{order.clientName}</div>
+                            <div className="font-semibold text-xs truncate mt-0.5">{order.clientName || 'Без имени'}</div>
                             <div className="text-[10px] text-blue-100 truncate">📍 {order.addressLine1}</div>
                           </div>
 
@@ -278,7 +389,7 @@ export default function SchedulePage() {
                             </span>
                           </div>
 
-                          {/* Ручка изменения длительности мышкой внизу карточки */}
+                          {/* Полоса изменения длительности мышкой */}
                           <div
                             onMouseDown={(e) => {
                               e.stopPropagation();
@@ -289,7 +400,7 @@ export default function SchedulePage() {
                                 const deltaY = moveEvent.clientY - startY;
                                 const newHeight = Math.max(50, initialHeight + deltaY);
                                 const newDurationHours = Math.max(1, Math.round(newHeight / ROW_HEIGHT));
-                                updateOrderSlot(order, startH, newDurationHours);
+                                handleResizeOrder(order, newDurationHours);
                               };
 
                               const onMouseUp = () => {
@@ -300,9 +411,9 @@ export default function SchedulePage() {
                               window.addEventListener('mousemove', onMouseMove);
                               window.addEventListener('mouseup', onMouseUp);
                             }}
-                            className="resize-handle absolute bottom-0 left-0 right-0 h-2 bg-blue-400/50 hover:bg-blue-300 cursor-s-resize opacity-0 group-hover:opacity-100 transition"
-                            title="Потяните для изменения длительности"
-                          ></div>
+                            className="resize-handle absolute bottom-0 left-0 right-0 h-3 bg-blue-400/60 hover:bg-blue-300 cursor-s-resize opacity-0 group-hover:opacity-100 transition"
+                            title="Потяните для изменения времени"
+                          />
                         </div>
                       );
                     })}
@@ -314,7 +425,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Модалка редактирования заказа */}
+      {/* Модалка заказа */}
       <OrderModal
         order={editingOrder}
         isOpen={isModalOpen}
