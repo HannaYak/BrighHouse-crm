@@ -111,10 +111,10 @@ export async function POST(request: Request) {
       clientId: clientId,
     };
 
-    const rawCleaners = (body.assignedCleaners || [])
+   const rawCleaners = (body.assignedCleaners || [])
       .map((c: any) => (typeof c === 'object' ? c?.id : c))
       .filter(Boolean);
-    const uniqueCleanerIds = Array.from(new Set(rawCleaners.map(Number)));
+    const uniqueCleanerIds: number[] = Array.from(new Set(rawCleaners.map((id: any) => Number(id))));
 
     let order;
 
