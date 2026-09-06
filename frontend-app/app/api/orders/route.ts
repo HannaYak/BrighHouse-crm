@@ -55,7 +55,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // Безопасный геокодинг с защитой от HTML-ответов
     let lat = body.latitude || null;
     let lng = body.longitude || null;
     if (!lat && body.addressLine1) {
@@ -112,7 +111,6 @@ export async function POST(request: Request) {
       clientId: clientId,
     };
 
-    // Уникальные ID клинеров без дублей для исключения P2002 ошибки
     const rawCleaners = (body.assignedCleaners || [])
       .map((c: any) => (typeof c === 'object' ? c?.id : c))
       .filter(Boolean);
@@ -120,8 +118,7 @@ export async function POST(request: Request) {
 
     let order;
 
-   if (body.id) {
-      // Обновление: чистим старые связи и создаем новые через connect
+    if (body.id) {
       await prisma.orderCleaner.deleteMany({
         where: { orderId: body.id },
       });
@@ -160,3 +157,30 @@ export async function POST(request: Request) {
         },
       });
     }
+
+    return NextResponse.json(order, { status: 200 });
+  } catch (error) {
+    console.error('Ошибка сохранения заказа:', error);
+    return NextResponse.json({ error: 'Ошибка сохранения заказа в базе' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, status, cancelReason } = body;
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: {
+        status,
+        ...(cancelReason ? { cancelReason } : {}),
+      },
+    });
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error('Ошибка обновления статуса:', error);
+    return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 });
+  }
+}
