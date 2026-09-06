@@ -24,7 +24,7 @@ export interface CalculationInput {
   hasKeys?: boolean;
   hasStairs?: boolean;
   hasSteamer?: boolean;
-  
+
   // Химчистка
   drySofa2?: number;
   drySofa3?: number;
@@ -37,48 +37,66 @@ export interface CalculationInput {
   dryCarpetM2?: number;
 
   cleanersCount: number;
-  startTime: string; 
-  addonRates?: Record<string, AddOnRate>; // <-- Сюда будут прилетать динамические цены из БД
+  startTime: string;
+  addonRates?: Record<string, AddOnRate>;
 }
 
 export interface CalculationResult {
   totalPrice: number;
-  baseDurationMinutes: number; 
-  actualDurationMinutes: number; 
-  formattedDuration: string; 
-  endTime: string; 
+  baseDurationMinutes: number;
+  actualDurationMinutes: number;
+  formattedDuration: string;
+  endTime: string;
 }
 
 export function calculateBrightHouseOrder(input: CalculationInput): CalculationResult {
   let price = 0;
   let durationMins = 0;
 
-  const rooms = Math.max(1, input.roomsCount);
-  const baths = Math.max(1, input.bathroomsCount);
-  const area = input.areaM2 || 45;
+  const rooms = Math.max(1, Number(input.roomsCount) || 1);
+  const baths = Math.max(1, Number(input.bathroomsCount) || 1);
+  const area = Number(input.areaM2) || 45;
 
   // 1. БАЗОВАЯ СЕТКА ПО ТИПУ УБОРКИ
   if (input.serviceType === 'STANDARD') {
     const basePrice = rooms === 1 ? (area <= 25 ? 160 : 170) : rooms === 2 ? 200 : rooms === 3 ? 240 : rooms === 4 ? 290 : 330 + (rooms - 5) * 40;
-    price = basePrice + (baths >= 2 ? 50 : 0);
-    durationMins = (rooms === 1 ? 180 : rooms === 2 ? 240 : rooms === 3 ? 300 : rooms === 4 ? 360 : 420 + (rooms - 5) * 40) + (baths >= 2 ? 60 : 0);
+    price = basePrice + (baths >= 2 ? (baths - 1) * 50 : 0);
+    durationMins = (rooms === 1 ? 180 : rooms === 2 ? 240 : rooms === 3 ? 300 : rooms === 4 ? 360 : 420 + (rooms - 5) * 40) + (baths >= 2 ? (baths - 1) * 60 : 0);
   } else if (input.serviceType === 'STANDARD_PLUS') {
     const basePrice = rooms === 1 ? 240 : rooms === 2 ? 300 : rooms === 3 ? 360 : rooms === 4 ? 420 : 480 + (rooms - 5) * 50;
-    price = basePrice + (baths >= 2 ? 65 : 0);
-    durationMins = (rooms === 1 ? 240 : rooms === 2 ? 360 : rooms === 3 ? 420 : rooms === 4 ? 480 : 540 + (rooms - 5) * 60) + (baths >= 2 ? 80 : 0);
-  } else {
+    price = basePrice + (baths >= 2 ? (baths - 1) * 65 : 0);
+    durationMins = (rooms === 1 ? 240 : rooms === 2 ? 360 : rooms === 3 ? 420 : rooms === 4 ? 480 : 540 + (rooms - 5) * 60) + (baths >= 2 ? (baths - 1) * 80 : 0);
+  } else if (input.serviceType === 'GENERAL') {
     const basePrice = rooms === 1 ? (area <= 25 ? 510 : 535) : rooms === 2 ? 650 : rooms === 3 ? 800 : rooms === 4 ? 1020 : 1100 + (rooms - 5) * 60;
-    price = basePrice + (baths >= 2 ? 90 : 0);
-    durationMins = (rooms === 1 ? 540 : rooms === 2 ? 720 : rooms === 3 ? 900 : rooms === 4 ? 1080 : 1200 + (rooms - 5) * 150) + (baths >= 2 ? 210 : 0);
+    price = basePrice + (baths >= 2 ? (baths - 1) * 90 : 0);
+    durationMins = (rooms === 1 ? 540 : rooms === 2 ? 720 : rooms === 3 ? 900 : rooms === 4 ? 1080 : 1200 + (rooms - 5) * 150) + (baths >= 2 ? (baths - 1) * 210 : 0);
+  } else {
+    // AFTER_REPAIR (После ремонта: базово от 10 zł за м² либо по комнатам с повышенным тарифом)
+    const basePrice = rooms === 1 ? 600 : rooms === 2 ? 780 : rooms === 3 ? 960 : rooms === 4 ? 1200 : 1300 + (rooms - 5) * 80;
+    price = basePrice + (baths >= 2 ? (baths - 1) * 100 : 0);
+    durationMins = (rooms === 1 ? 600 : rooms === 2 ? 800 : rooms === 3 ? 1000 : rooms === 4 ? 1200 : 1350 + (rooms - 5) * 160) + (baths >= 2 ? (baths - 1) * 240 : 0);
   }
 
-  // Функция для безопасного извлечения цены из БД или дефолтной
+  // 2. ДОПЛАТА ЗА ПРЕВЫШЕНИЕ ПЛОЩАДИ (МЕТРАЖ)
+  // Базовая норма: 1к = 40м², 2к = 65м², 3к = 90м², 4к = 115м²
+  const baseAllowedArea = (rooms * 25) + 15;
+  const extraM2 = Math.max(0, area - baseAllowedArea);
+
+  if (extraM2 > 0) {
+    // Ставка за лишний м² в зависимости от сложности уборки
+    const ratePerM2 = input.serviceType === 'AFTER_REPAIR' ? 8 : input.serviceType === 'GENERAL' ? 6 : 4;
+    price += extraM2 * ratePerM2;
+    // Добавляем время: каждые 10 лишних м² ~ 20-30 минут
+    durationMins += Math.round(extraM2 * 2.5);
+  }
+
+  // Функция безопасного извлечения цены из БД или дефолтной
   const getRate = (code: string, defPrice: number, defDur: number) => ({
     price: input.addonRates?.[code]?.price ?? defPrice,
     durationMins: input.addonRates?.[code]?.durationMins ?? defDur,
   });
 
-  // 2. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ (Динамические)
+  // 3. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ
   if (input.windowsCount > 0) { price += input.windowsCount * 35; durationMins += input.windowsCount * 30; }
   if (input.hasOven) { const r = getRate('oven', 45, 30); price += r.price; durationMins += r.durationMins; }
   if (input.hasFridge) { const r = getRate('fridge', 35, 30); price += r.price; durationMins += r.durationMins; }
@@ -93,7 +111,7 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   if (input.hasDishesHours) { price += input.hasDishesHours * 40; durationMins += input.hasDishesHours * 60; }
   if (input.hasIroningHours) { price += input.hasIroningHours * 50; durationMins += input.hasIroningHours * 60; }
 
-  // 3. ХИМЧИСТКА (Можно тоже вынести в БД позже по тому же принципу)
+  // 4. ХИМЧИСТКА
   if (input.drySofa2) { price += input.drySofa2 * 180; durationMins += input.drySofa2 * 60; }
   if (input.drySofa3) { price += input.drySofa3 * 200; durationMins += input.drySofa3 * 75; }
   if (input.drySofaCorner4) { price += input.drySofaCorner4 * 220; durationMins += input.drySofaCorner4 * 90; }
@@ -104,7 +122,7 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   if (input.dryMattressSide) { price += input.dryMattressSide * 90; durationMins += input.dryMattressSide * 45; }
   if (input.dryCarpetM2) { price += input.dryCarpetM2 * 15; durationMins += input.dryCarpetM2 * 15; }
 
-  // 4. ДЕЛЕНИЕ НА БРИГАДУ И ОКРУГЛЕНИЕ
+  // 5. РАСПРЕДЕЛЕНИЕ НА БРИГАДУ И ОКРУГЛЕНИЕ
   const cleaners = Math.max(1, input.cleanersCount || 1);
   const rawDividedMins = durationMins / cleaners;
   const actualDurationMinutes = Math.ceil(rawDividedMins / 30) * 30;
@@ -113,7 +131,7 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   const minutes = actualDurationMinutes % 60;
   const formattedDuration = `${hours > 0 ? hours + ' ч ' : ''}${minutes > 0 ? minutes + ' мин' : ''}`.trim() || '30 мин';
 
-  // 5. РАСЧЕТ ВРЕМЕНИ ОКОНЧАНИЯ
+  // 6. ВРЕМЯ ЗАВЕРШЕНИЯ
   const [startH, startM] = (input.startTime || '10:00').split(':').map(Number);
   const totalStartMinutes = (startH || 10) * 60 + (startM || 0);
   const totalEndMinutes = totalStartMinutes + actualDurationMinutes;
