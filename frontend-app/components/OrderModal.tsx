@@ -763,19 +763,26 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   </>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSave({
-                      ...form,
-                      timeSlot: `${form.startTime} — ${form.endTime}`,
-                    });
-                    onClose();
-                  }}
-                  className="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
-                >
-                  💾 Сохранить заказ
-                </button>
+               <button
+  type="button"
+  onClick={() => {
+    // Сохраняем ВСЕХ выбранных клинеров как массив ID
+    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
+      id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+      name: c.name,
+    }));
+
+    onSave({
+      ...form,
+      assignedCleaners: cleanerPayload as any,
+      timeSlot: `${form.startTime} — ${form.endTime}`,
+    });
+    onClose();
+  }}
+  className="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
+>
+  💾 Сохранить заказ
+</button>
               </div>
             </div>
           </div>
