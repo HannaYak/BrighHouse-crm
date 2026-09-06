@@ -10,18 +10,15 @@ export default function SchedulePage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
-
-  // Фильтр: показывать только работающих в этот день или всю команду
   const [onlyWorkingToday, setOnlyWorkingToday] = useState(true);
 
-  // Модалка
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draggingOrderId, setDraggingOrderId] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [cleanersRes, ordersRes] = await Promise.all([
         fetch('/api/cleaners'),
         fetch('/api/orders')
@@ -32,7 +29,7 @@ export default function SchedulePage() {
     } catch (e) {
       console.error('Ошибка загрузки расписания:', e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -40,20 +37,17 @@ export default function SchedulePage() {
     loadData();
   }, []);
 
-  // День недели выбранной даты (1 = Пн, ..., 7 = Вс)
   const currentDayOfWeek = (() => {
     const d = new Date(selectedDate).getDay();
     return d === 0 ? 7 : d;
   })();
 
-  // Отфильтрованные клинеры: работающие сегодня (по workDays) или все
   const visibleCleaners = allCleaners.filter((c) => {
     if (!onlyWorkingToday) return true;
     const days: number[] = c.workDays && c.workDays.length > 0 ? c.workDays : [1, 2, 3, 4, 5];
     return days.includes(currentDayOfWeek);
   });
 
-  // Заказы строго на выбранную дату
   const dayOrders = orders.filter((o: any) => {
     if (!o.date) return false;
     const orderDateStr = new Date(o.date).toISOString().slice(0, 10);
@@ -64,7 +58,6 @@ export default function SchedulePage() {
     gridTemplateColumns: `80px repeat(${Math.max(visibleCleaners.length, 1)}, minmax(190px, 1fr))`,
   };
 
-  // Клик по пустой ячейке: создание нового заказа на это время и этого клинера
   const handleCellClick = (hour: number, cleaner: any) => {
     const startStr = `${hour < 10 ? '0' + hour : hour}:00`;
     const endHour = Math.min(20, hour + 3);
@@ -111,7 +104,6 @@ export default function SchedulePage() {
     setIsModalOpen(true);
   };
 
-  // Сохранение из модалки
   const handleSaveOrder = async (saved: OrderDetail) => {
     try {
       const payload = {
@@ -129,7 +121,7 @@ export default function SchedulePage() {
       });
 
       if (res.ok) {
-        await loadData();
+        await loadData(true);
         setIsModalOpen(false);
         setEditingOrder(null);
       } else {
@@ -141,7 +133,6 @@ export default function SchedulePage() {
     }
   };
 
-  // Перемещение заказа Drag-and-Drop
   const handleMoveOrder = async (orderId: string, newHour: number, targetCleanerId: number) => {
     const targetOrder = orders.find((o) => o.id === orderId);
     if (!targetOrder) return;
@@ -172,14 +163,13 @@ export default function SchedulePage() {
         body: JSON.stringify(payload),
       });
       if (res.ok) {
-        await loadData();
+        await loadData(true);
       }
     } catch (e) {
       console.error('Ошибка перемещения заказа:', e);
     }
   };
 
-  // Ресайз длительности
   const handleResizeOrder = async (order: any, newDurationHours: number) => {
     const slot = order.timeSlot || order.startTime || '10:00 — 14:00';
     const [startH] = slot.split(':').map(Number);
@@ -202,7 +192,9 @@ export default function SchedulePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (res.ok) await loadData();
+      if (res.ok) {
+        await loadData(true);
+      }
     } catch (e) {
       console.error('Ошибка изменения размера:', e);
     }
@@ -212,7 +204,6 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-6 max-w-full mx-auto pb-12 px-4">
-      {/* Панель управления датой и фильтром */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <h1 className="text-xl font-bold text-slate-900">📅 Сетка смен и расписание уборок</h1>
@@ -265,10 +256,8 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Таймлайн сетка */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto select-none">
         <div className="min-w-[900px] relative">
-          {/* Шапка с клинерами */}
           <div className="grid border-b border-slate-200 bg-slate-50 sticky top-0 z-20" style={gridStyle}>
             <div className="p-3 text-center text-xs font-bold text-slate-400 border-r border-slate-200 flex items-center justify-center">
               Время
@@ -284,7 +273,6 @@ export default function SchedulePage() {
             )}
           </div>
 
-          {/* Строки часов и активные ячейки */}
           <div className="relative">
             <div className="divide-y divide-slate-100">
               {HOURS.map((hour) => {
@@ -320,7 +308,6 @@ export default function SchedulePage() {
               })}
             </div>
 
-            {/* Карточки заказов поверх фоновой сетки */}
             <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
               <div></div>
 
@@ -389,23 +376,28 @@ export default function SchedulePage() {
                             </span>
                           </div>
 
-                          {/* Полоса изменения длительности мышкой */}
                           <div
                             onMouseDown={(e) => {
                               e.stopPropagation();
+                              e.preventDefault();
                               const startY = e.clientY;
                               const initialHeight = heightPx;
+                              let targetDuration = Math.max(1, Math.round(initialHeight / ROW_HEIGHT));
+                              const cardElement = (e.target as HTMLElement).parentElement;
 
                               const onMouseMove = (moveEvent: MouseEvent) => {
                                 const deltaY = moveEvent.clientY - startY;
                                 const newHeight = Math.max(50, initialHeight + deltaY);
-                                const newDurationHours = Math.max(1, Math.round(newHeight / ROW_HEIGHT));
-                                handleResizeOrder(order, newDurationHours);
+                                targetDuration = Math.max(1, Math.round(newHeight / ROW_HEIGHT));
+                                if (cardElement) {
+                                  cardElement.style.height = `${newHeight}px`;
+                                }
                               };
 
-                              const onMouseUp = () => {
+                              const onMouseUp = async () => {
                                 window.removeEventListener('mousemove', onMouseMove);
                                 window.removeEventListener('mouseup', onMouseUp);
+                                await handleResizeOrder(order, targetDuration);
                               };
 
                               window.addEventListener('mousemove', onMouseMove);
@@ -425,7 +417,6 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Модалка заказа */}
       <OrderModal
         order={editingOrder}
         isOpen={isModalOpen}
