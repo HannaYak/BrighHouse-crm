@@ -16,7 +16,9 @@ export default function SchedulePage() {
 
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [draggedOrder, setDraggedOrder] = useState<any>(null);
+  
+  // Храним перетаскиваемый заказ и ID колонки, откуда его взяли
+  const [draggedOrderInfo, setDraggedOrderInfo] = useState<{ order: any; fromCleanerId: number } | null>(null);
 
   const loadData = async (silent = false) => {
     try {
@@ -29,7 +31,7 @@ export default function SchedulePage() {
       if (cleanersRes.ok) setAllCleaners(await cleanersRes.json());
       if (ordersRes.ok) setOrders(await ordersRes.json());
     } catch (e) {
-      console.error('Ошибка загрузки:', e);
+      console.error('Ошибка загрузки расписания:', e);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -92,6 +94,7 @@ export default function SchedulePage() {
       drySofa3: 0,
       drySofaCorner4: 0,
       dryArmchair: 0,
+      dryMattressSide: 0,
       clientName: '',
       clientPhone: '',
       addressLine1: '',
@@ -134,10 +137,29 @@ export default function SchedulePage() {
     }
   };
 
-  const handleDropOnCell = async (cleanerId: number, targetHour: number) => {
-    if (!draggedOrder) return;
+  // Умное перемещение клинера / замена одного из напарников
+  const handleDropOnCell = async (targetCleanerId: number, targetHour: number) => {
+    if (!draggedOrderInfo) return;
 
-    const parts = (draggedOrder.timeSlot || draggedOrder.startTime || '10:00 — 13:00').split('—').map((s: string) => s.trim());
+    const { order, fromCleanerId } = draggedOrderInfo;
+
+    // Собираем всех текущих клинеров заказа
+    const currentCleanerIds: number[] = (order.assignedCleaners || [])
+      .map((ac: any) => Number(ac.cleanerId || ac.cleaner?.id || ac.id || ac))
+      .filter(Boolean);
+
+    let updatedCleanerIds: number[];
+
+    if (currentCleanerIds.length > 1) {
+      // Если в заказе пара: заменяем только того клинера, из чьей колонки потащили!
+      const remainingCleaners = currentCleanerIds.filter((id) => id !== fromCleanerId);
+      updatedCleanerIds = Array.from(new Set([...remainingCleaners, targetCleanerId]));
+    } else {
+      // Если клинер был один: просто назначаем нового
+      updatedCleanerIds = [targetCleanerId];
+    }
+
+    const parts = (order.timeSlot || order.startTime || '10:00 — 13:00').split('—').map((s: string) => s.trim());
     const [origStartH] = (parts[0] || '10:00').split(':').map(Number);
     const [origEndH] = (parts[1] || '13:00').split(':').map(Number);
     const duration = Math.max(1, (origEndH || origStartH + 3) - origStartH);
@@ -147,15 +169,15 @@ export default function SchedulePage() {
     const newEndStr = `${newEndH < 10 ? '0' + newEndH : newEndH}:00`;
 
     const payload = {
-      ...draggedOrder,
+      ...order,
       date: selectedDate,
       startTime: newStartStr,
       endTime: newEndStr,
       timeSlot: `${newStartStr} — ${newEndStr}`,
-      assignedCleaners: [{ id: cleanerId }],
+      assignedCleaners: updatedCleanerIds.map((id) => ({ id })),
     };
 
-    setDraggedOrder(null);
+    setDraggedOrderInfo(null);
 
     try {
       const res = await fetch('/api/orders', {
@@ -182,7 +204,9 @@ export default function SchedulePage() {
       startTime: startStr,
       endTime: endStr,
       timeSlot: `${startStr} — ${endStr}`,
-      assignedCleaners: (order.assignedCleaners || []).map((c: any) => ({ id: c.cleanerId || c.id })),
+      assignedCleaners: (order.assignedCleaners || []).map((c: any) => ({ 
+        id: c.cleanerId || c.cleaner?.id || c.id 
+      })),
     };
 
     try {
@@ -207,7 +231,7 @@ export default function SchedulePage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <h1 className="text-xl font-bold text-slate-900">📅 Расписание смен</h1>
-          <p className="text-xs text-slate-500">Перетаскивайте заказ на нужного клинера и время. Клик по пустому месту — создать заказ.</p>
+          <p className="text-xs text-slate-500">Перетаскивание с умной заменой напарников. Клик по свободной ячейке — новая запись.</p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -311,7 +335,7 @@ export default function SchedulePage() {
               })}
             </div>
 
-            {/* Карточки заказов */}
+            {/* Карточки заказов поверх сетки */}
             <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
               <div></div>
 
@@ -354,7 +378,7 @@ export default function SchedulePage() {
                           draggable
                           onDragStart={(e) => {
                             e.stopPropagation();
-                            setDraggedOrder(order);
+                            setDraggedOrderInfo({ order, fromCleanerId: cleaner.id });
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -437,6 +461,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
+      {/* Модалка заказа */}
       <OrderModal
         order={editingOrder}
         isOpen={isModalOpen}
