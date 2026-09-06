@@ -31,11 +31,16 @@ export interface OrderDetail {
   hasKeys: boolean;
 
   // Химчистка
+  // Расширенная химчистка
   drySofa2: number;
   drySofa3: number;
   drySofaCorner4: number;
-  dryArmchair: number;
-  dryMattressSide: number;
+  drySofaU: number;          // П-образный диван
+  dryArmchair: number;       // Кресло
+  dryChair: number;          // Стул со спинкой
+  dryMattressSingle: number; // Матрас 1-спальный
+  dryMattressDouble: number; // Матрас 2-спальный
+  dryCarpetM2: number;       // Ковер (м²)
 
   clientName: string;
   clientPhone: string;
@@ -381,42 +386,103 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
-            <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-3 space-y-2">
-              <span className="text-[11px] font-bold text-amber-900 uppercase block">🛋️ Химчистка мебели</span>
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="text-[10px] text-amber-800 block">Диван 2-мест. (180 zł)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.drySofa2}
-                    onChange={(e) => setForm({ ...form, drySofa2: Number(e.target.value) })}
-                    className="w-full bg-white border border-amber-300 rounded p-1 text-xs font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-amber-800 block">Диван 3-мест. (200 zł)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.drySofa3}
-                    onChange={(e) => setForm({ ...form, drySofa3: Number(e.target.value) })}
-                    className="w-full bg-white border border-amber-300 rounded p-1 text-xs font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-amber-800 block">Диван угловой (220 zł)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.drySofaCorner4}
-                    onChange={(e) => setForm({ ...form, drySofaCorner4: Number(e.target.value) })}
-                    className="w-full bg-white border border-amber-300 rounded p-1 text-xs font-bold"
-                  />
-                </div>
-              </div>
-            </div>
+            <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 space-y-3">
+  <span className="text-xs font-bold text-amber-900 uppercase block">🛋️ Профессиональная химчистка мебели и ковров</span>
+  
+  {/* Диваны */}
+  <div>
+    <span className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Диваны</span>
+    <div className="grid grid-cols-4 gap-2">
+      <div>
+        <label className="text-[10px] text-slate-600 block">2-мест. (160 zł)</label>
+        <input
+          type="number"
+          min="0"
+          value={form.drySofa2 || 0}
+          onChange={(e) => setForm({ ...form, drySofa2: Math.max(0, Number(e.target.value)) })}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-slate-600 block">3-мест. (190 zł)</label>
+        <input
+          type="number"
+          min="0"
+          value={form.drySofa3 || 0}
+          onChange={(e) => setForm({ ...form, drySofa3: Math.max(0, Number(e.target.value)) })}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-slate-600 block">Угловой (230 zł)</label>
+        <input
+          type="number"
+          min="0"
+          value={form.drySofaCorner4 || 0}
+          onChange={(e) => setForm({ ...form, drySofaCorner4: Math.max(0, Number(e.target.value)) })}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-slate-600 block">П-образный (290 zł)</label>
+        <input
+          type="number"
+          min="0"
+          value={(form as any).drySofaU || 0}
+          onChange={(e) => setForm({ ...form, drySofaU: Math.max(0, Number(e.target.value)) } as any)}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+    </div>
+  </div>
 
+  {/* Стулья, кресла и матрасы */}
+  <div>
+    <span className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Стулья, матрасы и ковры</span>
+    <div className="grid grid-cols-4 gap-2">
+      <div>
+        <label className="text-[10px] text-slate-600 block">Кресло (80 zł)</label>
+        <input
+          type="number"
+          min="0"
+          value={form.dryArmchair || 0}
+          onChange={(e) => setForm({ ...form, dryArmchair: Math.max(0, Number(e.target.value)) })}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-slate-600 block">Стул мягкий (30 zł)</label>
+        <input
+          type="number"
+          min="0"
+          value={(form as any).dryChair || 0}
+          onChange={(e) => setForm({ ...form, dryChair: Math.max(0, Number(e.target.value)) } as any)}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-slate-600 block">Матрас 2-сп. (180 zł)</label>
+        <input
+          type="number"
+          min="0"
+          value={(form as any).dryMattressDouble || 0}
+          onChange={(e) => setForm({ ...form, dryMattressDouble: Math.max(0, Number(e.target.value)) } as any)}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-slate-600 block">Ковер м² (25 zł/м²)</label>
+        <input
+          type="number"
+          min="0"
+          value={(form as any).dryCarpetM2 || 0}
+          onChange={(e) => setForm({ ...form, dryCarpetM2: Math.max(0, Number(e.target.value)) } as any)}
+          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+        />
+      </div>
+    </div>
+  </div>
+</div>
             <div className="space-y-3 pt-2">
               <div className="grid grid-cols-2 gap-3">
                 <div>
