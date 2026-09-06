@@ -120,8 +120,8 @@ export async function POST(request: Request) {
 
     let order;
 
-    if (body.id) {
-      // Обновление: сначала гарантированно чистим старые связи, затем обновляем
+   if (body.id) {
+      // Обновление: чистим старые связи и создаем новые через connect
       await prisma.orderCleaner.deleteMany({
         where: { orderId: body.id },
       });
@@ -131,7 +131,9 @@ export async function POST(request: Request) {
         data: {
           ...orderData,
           assignedCleaners: {
-            create: uniqueCleanerIds.map((cleanerId) => ({ cleanerId })),
+            create: uniqueCleanerIds.map((cleanerId) => ({
+              cleaner: { connect: { id: cleanerId } }
+            })),
           },
         },
         include: {
@@ -146,7 +148,9 @@ export async function POST(request: Request) {
           orderNumber,
           ...orderData,
           assignedCleaners: {
-            create: uniqueCleanerIds.map((cleanerId) => ({ cleanerId })),
+            create: uniqueCleanerIds.map((cleanerId) => ({
+              cleaner: { connect: { id: cleanerId } }
+            })),
           },
         },
         include: {
@@ -156,30 +160,3 @@ export async function POST(request: Request) {
         },
       });
     }
-
-    return NextResponse.json(order, { status: 200 });
-  } catch (error) {
-    console.error('Ошибка сохранения заказа:', error);
-    return NextResponse.json({ error: 'Ошибка сохранения заказа в базе' }, { status: 500 });
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
-    const body = await request.json();
-    const { id, status, cancelReason } = body;
-
-    const updated = await prisma.order.update({
-      where: { id },
-      data: {
-        status,
-        ...(cancelReason ? { cancelReason } : {}),
-      },
-    });
-
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error('Ошибка обновления статуса:', error);
-    return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 });
-  }
-}
