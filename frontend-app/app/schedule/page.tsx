@@ -25,7 +25,7 @@ export default function SchedulePage() {
         fetch('/api/cleaners'),
         fetch('/api/orders')
       ]);
-      
+
       if (cleanersRes.ok) setAllCleaners(await cleanersRes.json());
       if (ordersRes.ok) setOrders(await ordersRes.json());
     } catch (e) {
@@ -111,7 +111,7 @@ export default function SchedulePage() {
         ...saved,
         date: saved.date || selectedDate,
         assignedCleaners: (saved.assignedCleaners || []).map((c: any) => ({
-          id: typeof c === 'object' ? c.id : c
+          id: typeof c === 'object' ? (c.id || c.cleanerId) : c
         })),
       };
 
@@ -197,7 +197,9 @@ export default function SchedulePage() {
     }
   };
 
-  if (loading) return <div className="p-10 text-center text-xs text-slate-500">Загрузка расписания...</div>;
+  if (loading) {
+    return <div className="p-10 text-center text-xs text-slate-500">Загрузка расписания...</div>;
+  }
 
   return (
     <div className="space-y-6 max-w-full mx-auto pb-12 px-4">
@@ -309,133 +311,132 @@ export default function SchedulePage() {
               })}
             </div>
 
-          {/* Карточки заказов */}
-<div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
-  <div></div>
+            {/* Карточки заказов */}
+            <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
+              <div></div>
 
-  {visibleCleaners.map((cleaner) => {
-    // Находим ВСЕ заказы, где этот клинер назначен (через cleanerId или id)
-    const cleanerOrders = dayOrders.filter((o) =>
-      o.assignedCleaners?.some((ac: any) => {
-        const cId = ac.cleanerId || ac.cleaner?.id || ac.id;
-        return Number(cId) === Number(cleaner.id);
-      })
-    );
+              {visibleCleaners.map((cleaner) => {
+                const cleanerOrders = dayOrders.filter((o) =>
+                  o.assignedCleaners?.some((ac: any) => {
+                    const cId = ac.cleanerId || ac.cleaner?.id || ac.id;
+                    return Number(cId) === Number(cleaner.id);
+                  })
+                );
 
-    return (
-      <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0">
-        {cleanerOrders.map((order) => {
-          const slot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
-          const parts = slot.split('—').map((s: string) => s.trim());
-          const startTime = parts[0] || order.startTime || '10:00';
-          const endTime = parts[1] || order.endTime || '14:00';
+                return (
+                  <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0">
+                    {cleanerOrders.map((order) => {
+                      const slot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
+                      const parts = slot.split('—').map((s: string) => s.trim());
+                      const startTime = parts[0] || order.startTime || '10:00';
+                      const endTime = parts[1] || order.endTime || '14:00';
 
-          const [startH, startM] = startTime.split(':').map(Number);
-          const [endH, endM] = endTime.split(':').map(Number);
+                      const [startH, startM] = startTime.split(':').map(Number);
+                      const [endH, endM] = endTime.split(':').map(Number);
 
-          const safeStartH = isNaN(startH) ? 10 : startH;
-          const safeStartM = isNaN(startM) ? 0 : startM;
-          const safeEndH = isNaN(endH) ? safeStartH + 3 : endH;
-          const safeEndM = isNaN(endM) ? 0 : endM;
+                      const safeStartH = isNaN(startH) ? 10 : startH;
+                      const safeStartM = isNaN(startM) ? 0 : startM;
+                      const safeEndH = isNaN(endH) ? safeStartH + 3 : endH;
+                      const safeEndM = isNaN(endM) ? 0 : endM;
 
-          const startMinutes = (safeStartH - START_HOUR) * 60 + safeStartM;
-          const durationMinutes = Math.max(30, (safeEndH * 60 + safeEndM) - (safeStartH * 60 + safeStartM));
+                      const startMinutes = (safeStartH - START_HOUR) * 60 + safeStartM;
+                      const durationMinutes = Math.max(30, (safeEndH * 60 + safeEndM) - (safeStartH * 60 + safeStartM));
 
-          const topPx = (startMinutes / 60) * ROW_HEIGHT;
-          const heightPx = (durationMinutes / 60) * ROW_HEIGHT - 4;
+                      const topPx = (startMinutes / 60) * ROW_HEIGHT;
+                      const heightPx = (durationMinutes / 60) * ROW_HEIGHT - 4;
 
-          // Проверяем, парная ли уборка
-          const totalAssigned = order.assignedCleaners?.length || 1;
-          const isPair = totalAssigned > 1;
+                      const totalAssigned = order.assignedCleaners?.length || 1;
+                      const isPair = totalAssigned > 1;
 
-          return (
-            <div
-              key={`${order.id}-${cleaner.id}`}
-              draggable
-              onDragStart={(e) => {
-                e.stopPropagation();
-                setDraggedOrder(order);
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!(e.target as HTMLElement).classList.contains('resize-handle')) {
-                  setEditingOrder({
-                    ...order,
-                    date: selectedDate,
-                    startTime,
-                    endTime,
-                    assignedCleaners: (order.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
-                  });
-                  setIsModalOpen(true);
-                }
-              }}
-              style={{
-                top: `${topPx}px`,
-                height: `${Math.max(heightPx, 44)}px`,
-              }}
-              className={`absolute left-1.5 right-1.5 text-white p-2 rounded-xl shadow-md cursor-move active:opacity-50 transition overflow-hidden flex flex-col justify-between border pointer-events-auto group ${
-                isPair 
-                  ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-400' 
-                  : 'bg-blue-600 hover:bg-blue-700 border-blue-400'
-              }`}
-            >
-              <div>
-                <div className="flex justify-between items-center font-bold text-xs">
-                  <span className="truncate">{order.orderNumber}</span>
-                  <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] shrink-0 font-mono">
-                    {order.price} zł
-                  </span>
-                </div>
-                <div className="font-semibold text-xs truncate mt-0.5">
-                  {isPair ? '👥 ' : ''}{order.clientName || 'Без имени'}
-                </div>
-                <div className="text-[10px] text-white/80 truncate">📍 {order.addressLine1}</div>
-              </div>
+                      return (
+                        <div
+                          key={`${order.id}-${cleaner.id}`}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            setDraggedOrder(order);
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!(e.target as HTMLElement).classList.contains('resize-handle')) {
+                              setEditingOrder({
+                                ...order,
+                                date: selectedDate,
+                                startTime,
+                                endTime,
+                                assignedCleaners: (order.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+                              });
+                              setIsModalOpen(true);
+                            }
+                          }}
+                          style={{
+                            top: `${topPx}px`,
+                            height: `${Math.max(heightPx, 44)}px`,
+                          }}
+                          className={`absolute left-1.5 right-1.5 text-white p-2 rounded-xl shadow-md cursor-move active:opacity-50 transition overflow-hidden flex flex-col justify-between border pointer-events-auto group ${
+                            isPair
+                              ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-400'
+                              : 'bg-blue-600 hover:bg-blue-700 border-blue-400'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex justify-between items-center font-bold text-xs">
+                              <span className="truncate">{order.orderNumber}</span>
+                              <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] shrink-0 font-mono">
+                                {order.price} zł
+                              </span>
+                            </div>
+                            <div className="font-semibold text-xs truncate mt-0.5">
+                              {isPair ? '👥 ' : ''}{order.clientName || 'Без имени'}
+                            </div>
+                            <div className="text-[10px] text-white/80 truncate">📍 {order.addressLine1}</div>
+                          </div>
 
-              <div className="flex justify-between items-center mt-1">
-                <span className="text-[9px] bg-black/25 px-1.5 py-0.5 rounded font-mono">
-                  ⏱️ {startTime} - {endTime} {isPair ? `(бригада: ${totalAssigned})` : ''}
-                </span>
-              </div>
+                          <div className="flex justify-between items-center mt-1">
+                            <span className="text-[9px] bg-black/25 px-1.5 py-0.5 rounded font-mono">
+                              ⏱️ {startTime} - {endTime} {isPair ? `(${totalAssigned} чел)` : ''}
+                            </span>
+                          </div>
 
-              {/* Полоска изменения длительности */}
-              <div
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  const startY = e.clientY;
-                  const initialH = heightPx;
-                  let newDur = Math.max(1, Math.round(initialH / ROW_HEIGHT));
-                  const cardEl = (e.target as HTMLElement).parentElement;
+                          <div
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              const startY = e.clientY;
+                              const initialH = heightPx;
+                              let newDur = Math.max(1, Math.round(initialH / ROW_HEIGHT));
+                              const cardEl = (e.target as HTMLElement).parentElement;
 
-                  const onMouseMove = (mEv: MouseEvent) => {
-                    const dY = mEv.clientY - startY;
-                    const curH = Math.max(40, initialH + dY);
-                    newDur = Math.max(1, Math.round(curH / ROW_HEIGHT));
-                    if (cardEl) cardEl.style.height = `${curH}px`;
-                  };
+                              const onMouseMove = (mEv: MouseEvent) => {
+                                const dY = mEv.clientY - startY;
+                                const curH = Math.max(40, initialH + dY);
+                                newDur = Math.max(1, Math.round(curH / ROW_HEIGHT));
+                                if (cardEl) cardEl.style.height = `${curH}px`;
+                              };
 
-                  const onMouseUp = async () => {
-                    window.removeEventListener('mousemove', onMouseMove);
-                    window.removeEventListener('mouseup', onMouseUp);
-                    await handleResizeOrder(order, newDur);
-                  };
+                              const onMouseUp = async () => {
+                                window.removeEventListener('mousemove', onMouseMove);
+                                window.removeEventListener('mouseup', onMouseUp);
+                                await handleResizeOrder(order, newDur);
+                              };
 
-                  window.addEventListener('mousemove', onMouseMove);
-                  window.addEventListener('mouseup', onMouseUp);
-                }}
-                className="resize-handle absolute bottom-0 left-0 right-0 h-2.5 bg-white/30 hover:bg-amber-400 cursor-s-resize opacity-0 group-hover:opacity-100 transition"
-                title="Потяните для изменения времени"
-              />
+                              window.addEventListener('mousemove', onMouseMove);
+                              window.addEventListener('mouseup', onMouseUp);
+                            }}
+                            className="resize-handle absolute bottom-0 left-0 right-0 h-2.5 bg-white/30 hover:bg-amber-400 cursor-s-resize opacity-0 group-hover:opacity-100 transition"
+                            title="Потяните для изменения времени"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        </div>
       </div>
-    );
-  })}
-</div>
 
-      {/* Модалка заказа */}
       <OrderModal
         order={editingOrder}
         isOpen={isModalOpen}
