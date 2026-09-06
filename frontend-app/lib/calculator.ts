@@ -15,50 +15,55 @@ export interface CalculationInput {
 
   // Кухня и техника
   hasOven?: boolean;              // 45 zł
-  hasHood?: boolean;              // 40 zł (вытяжка)
+  hasHood?: boolean;              // 40 zł
   hasMicrowave?: boolean;         // 20 zł
   hasFridge?: boolean;            // 35 zł
   hasFridgeFreeze?: boolean;      // 50 zł
   hasKitchenClosets?: boolean;    // 100 zł
-  closetsCount?: number;          // 50 zł за шкаф
+  closetsCount?: number;          // 50 zł/шкаф
   hasDishwasherClean?: boolean;   // 20 zł
   hasWashingMachineClean?: boolean;// 30 zł
 
   // Дополнительно по дому
-  hasStairs?: boolean;            // 25 / 35 / 35 zł
-  hasBlinds?: boolean;            // 40 zł (жалюзи)
-  hasVentilation?: boolean;       // 20 zł (вентиляция)
-  hasMoldRemoval?: boolean;       // 40 zł (плесень)
-  hasPetHair?: boolean;           // 40 zł (шерсть)
-  hasCatLitter?: boolean;         // 20 zł (лоток)
-  furnitureMoveCount?: number;    // 15 zł за шт
-  hasPipeClog?: boolean;          // 15 zł (прочистка труб)
-  hasLadderRental?: boolean;      // 90 zł (наша стремянка)
-  tileGroutAreaM2?: number;       // 15 zł за м² (швы)
-  steamerZonesCount?: number;     // 75 zł за зону
+  hasStairs?: boolean;            // 25 / 35 / 35 / 40 zł
+  hasBlinds?: boolean;            // 40 zł
+  hasVentilation?: boolean;       // 20 zł
+  hasMoldRemoval?: boolean;       // 40 zł
+  hasPetHair?: boolean;           // 40 zł
+  hasCatLitter?: boolean;         // 20 zł
+  furnitureMoveCount?: number;    // 15 zł/шт
+  hasPipeClog?: boolean;          // 15 zł
+  hasLadderRental?: boolean;      // 90 zł
+  tileGroutAreaM2?: number;       // 15 zł/м²
+  steamerZonesCount?: number;     // 75 zł/зону
 
   // Почасовые и текстиль
-  curtainsPairsCount?: number;    // 65 zł за пару
+  curtainsPairsCount?: number;    // 65 zł/пара
   laundryHours?: number;          // 50 zł/ч
   ironingHours?: number;          // 50 zł/ч
   dishesHours?: number;           // 40 zł/ч
-  organizingHours?: number;       // 50 zł/ч (разбор вещей)
-  gardenHours?: number;           // 50 zł/ч (огрудки)
+  organizingHours?: number;       // 50 zł/ч
+  gardenHours?: number;           // 50 zł/ч
 
-  // Базовые флаги оборудования
   hasVacuum?: boolean;            // 30 zł
   hasKeys?: boolean;
 
-  // Химчистка
-  drySofa2?: number;
-  drySofa3?: number;
-  drySofaCorner4?: number;
-  drySofaCorner5?: number;
-  drySofaBig?: number;
-  dryArmchair?: number;
-  dryChair?: number;
-  dryMattressSide?: number;
-  dryCarpetM2?: number;
+  // ПОЛНАЯ ХИМЧИСТКА МЕБЕЛИ И ТЕКСТИЛЯ
+  drySofa2?: number;              // 180 zł (2-местный)
+  drySofa3?: number;              // 200 zł (3-местный)
+  drySofaCorner4?: number;        // 220 zł (угловой)
+  drySofaCorner5?: number;        // 240 zł (большой угловой)
+  drySofaBig?: number;            // 260 zł (П-образный)
+  dryArmchair?: number;           // 60 zł (кресло)
+  dryChair?: number;              // 15 zł (стул)
+  dryPouf?: number;               // 30 zł (пуф / банкетка)
+  dryPillowsSmall?: number;       // 15 zł (подушка диванная/декоративная)
+  dryPillowsBig?: number;         // 25 zł (подушка спальная большая)
+  dryHeadboard?: number;          // 70 zł (изголовье кровати)
+  dryMattressSingle?: number;     // 90 zł (матрас 1-спальный с 2 сторон)
+  dryMattressDouble?: number;     // 140 zł (матрас 2-спальный с 2 сторон)
+  dryMattressSide?: number;       // 90 zł (обратная совместимость)
+  dryCarpetM2?: number;           // 15 zł/м² (ковер)
 
   cleanersCount: number;
   startTime: string;
@@ -80,30 +85,23 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   const baths = Math.max(1, Number(input.bathroomsCount) || 1);
   const area = Number(input.areaM2) || 45;
 
-  let maxAllowedArea = 50;
-
-  // 1. БАЗОВАЯ СЕТКА ПО ТАРИФАМ
+  // 1. БАЗОВАЯ СЕТКА ТАРИФОВ
   if (input.serviceType === 'STANDARD') {
     if (rooms === 1) {
       price = area <= 25 ? 160 : 170;
-      maxAllowedArea = 34;
       durationMins = 180;
     } else if (rooms === 2) {
       price = 200;
-      maxAllowedArea = 50;
       durationMins = 240;
     } else if (rooms === 3) {
       price = 240;
-      maxAllowedArea = 80;
       durationMins = 300;
     } else if (rooms === 4) {
       price = 290;
-      maxAllowedArea = 100;
       durationMins = 360;
     } else {
-      price = 330 + (rooms - 5) * 40;
-      maxAllowedArea = 125 + (rooms - 5) * 20;
-      durationMins = 420 + (rooms - 5) * 40;
+      price = 330;
+      durationMins = 420;
     }
     price += (baths >= 2 ? (baths - 1) * 50 : 0);
     durationMins += (baths >= 2 ? (baths - 1) * 60 : 0);
@@ -111,25 +109,21 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
 
   } else if (input.serviceType === 'STANDARD_PLUS') {
     if (rooms === 1) {
+      // 1 комната в Стандарт+: базовая фиксированная 240 zł (до 34м², включая до 25м²)
       price = 240;
-      maxAllowedArea = 34;
       durationMins = 240;
     } else if (rooms === 2) {
       price = 300;
-      maxAllowedArea = 50;
       durationMins = 360;
     } else if (rooms === 3) {
       price = 360;
-      maxAllowedArea = 80;
       durationMins = 420;
     } else if (rooms === 4) {
       price = 420;
-      maxAllowedArea = 100;
       durationMins = 480;
     } else {
-      price = 480 + (rooms - 5) * 50;
-      maxAllowedArea = 125 + (rooms - 5) * 20;
-      durationMins = 540 + (rooms - 5) * 60;
+      price = 480;
+      durationMins = 540;
     }
     price += (baths >= 2 ? (baths - 1) * 65 : 0);
     durationMins += (baths >= 2 ? (baths - 1) * 80 : 0);
@@ -138,47 +132,48 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   } else if (input.serviceType === 'GENERAL') {
     if (rooms === 1) {
       price = area <= 25 ? 510 : 535;
-      maxAllowedArea = 34;
       durationMins = 540;
     } else if (rooms === 2) {
       price = 650;
-      maxAllowedArea = 50;
       durationMins = 720;
     } else if (rooms === 3) {
       price = 800;
-      maxAllowedArea = 80;
       durationMins = 900;
     } else if (rooms === 4) {
       price = 1020;
-      maxAllowedArea = 100;
       durationMins = 1080;
     } else {
-      price = 1100 + (rooms - 5) * 60;
-      maxAllowedArea = 125 + (rooms - 5) * 20;
-      durationMins = 1200 + (rooms - 5) * 150;
+      price = 1100;
+      durationMins = 1200;
     }
     price += (baths >= 2 ? (baths - 1) * 90 : 0);
     durationMins += (baths >= 2 ? (baths - 1) * 210 : 0);
     if (input.hasStairs) { price += 35; durationMins += 35; }
 
   } else {
-    // ПОСЛЕ РЕМОНТА
-    price = rooms === 1 ? 600 : rooms === 2 ? 780 : rooms === 3 ? 960 : rooms === 4 ? 1200 : 1300;
-    maxAllowedArea = rooms === 1 ? 34 : rooms === 2 ? 50 : rooms === 3 ? 80 : 100;
-    durationMins = 600 + (rooms - 1) * 200;
+    // AFTER_REPAIR (После ремонта)
+    if (rooms === 1) {
+      price = 600;
+      durationMins = 600;
+    } else if (rooms === 2) {
+      price = 780;
+      durationMins = 800;
+    } else if (rooms === 3) {
+      price = 960;
+      durationMins = 1000;
+    } else if (rooms === 4) {
+      price = 1200;
+      durationMins = 1200;
+    } else {
+      price = 1300;
+      durationMins = 1350;
+    }
     price += (baths >= 2 ? (baths - 1) * 100 : 0);
+    durationMins += (baths >= 2 ? (baths - 1) * 240 : 0);
     if (input.hasStairs) { price += 40; durationMins += 40; }
   }
 
-  // 2. ДОПЛАТА ЗА ПРЕВЫШЕНИЕ МЕТРАЖА СВЕРХ СЕТКИ ТАРИФА
-  const extraArea = Math.max(0, area - maxAllowedArea);
-  if (extraArea > 0) {
-    const ratePerExtraM2 = input.serviceType === 'AFTER_REPAIR' ? 8 : input.serviceType === 'GENERAL' ? 6 : 4;
-    price += extraArea * ratePerExtraM2;
-    durationMins += Math.round(extraArea * 2.5);
-  }
-
-  // 3. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ ПО ОФИЦИАЛЬНОМУ ПРАЙСУ
+  // 2. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ ПО ПРАЙСУ
   if (input.windowsCount) { price += input.windowsCount * 35; durationMins += input.windowsCount * 30; }
   if (input.balconyWindowsCount) { price += input.balconyWindowsCount * 45; durationMins += input.balconyWindowsCount * 40; }
   if (input.mosquitoNetsCount) { price += input.mosquitoNetsCount * 15; durationMins += input.mosquitoNetsCount * 10; }
@@ -215,7 +210,7 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
 
   if (input.hasVacuum) { price += 30; }
 
-  // 4. ХИМЧИСТКА
+  // 3. ХИМЧИСТКА (ПОЛНЫЙ ПРАЙС)
   if (input.drySofa2) { price += input.drySofa2 * 180; durationMins += input.drySofa2 * 60; }
   if (input.drySofa3) { price += input.drySofa3 * 200; durationMins += input.drySofa3 * 75; }
   if (input.drySofaCorner4) { price += input.drySofaCorner4 * 220; durationMins += input.drySofaCorner4 * 90; }
@@ -223,10 +218,16 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   if (input.drySofaBig) { price += input.drySofaBig * 260; durationMins += input.drySofaBig * 120; }
   if (input.dryArmchair) { price += input.dryArmchair * 60; durationMins += input.dryArmchair * 30; }
   if (input.dryChair) { price += input.dryChair * 15; durationMins += input.dryChair * 15; }
+  if (input.dryPouf) { price += input.dryPouf * 30; durationMins += input.dryPouf * 20; }
+  if (input.dryPillowsSmall) { price += input.dryPillowsSmall * 15; durationMins += input.dryPillowsSmall * 10; }
+  if (input.dryPillowsBig) { price += input.dryPillowsBig * 25; durationMins += input.dryPillowsBig * 15; }
+  if (input.dryHeadboard) { price += input.dryHeadboard * 70; durationMins += input.dryHeadboard * 45; }
+  if (input.dryMattressSingle) { price += input.dryMattressSingle * 90; durationMins += input.dryMattressSingle * 45; }
+  if (input.dryMattressDouble) { price += input.dryMattressDouble * 140; durationMins += input.dryMattressDouble * 60; }
   if (input.dryMattressSide) { price += input.dryMattressSide * 90; durationMins += input.dryMattressSide * 45; }
   if (input.dryCarpetM2) { price += input.dryCarpetM2 * 15; durationMins += input.dryCarpetM2 * 15; }
 
-  // 5. ДЕЛЕНИЕ НА БРИГАДУ И ТАЙМИНГ
+  // 4. ДЕЛЕНИЕ НА БРИГАДУ
   const cleaners = Math.max(1, input.cleanersCount || 1);
   const actualDurationMinutes = Math.ceil((durationMins / cleaners) / 30) * 30;
 
