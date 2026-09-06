@@ -26,6 +26,7 @@ export interface CalculationInput {
 
   // Дополнительно по дому
   hasStairs?: boolean;            // 25 / 35 / 35 / 40 zł
+  hasSteamer?: boolean;           // 75 zł (пароочиститель)
   hasBlinds?: boolean;            // 40 zł
   hasVentilation?: boolean;       // 20 zł
   hasMoldRemoval?: boolean;       // 40 zł
@@ -42,10 +43,13 @@ export interface CalculationInput {
   laundryHours?: number;          // 50 zł/ч
   ironingHours?: number;          // 50 zł/ч
   dishesHours?: number;           // 40 zł/ч
+  hasDishesHours?: number;        // для совместимости с OrderModal
+  hasIroningHours?: number;       // для совместимости с OrderModal
   organizingHours?: number;       // 50 zł/ч
   gardenHours?: number;           // 50 zł/ч
 
   hasVacuum?: boolean;            // 30 zł
+  hasPets?: boolean;              // аллергия
   hasKeys?: boolean;
 
   // ПОЛНАЯ ХИМЧИСТКА МЕБЕЛИ И ТЕКСТИЛЯ
@@ -67,6 +71,7 @@ export interface CalculationInput {
 
   cleanersCount: number;
   startTime: string;
+  addonRates?: Record<string, { price: number; durationMins: number }>;
 }
 
 export interface CalculationResult {
@@ -109,7 +114,6 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
 
   } else if (input.serviceType === 'STANDARD_PLUS') {
     if (rooms === 1) {
-      // 1 комната в Стандарт+: базовая фиксированная 240 zł (до 34м², включая до 25м²)
       price = 240;
       durationMins = 240;
     } else if (rooms === 2) {
@@ -151,7 +155,6 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
     if (input.hasStairs) { price += 35; durationMins += 35; }
 
   } else {
-    // AFTER_REPAIR (После ремонта)
     if (rooms === 1) {
       price = 600;
       durationMins = 600;
@@ -173,7 +176,7 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
     if (input.hasStairs) { price += 40; durationMins += 40; }
   }
 
-  // 2. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ ПО ПРАЙСУ
+  // 2. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ
   if (input.windowsCount) { price += input.windowsCount * 35; durationMins += input.windowsCount * 30; }
   if (input.balconyWindowsCount) { price += input.balconyWindowsCount * 45; durationMins += input.balconyWindowsCount * 40; }
   if (input.mosquitoNetsCount) { price += input.mosquitoNetsCount * 15; durationMins += input.mosquitoNetsCount * 10; }
@@ -199,18 +202,29 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   if (input.hasPipeClog) { price += 15; durationMins += 15; }
   if (input.hasLadderRental) { price += 90; }
   if (input.tileGroutAreaM2) { price += input.tileGroutAreaM2 * 15; durationMins += input.tileGroutAreaM2 * 15; }
-  if (input.steamerZonesCount) { price += input.steamerZonesCount * 75; durationMins += input.steamerZonesCount * 45; }
+
+  // Пароочиститель (учитываем и boolean флаг, и количество зон)
+  if (input.hasSteamer || input.steamerZonesCount) {
+    const zones = Math.max(1, input.steamerZonesCount || 1);
+    price += zones * 75;
+    durationMins += zones * 45;
+  }
 
   if (input.curtainsPairsCount) { price += input.curtainsPairsCount * 65; durationMins += input.curtainsPairsCount * 45; }
   if (input.laundryHours) { price += input.laundryHours * 50; durationMins += input.laundryHours * 60; }
-  if (input.ironingHours) { price += input.ironingHours * 50; durationMins += input.ironingHours * 60; }
-  if (input.dishesHours) { price += input.dishesHours * 40; durationMins += input.dishesHours * 60; }
+
+  const ironing = input.ironingHours || input.hasIroningHours || 0;
+  if (ironing > 0) { price += ironing * 50; durationMins += ironing * 60; }
+
+  const dishes = input.dishesHours || input.hasDishesHours || 0;
+  if (dishes > 0) { price += dishes * 40; durationMins += dishes * 60; }
+
   if (input.organizingHours) { price += input.organizingHours * 50; durationMins += input.organizingHours * 60; }
   if (input.gardenHours) { price += input.gardenHours * 50; durationMins += input.gardenHours * 60; }
 
   if (input.hasVacuum) { price += 30; }
 
-  // 3. ХИМЧИСТКА (ПОЛНЫЙ ПРАЙС)
+  // 3. ХИМЧИСТКА
   if (input.drySofa2) { price += input.drySofa2 * 180; durationMins += input.drySofa2 * 60; }
   if (input.drySofa3) { price += input.drySofa3 * 200; durationMins += input.drySofa3 * 75; }
   if (input.drySofaCorner4) { price += input.drySofaCorner4 * 220; durationMins += input.drySofaCorner4 * 90; }
