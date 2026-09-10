@@ -14,6 +14,8 @@ export interface OrderDetail {
   roomsCount: number;
   bathroomsCount: number;
   windowsCount: number;
+  showcaseWindowsCount?: number;
+  balconyWindowsCount?: number;
 
   // Дополнительные услуги
   hasOven: boolean;
@@ -82,6 +84,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       roomsCount: 2,
       bathroomsCount: 1,
       windowsCount: 0,
+      showcaseWindowsCount: 0,
+      balconyWindowsCount: 0,
       hasOven: false,
       hasFridge: false,
       hasFridgeFreeze: false,
@@ -115,11 +119,12 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   const [durationText, setDurationText] = useState('3 ч');
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
 
-  // Стейт проверки доступности клинеров
   const [availabilityMap, setAvailabilityMap] = useState<Record<number, any>>({});
   const [loadingAvailability, setLoadingAvailability] = useState(false);
 
-  // Загрузка актуального прайс-листа
+  const isOffice = form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL';
+
+  // Загрузка прайса допов
   useEffect(() => {
     fetch('/api/settings/addons')
       .then((res) => res.json())
@@ -143,7 +148,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       .catch((err) => console.error('Ошибка загрузки клинеров:', err));
   }, []);
 
-  // Загрузка доступности клинеров по графику при смене даты или времени
+  // Проверка доступности клинеров
   useEffect(() => {
     if (!form.date) return;
 
@@ -172,7 +177,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     checkAvailability();
   }, [form.date, form.startTime]);
 
-  // Автоматический пересчёт времени и стоимости
+  // Автоматический пересчёт стоимости и времени
   useEffect(() => {
     const res = calculateBrightHouseOrder({
       serviceType: form.serviceType,
@@ -180,6 +185,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       bathroomsCount: form.bathroomsCount,
       areaM2: form.areaM2,
       windowsCount: form.windowsCount,
+      showcaseWindowsCount: form.showcaseWindowsCount || 0,
+      balconyWindowsCount: form.balconyWindowsCount || 0,
       hasOven: form.hasOven,
       hasFridge: form.hasFridge,
       hasFridgeFreeze: form.hasFridgeFreeze,
@@ -215,6 +222,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.bathroomsCount,
     form.areaM2,
     form.windowsCount,
+    form.showcaseWindowsCount,
+    form.balconyWindowsCount,
     form.hasOven,
     form.hasFridge,
     form.hasFridgeFreeze,
@@ -237,12 +246,12 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     addonRates,
   ]);
 
-  // Умный фильтр клинеров
+  // Фильтр клинеров
   const eligibleCleaners = allCleaners.filter((cleaner) => {
     const tags = cleaner.tags || [];
     if (form.hasPets && tags.includes('аллергия_на_животных')) return false;
     if ((form.serviceType === 'GENERAL' || form.serviceType === 'AFTER_REPAIR') && tags.includes('только_поддерживающая')) return false;
-    const hasDryClean = form.drySofa2 + form.drySofa3 + form.drySofaCorner4 + form.dryArmchair + form.dryMattressSide > 0;
+    const hasDryClean = form.drySofa2 + form.drySofa3 + form.drySofaCorner4 + form.dryArmchair + (form.dryMattressSide || 0) > 0;
     if (hasDryClean && !tags.includes('химчистка')) return false;
     return true;
   });
@@ -272,10 +281,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-6xl h-[92vh] max-h-[880px] flex flex-col overflow-hidden">
         {/* Шапка */}
-        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
           <div className="flex items-center gap-3">
             <span className="font-mono text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded">
               {form.orderNumber || 'НОВЫЙ ЗАКАЗ'}
@@ -284,157 +293,182 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               {form.clientName ? `Заказ: ${form.clientName}` : 'Новая заявка BrightHouse'}
             </h2>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 flex items-center justify-center font-bold">
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 flex items-center justify-center font-bold"
+          >
             ✕
           </button>
         </div>
 
-<div>
-  <div className="flex items-center justify-between mb-2">
-    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-      Категория помещения и тариф
-    </label>
-    <div className="flex gap-1 bg-slate-200 p-0.5 rounded-lg text-[10px] font-bold">
-      <button
-        type="button"
-        onClick={() => {
-          if (form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL') {
-            setForm({ ...form, serviceType: 'STANDARD' });
-          }
-        }}
-        className={`px-2 py-1 rounded-md transition ${
-          form.serviceType !== 'OFFICE_REGULAR' && form.serviceType !== 'OFFICE_GENERAL'
-            ? 'bg-white text-slate-800 shadow-xs'
-            : 'text-slate-500 hover:text-slate-700'
-        }`}
-      >
-        🏠 Жилые
-      </button>
-      <button
-        type="button"
-        onClick={() => setForm({ ...form, serviceType: 'OFFICE_REGULAR' })}
-        className={`px-2 py-1 rounded-md transition ${
-          form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL'
-            ? 'bg-white text-slate-800 shadow-xs'
-            : 'text-slate-500 hover:text-slate-700'
-        }`}
-      >
-        🏢 Офисы / Коммерция
-      </button>
-    </div>
-  </div>
-
-  {/* Кнопки тарифов в зависимости от выбранной категории */}
-  {form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL' ? (
-    <div className="grid grid-cols-2 gap-2 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-200">
-      <button
-        type="button"
-        onClick={() => setForm({ ...form, serviceType: 'OFFICE_REGULAR' })}
-        className={`py-2 px-3 text-center text-xs font-bold rounded-lg border transition ${
-          form.serviceType === 'OFFICE_REGULAR'
-            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-            : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
-        }`}
-      >
-        🏢 Обычная (4 zł/м²)
-      </button>
-      <button
-        type="button"
-        onClick={() => setForm({ ...form, serviceType: 'OFFICE_GENERAL' })}
-        className={`py-2 px-3 text-center text-xs font-bold rounded-lg border transition ${
-          form.serviceType === 'OFFICE_GENERAL'
-            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-            : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
-        }`}
-      >
-        ✨ Генеральная (12 zł/м²)
-      </button>
-    </div>
-  ) : (
-    <div className="grid grid-cols-4 gap-2">
-      {(['STANDARD', 'STANDARD_PLUS', 'GENERAL', 'AFTER_REPAIR'] as ServiceType[]).map((t) => (
-        <button
-          type="button"
-          key={t}
-          onClick={() => setForm({ ...form, serviceType: t })}
-          className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition ${
-            form.serviceType === t
-              ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-          }`}
-        >
-          {serviceTitles[t]}
-        </button>
-      ))}
-    </div>
-  )}
-</div>
-        
         {/* Двухколоночный контент */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Левая часть: Тариф, Параметры, Допы и Химчистка */}
+          {/* ЛЕВАЯ КОЛОНКА */}
           <div className="w-[55%] p-6 border-r border-slate-100 overflow-y-auto space-y-4">
+            {/* Переключатель категории: Жилые / Офисы */}
             <div>
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Тариф уборки</label>
-              <div className="grid grid-cols-4 gap-2">
-                {(['STANDARD', 'STANDARD_PLUS', 'GENERAL', 'AFTER_REPAIR'] as ServiceType[]).map((t) => (
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Категория помещения и тариф
+                </label>
+                <div className="flex gap-1 bg-slate-200 p-0.5 rounded-lg text-[10px] font-bold">
                   <button
                     type="button"
-                    key={t}
-                    onClick={() => setForm({ ...form, serviceType: t })}
-                    className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition ${
-                      form.serviceType === t
-                        ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    onClick={() => {
+                      if (isOffice) setForm({ ...form, serviceType: 'STANDARD' });
+                    }}
+                    className={`px-2.5 py-1 rounded-md transition ${
+                      !isOffice ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    {serviceTitles[t]}
+                    🏠 Жилые
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, serviceType: 'OFFICE_REGULAR' })}
+                    className={`px-2.5 py-1 rounded-md transition ${
+                      isOffice ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    🏢 Офисы / Коммерция
+                  </button>
+                </div>
               </div>
+
+              {/* Кнопки тарифов */}
+              {isOffice ? (
+                <div className="grid grid-cols-2 gap-2 bg-indigo-50/50 p-2 rounded-xl border border-indigo-200">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, serviceType: 'OFFICE_REGULAR' })}
+                    className={`py-2 px-3 text-center text-xs font-bold rounded-lg border transition ${
+                      form.serviceType === 'OFFICE_REGULAR'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    🏢 Обычная (4 zł/м²)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, serviceType: 'OFFICE_GENERAL' })}
+                    className={`py-2 px-3 text-center text-xs font-bold rounded-lg border transition ${
+                      form.serviceType === 'OFFICE_GENERAL'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ✨ Генеральная (12 zł/м²)
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2">
+                  {(['STANDARD', 'STANDARD_PLUS', 'GENERAL', 'AFTER_REPAIR'] as ServiceType[]).map((t) => (
+                    <button
+                      type="button"
+                      key={t}
+                      onClick={() => setForm({ ...form, serviceType: t })}
+                      className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition ${
+                        form.serviceType === t
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {serviceTitles[t]}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Метраж (м²)</label>
-                <input
-                  type="number"
-                  value={form.areaM2}
-                  onChange={(e) => setForm({ ...form, areaM2: Number(e.target.value) })}
-                  className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Комнат</label>
-                <input
-                  type="number"
-                  value={form.roomsCount}
-                  onChange={(e) => setForm({ ...form, roomsCount: Number(e.target.value) })}
-                  className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Санузлов</label>
-                <input
-                  type="number"
-                  value={form.bathroomsCount}
-                  onChange={(e) => setForm({ ...form, bathroomsCount: Number(e.target.value) })}
-                  className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Окон</label>
-                <input
-                  type="number"
-                  value={form.windowsCount}
-                  onChange={(e) => setForm({ ...form, windowsCount: Number(e.target.value) })}
-                  className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
-                />
-              </div>
+            {/* Метраж и окна */}
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+              {isOffice ? (
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      Площадь офиса (м²)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.areaM2 || ''}
+                      onChange={(e) => setForm({ ...form, areaM2: Math.max(1, Number(e.target.value)) })}
+                      className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      Окна (35 zł)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.windowsCount || 0}
+                      onChange={(e) => setForm({ ...form, windowsCount: Math.max(0, Number(e.target.value)) })}
+                      className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      Витрины (50 zł)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.showcaseWindowsCount || 0}
+                      onChange={(e) => setForm({ ...form, showcaseWindowsCount: Math.max(0, Number(e.target.value)) })}
+                      className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Метраж (м²)</label>
+                    <input
+                      type="number"
+                      value={form.areaM2}
+                      onChange={(e) => setForm({ ...form, areaM2: Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Комнат</label>
+                    <input
+                      type="number"
+                      value={form.roomsCount}
+                      onChange={(e) => setForm({ ...form, roomsCount: Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Санузлов</label>
+                    <input
+                      type="number"
+                      value={form.bathroomsCount}
+                      onChange={(e) => setForm({ ...form, bathroomsCount: Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Окон (35 zł)</label>
+                    <input
+                      type="number"
+                      value={form.windowsCount}
+                      onChange={(e) => setForm({ ...form, windowsCount: Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
+            {/* Дополнительные опции */}
             <div>
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Дополнительные опции</label>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                Дополнительные опции
+              </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { k: 'hasOven', label: `🍳 Духовка (${addonRates['oven']?.price || 45} zł)` },
@@ -457,7 +491,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       onClick={() => setForm({ ...form, [k]: !active })}
                       className={`px-2 py-2 text-left text-xs font-medium rounded-lg border transition flex items-center justify-between ${
                         active
-                          ? 'bg-blue-50 border-brand-500 text-brand-700 font-semibold shadow-sm'
+                          ? 'bg-blue-50 border-blue-500 text-blue-700 font-semibold shadow-xs'
                           : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
@@ -469,103 +503,106 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
+            {/* Химчистка */}
             <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3.5 space-y-3">
-  <span className="text-xs font-bold text-amber-900 uppercase block">🛋️ Профессиональная химчистка мебели и ковров</span>
-  
-  {/* Диваны */}
-  <div>
-    <span className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Диваны</span>
-    <div className="grid grid-cols-4 gap-2">
-      <div>
-        <label className="text-[10px] text-slate-600 block">2-мест. (160 zł)</label>
-        <input
-          type="number"
-          min="0"
-          value={form.drySofa2 || 0}
-          onChange={(e) => setForm({ ...form, drySofa2: Math.max(0, Number(e.target.value)) })}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-      <div>
-        <label className="text-[10px] text-slate-600 block">3-мест. (190 zł)</label>
-        <input
-          type="number"
-          min="0"
-          value={form.drySofa3 || 0}
-          onChange={(e) => setForm({ ...form, drySofa3: Math.max(0, Number(e.target.value)) })}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-      <div>
-        <label className="text-[10px] text-slate-600 block">Угловой (230 zł)</label>
-        <input
-          type="number"
-          min="0"
-          value={form.drySofaCorner4 || 0}
-          onChange={(e) => setForm({ ...form, drySofaCorner4: Math.max(0, Number(e.target.value)) })}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-      <div>
-        <label className="text-[10px] text-slate-600 block">П-образный (290 zł)</label>
-        <input
-          type="number"
-          min="0"
-          value={(form as any).drySofaU || 0}
-          onChange={(e) => setForm({ ...form, drySofaU: Math.max(0, Number(e.target.value)) } as any)}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-    </div>
-  </div>
+              <span className="text-xs font-bold text-amber-900 uppercase block">
+                🛋️ Профессиональная химчистка мебели и ковров
+              </span>
 
-  {/* Стулья, кресла и матрасы */}
-  <div>
-    <span className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Стулья, матрасы и ковры</span>
-    <div className="grid grid-cols-4 gap-2">
-      <div>
-        <label className="text-[10px] text-slate-600 block">Кресло (80 zł)</label>
-        <input
-          type="number"
-          min="0"
-          value={form.dryArmchair || 0}
-          onChange={(e) => setForm({ ...form, dryArmchair: Math.max(0, Number(e.target.value)) })}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-      <div>
-        <label className="text-[10px] text-slate-600 block">Стул мягкий (30 zł)</label>
-        <input
-          type="number"
-          min="0"
-          value={(form as any).dryChair || 0}
-          onChange={(e) => setForm({ ...form, dryChair: Math.max(0, Number(e.target.value)) } as any)}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-      <div>
-        <label className="text-[10px] text-slate-600 block">Матрас 2-сп. (180 zł)</label>
-        <input
-          type="number"
-          min="0"
-          value={(form as any).dryMattressDouble || 0}
-          onChange={(e) => setForm({ ...form, dryMattressDouble: Math.max(0, Number(e.target.value)) } as any)}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-      <div>
-        <label className="text-[10px] text-slate-600 block">Ковер м² (25 zł/м²)</label>
-        <input
-          type="number"
-          min="0"
-          value={(form as any).dryCarpetM2 || 0}
-          onChange={(e) => setForm({ ...form, dryCarpetM2: Math.max(0, Number(e.target.value)) } as any)}
-          className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
-        />
-      </div>
-    </div>
-  </div>
-</div>
+              <div>
+                <span className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Диваны</span>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">2-мест. (180 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.drySofa2 || 0}
+                      onChange={(e) => setForm({ ...form, drySofa2: Math.max(0, Number(e.target.value)) })}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">3-мест. (200 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.drySofa3 || 0}
+                      onChange={(e) => setForm({ ...form, drySofa3: Math.max(0, Number(e.target.value)) })}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">Угловой (220 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.drySofaCorner4 || 0}
+                      onChange={(e) => setForm({ ...form, drySofaCorner4: Math.max(0, Number(e.target.value)) })}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">П-образный (260 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={(form as any).drySofaU || 0}
+                      onChange={(e) => setForm({ ...form, drySofaU: Math.max(0, Number(e.target.value)) } as any)}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Стулья, матрасы и ковры</span>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">Кресло (60 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.dryArmchair || 0}
+                      onChange={(e) => setForm({ ...form, dryArmchair: Math.max(0, Number(e.target.value)) })}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">Стул (15 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={(form as any).dryChair || 0}
+                      onChange={(e) => setForm({ ...form, dryChair: Math.max(0, Number(e.target.value)) } as any)}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">Матрас 2-сп. (140 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={(form as any).dryMattressDouble || 0}
+                      onChange={(e) => setForm({ ...form, dryMattressDouble: Math.max(0, Number(e.target.value)) } as any)}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">Ковер м² (15 zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={(form as any).dryCarpetM2 || 0}
+                      onChange={(e) => setForm({ ...form, dryCarpetM2: Math.max(0, Number(e.target.value)) } as any)}
+                      className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Контакты клиента */}
             <div className="space-y-3 pt-2">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -611,10 +648,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             </div>
           </div>
 
-          {/* Правая часть: Тайминг, Бригада, Итог */}
+          {/* ПРАВАЯ КОЛОНКА */}
           <div className="w-[45%] p-6 flex flex-col justify-between bg-slate-50/40 overflow-y-auto space-y-4">
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+              <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Дата</label>
                   <input
@@ -637,9 +674,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Финиш (Авто)</label>
                   <input
                     type="text"
+                    disabled
                     value={form.endTime}
-                    onChange={(e) => setForm({ ...form, endTime: e.target.value })}
-                    className="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg p-1.5 text-xs font-extrabold"
+                    className="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg p-1.5 text-xs font-extrabold text-center"
                   />
                 </div>
               </div>
@@ -655,10 +692,12 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               )}
 
-              {/* Назначение клинеров с проверкой доступности по графику */}
+              {/* Назначение клинеров */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Бригада ({form.assignedCleaners.length})</label>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase">
+                    Бригада ({form.assignedCleaners.length})
+                  </label>
                   <span className="text-[10px] text-slate-400">
                     {loadingAvailability ? 'Проверка смен...' : `В базе: ${eligibleCleaners.length}`}
                   </span>
@@ -677,7 +716,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                         onClick={() => toggleCleaner(cleaner)}
                         className={`w-full px-3 py-2 rounded-lg text-xs flex items-center justify-between border transition ${
                           isSelected
-                            ? 'bg-blue-50 border-blue-500 text-blue-900 font-bold shadow-sm'
+                            ? 'bg-blue-50 border-blue-500 text-blue-900 font-bold shadow-xs'
                             : !isAvailable
                             ? 'bg-slate-100 border-slate-200 text-slate-400 opacity-60'
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -720,7 +759,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">ТЗ / Особенности клиента</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  ТЗ / Особенности клиента
+                </label>
                 <textarea
                   rows={2}
                   value={form.notes || ''}
@@ -731,6 +772,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               </div>
             </div>
 
+            {/* Итог и действия */}
             <div className="border-t border-slate-200 pt-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500 font-medium">Итоговая стоимость:</span>
@@ -846,26 +888,25 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   </>
                 )}
 
-               <button
-  type="button"
-  onClick={() => {
-    // Сохраняем ВСЕХ выбранных клинеров как массив ID
-    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
-      id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
-      name: c.name,
-    }));
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
+                      id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+                      name: c.name,
+                    }));
 
-    onSave({
-      ...form,
-      assignedCleaners: cleanerPayload as any,
-      timeSlot: `${form.startTime} — ${form.endTime}`,
-    });
-    onClose();
-  }}
-  className="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
->
-  💾 Сохранить заказ
-</button>
+                    onSave({
+                      ...form,
+                      assignedCleaners: cleanerPayload as any,
+                      timeSlot: `${form.startTime} — ${form.endTime}`,
+                    });
+                    onClose();
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
+                >
+                  💾 Сохранить заказ
+                </button>
               </div>
             </div>
           </div>
