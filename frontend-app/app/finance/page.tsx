@@ -1,10 +1,26 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 
-const STANDARD_CATEGORIES = [
+const PAYMENT_METHODS_MAP: Record<string, string> = {
+  ALL: 'Все способы оплаты',
+  CASH: '💵 Наличные',
+  BIZ_CARD: '🏢 Карта Бизнес',
+  SILA_CARD: '💳 Карта Силы',
+  REVOLUT: '⚡ Revolut',
+  PAYPAL: '🅿️ PayPal',
+  MOMS_CARD: '👩 Карта мамы',
+  DADS_CARD: '👨 Карта бати',
+  STRIPE: '🌐 Stripe',
+  OTHER: '🔄 Другое',
+};
+
+const EXPENSE_CATEGORIES = [
   'Химия и инвентарь',
   'Маркетинг и реклама',
+  'Дивиденды владельцам',
+  'Резервный фонд',
   'Зарплата клинеру',
+  'Аванс клинеру',
   'Транспорт и бензин',
   'Ремонт оборудования',
   'Аренда склада / офиса',
@@ -23,6 +39,7 @@ export default function FinancePage() {
 
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(lastDay);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('ALL');
 
   // Список клинеров для привязки расхода
   const [cleanersList, setCleanersList] = useState<{ id: number; name: string }[]>([]);
@@ -32,7 +49,7 @@ export default function FinancePage() {
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [form, setForm] = useState({
     type: 'EXPENSE',
-    category: STANDARD_CATEGORIES[0],
+    category: EXPENSE_CATEGORIES[0],
     customCategory: '',
     amount: '',
     date: new Date().toISOString().slice(0, 10),
@@ -56,7 +73,8 @@ export default function FinancePage() {
   const fetchFinance = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/finances?startDate=${startDate}&endDate=${endDate}`);
+      const url = `/api/finances?startDate=${startDate}&endDate=${endDate}&paymentMethod=${selectedPaymentMethod}`;
+      const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -74,7 +92,7 @@ export default function FinancePage() {
 
   useEffect(() => {
     fetchFinance();
-  }, [startDate, endDate]);
+  }, [startDate, endDate, selectedPaymentMethod]);
 
   const setQuickRange = (type: 'today' | 'week' | 'month') => {
     const now = new Date();
@@ -128,7 +146,7 @@ export default function FinancePage() {
         setIsModalOpen(false);
         setForm({
           type: 'EXPENSE',
-          category: STANDARD_CATEGORIES[0],
+          category: EXPENSE_CATEGORIES[0],
           customCategory: '',
           amount: '',
           date: new Date().toISOString().slice(0, 10),
@@ -161,68 +179,95 @@ export default function FinancePage() {
   };
 
   const s = data?.summary || {};
+  const pb = data?.paymentBreakdown || {};
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Шапка, фильтры и кнопка добавления */}
-      <div className="flex flex-wrap justify-between items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            📊 Финансы, P&L и Учёт затрат
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Почасовая оплата клинерам (30/35 zł/ч) и операционные расходы с комментариями
-          </p>
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <div className="flex flex-wrap justify-between items-center gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              📊 Финансы, Касса и P&L
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Учет по картам/счетам, почасовая оплата (30/35 zł/ч) и операционные расходы с комментариями
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Пресеты дат */}
+            <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 gap-1">
+              <button onClick={() => setQuickRange('today')} className="px-2.5 py-1 hover:bg-white rounded-lg transition">
+                Сегодня
+              </button>
+              <button onClick={() => setQuickRange('week')} className="px-2.5 py-1 hover:bg-white rounded-lg transition">
+                Неделя
+              </button>
+              <button onClick={() => setQuickRange('month')} className="px-2.5 py-1 hover:bg-white rounded-lg transition">
+                Месяц
+              </button>
+            </div>
+
+            {/* Диапазон С и ПО */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1.5 rounded-xl text-xs font-semibold">
+              <span className="text-slate-400 pl-1">С:</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-800"
+              />
+              <span className="text-slate-400">ПО:</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-800"
+              />
+            </div>
+
+            {/* Кнопка создания операции */}
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-xs"
+            >
+              ➕ Добавить операцию
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Пресеты дат */}
-          <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 gap-1">
-            <button
-              onClick={() => setQuickRange('today')}
-              className="px-2.5 py-1 hover:bg-white rounded-lg transition"
-            >
-              Сегодня
-            </button>
-            <button
-              onClick={() => setQuickRange('week')}
-              className="px-2.5 py-1 hover:bg-white rounded-lg transition"
-            >
-              Неделя
-            </button>
-            <button
-              onClick={() => setQuickRange('month')}
-              className="px-2.5 py-1 hover:bg-white rounded-lg transition"
-            >
-              Месяц
-            </button>
-          </div>
-
-          {/* Диапазон С и ПО */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1.5 rounded-xl text-xs font-semibold">
-            <span className="text-slate-400 pl-1">С:</span>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-800"
-            />
-            <span className="text-slate-400">ПО:</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-800"
-            />
-          </div>
-
-          {/* Кнопка создания операции */}
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-xs"
+        {/* Строка фильтрации по счетам/кассам */}
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+          <span className="text-xs font-bold text-slate-500">Фильтр по счёту / кассе:</span>
+          <select
+            value={selectedPaymentMethod}
+            onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800"
           >
-            ➕ Добавить операцию
-          </button>
+            {Object.entries(PAYMENT_METHODS_MAP).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Мультикасса: Фактические поступления по счетам */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+          🏦 Фактические поступления по счетам и кошелькам
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 text-center">
+          {Object.entries(PAYMENT_METHODS_MAP)
+            .filter(([k]) => k !== 'ALL')
+            .map(([key, label]) => (
+              <div key={key} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                <div className="text-[11px] font-semibold text-slate-500 truncate">{label}</div>
+                <div className="text-sm font-extrabold text-slate-900 mt-1">
+                  {pb[key] || 0} zł
+                </div>
+              </div>
+            ))}
         </div>
       </div>
 
@@ -318,12 +363,12 @@ export default function FinancePage() {
                       Начислено: <span className="text-amber-600">{c.totalAccrued} zł</span>
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      Выдано: <span>{c.payoutsIssued} zł</span>
+                      Забрал нал: <span>{c.cashTakenFromOrders || 0} zł</span>
                     </div>
                     <div className="text-xs font-extrabold">
                       К выплате:{' '}
-                      <span className={c.balanceDue > 0 ? 'text-rose-600' : 'text-emerald-600'}>
-                        {c.balanceDue} zł
+                      <span className={c.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                        {c.balance} zł
                       </span>
                     </div>
                   </div>
@@ -473,7 +518,7 @@ export default function FinancePage() {
                     onChange={(e) => setForm({ ...form, category: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold"
                   >
-                    {STANDARD_CATEGORIES.map((c) => (
+                    {EXPENSE_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
