@@ -90,7 +90,7 @@ export async function POST(
         ? cleaner.tags.map((t: string) => `\`${t.replace(/_/g, ' ')}\``).join(', ')
         : null;
 
-      const messageText = `🧹 *НОВЫЙ НАРЯД НА УБОРКУ!*
+     const messageText = `🧹 *НОВЫЙ НАРЯД НА УБОРКУ!*
 
 📋 *Заказ:* \`${order.orderNumber}\`
 📅 *Дата:* ${dateFormatted}
@@ -104,13 +104,12 @@ export async function POST(
 • Комнат: ${order.roomsCount || 1} | Санузлов: ${order.bathroomsCount || 1}
 ${addOnsFormatted}
 👥 *Состав бригады:* ${teamList}
-${cleanerTags ? `🏷 *Особенности/навыки клинера:* ${cleanerTags}\n` : ''}💰 *Твоя выплата за заказ:* *${payoutPerCleaner} zł* _(общий чек: ${order.price} zł)_
+💵 *Стоимость заказа:* *${order.price} zł*
 
 📝 *Особенности / ТЗ:*
 ${order.notes || 'Без особых указаний'}
 
 Пожалуйста, подтвердите получение наряда! ✨`;
-
       if (chatId && TELEGRAM_BOT_TOKEN) {
         try {
           await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
