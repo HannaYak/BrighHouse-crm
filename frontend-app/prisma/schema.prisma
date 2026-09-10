@@ -221,18 +221,15 @@ enum InventoryCategory {
 }
 
 model Equipment {
-  id           Int              @id @default(autoincrement())
-  name         String           // Название (например, "Строительный пылесос Kärcher WD3")
-  category     String           // HEAVY (тяжелое/склад), CLEANING (химчистка), SMALL_VACUUM (маленький пылесос), LADDER (стремянка), STEAMER (пароочиститель)
-  serialNumber String?          // Серийный номер / инвентарный номер (необязательно)
-  status       String           @default("IN_STOCK") // IN_STOCK (на складе), ISSUED (выдано), REPAIR (в ремонте)
-  holderId     Int?             // У какого клинера сейчас находится
-  holder       Cleaner?         @relation(fields: [holderId], references: [id], onDelete: SetNull)
-  notes        String?          // Примечание (например, "Состояние отличное")
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  logs         EquipmentLog[]
+  id           Int      @id @default(autoincrement())
+  name         String   // Например: "Строительный пылесос Kärcher WD3"
+  category     String   @default("EQUIPMENT") // EQUIPMENT, SMALL_VACUUM, LADDER, STEAMER
+  status       String   @default("IN_STOCK")  // IN_STOCK (на складе), ISSUED (у клинера), REPAIR (в ремонте)
+  holderId     Int?     // ID клинера, у которого на руках
+  holder       Cleaner? @relation(fields: [holderId], references: [id], onDelete: SetNull)
+  notes        String?  // Примечание
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model EquipmentLog {
