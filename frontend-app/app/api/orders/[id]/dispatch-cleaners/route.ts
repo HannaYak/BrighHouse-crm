@@ -27,57 +27,63 @@ export async function POST(
       return NextResponse.json({ error: 'На этот заказ не назначены клинеры' }, { status: 400 });
     }
 
+    const o = order as any;
     const dateFormatted = new Date(order.date).toLocaleDateString('ru-RU');
     const teamList = order.assignedCleaners.map((ac) => ac.cleaner?.name).filter(Boolean).join(' + ');
 
-    // 1. Сборка всех дополнительных услуг
+    // 1. Сборка всех дополнительных услуг с безопасным чтением
     const addOns: string[] = [];
-    if (order.hasOven) addOns.push('🍳 Духовка');
-    if (order.hasFridge) addOns.push('❄️ Холодильник');
-    if (order.hasFridgeFreeze) addOns.push('🧊 Холодильник с морозилкой');
-    if (order.hasMicrowave) addOns.push('📻 Микроволновка');
-    if (order.hasKitchenClosets) addOns.push('🚪 Кухонные шкафы внутри');
-    if (order.hasBalcony) addOns.push('🌿 Балкон');
-    if (order.hasStairs) addOns.push('🪜 Межэтажная лестница');
-    if (order.hasSteamer) addOns.push('💨 Пароочиститель');
-    if (order.hasVacuum) addOns.push('🧹 Наш пылесос');
-    if (order.hasPets) addOns.push('🐾 Домашние животные');
-    if (order.hasKeys) addOns.push('🔑 Забрать/отдать ключи');
-    if (order.hasDishesHours && order.hasDishesHours > 0) addOns.push(`🍽 Мытье посуды (${order.hasDishesHours} ч)`);
-    if (order.hasIroningHours && order.hasIroningHours > 0) addOns.push(`👔 Глажка (${order.hasIroningHours} ч)`);
+    if (o.hasOven) addOns.push('🍳 Духовка');
+    if (o.hasFridge) addOns.push('❄️ Холодильник');
+    if (o.hasFridgeFreeze) addOns.push('🧊 Холодильник с морозилкой');
+    if (o.hasMicrowave) addOns.push('📻 Микроволновка');
+    if (o.hasKitchenClosets) addOns.push('🚪 Кухонные шкафы внутри');
+    if (o.hasBalcony) addOns.push('🌿 Балкон');
+    if (o.hasStairs) addOns.push('🪜 Межэтажная лестница');
+    if (o.hasSteamer) addOns.push('💨 Пароочиститель');
+    if (o.hasVacuum) addOns.push('🧹 Наш пылесос');
+    if (o.hasPets) addOns.push('🐾 Домашние животные (Аллергия!)');
+    if (o.hasKeys) addOns.push('🔑 Забрать/отдать ключи');
+
+    const dishes = o.hasDishesHours || o.dishesHours;
+    if (dishes && dishes > 0) addOns.push(`🍽 Мытье посуды (${dishes} ч)`);
+
+    const ironing = o.hasIroningHours || o.ironingHours;
+    if (ironing && ironing > 0) addOns.push(`👔 Глажка (${ironing} ч)`);
 
     // Окна и витрины
-    if (order.windowsCount && order.windowsCount > 0) addOns.push(`🪟 Обычные окна: ${order.windowsCount} шт.`);
-    if ((order as any).showcaseWindowsCount && (order as any).showcaseWindowsCount > 0) {
-      addOns.push(`🏢 Витрины: ${(order as any).showcaseWindowsCount} шт.`);
-    }
-    if ((order as any).balconyWindowsCount && (order as any).balconyWindowsCount > 0) {
-      addOns.push(`🪟 Балконные окна: ${(order as any).balconyWindowsCount} шт.`);
-    }
+    if (o.windowsCount && o.windowsCount > 0) addOns.push(`🪟 Обычные окна: ${o.windowsCount} шт.`);
+    if (o.showcaseWindowsCount && o.showcaseWindowsCount > 0) addOns.push(`🏢 Витрины: ${o.showcaseWindowsCount} шт.`);
+    if (o.balconyWindowsCount && o.balconyWindowsCount > 0) addOns.push(`🪟 Балконные окна: ${o.balconyWindowsCount} шт.`);
 
     // Химчистка
-    if (order.drySofa2 && order.drySofa2 > 0) addOns.push(`🛋 Химчистка дивана 2-мест: ${order.drySofa2} шт.`);
-    if (order.drySofa3 && order.drySofa3 > 0) addOns.push(`🛋 Химчистка дивана 3-мест: ${order.drySofa3} шт.`);
-    if (order.drySofaCorner4 && order.drySofaCorner4 > 0) addOns.push(`🛋 Химчистка углового дивана: ${order.drySofaCorner4} шт.`);
-    if ((order as any).drySofaU && (order as any).drySofaU > 0) addOns.push(`🛋 Химчистка П-образного дивана: ${(order as any).drySofaU} шт.`);
-    if (order.dryArmchair && order.dryArmchair > 0) addOns.push(`🪑 Химчистка кресла: ${order.dryArmchair} шт.`);
-    if ((order as any).dryChair && (order as any).dryChair > 0) addOns.push(`🪑 Химчистка стула: ${(order as any).dryChair} шт.`);
-    if ((order as any).dryMattressDouble && (order as any).dryMattressDouble > 0) addOns.push(`🛏 Химчистка 2-сп. матраса: ${(order as any).dryMattressDouble} шт.`);
-    if ((order as any).dryCarpetM2 && (order as any).dryCarpetM2 > 0) addOns.push(`🧶 Химчистка ковра: ${(order as any).dryCarpetM2} м²`);
+    if (o.drySofa2 && o.drySofa2 > 0) addOns.push(`🛋 Химчистка дивана 2-мест: ${o.drySofa2} шт.`);
+    if (o.drySofa3 && o.drySofa3 > 0) addOns.push(`🛋 Химчистка дивана 3-мест: ${o.drySofa3} шт.`);
+    if (o.drySofaCorner4 && o.drySofaCorner4 > 0) addOns.push(`🛋 Химчистка дивана углового: ${o.drySofaCorner4} шт.`);
+    if (o.drySofaU && o.drySofaU > 0) addOns.push(`🛋 Химчистка П-образного дивана: ${o.drySofaU} шт.`);
+    if (o.dryArmchair && o.dryArmchair > 0) addOns.push(`🪑 Химчистка кресла: ${o.dryArmchair} шт.`);
+    if (o.dryChair && o.dryChair > 0) addOns.push(`🪑 Химчистка стула: ${o.dryChair} шт.`);
+    if (o.dryMattressDouble && o.dryMattressDouble > 0) addOns.push(`🛏 Химчистка 2-сп. матраса: ${o.dryMattressDouble} шт.`);
+    if (o.dryCarpetM2 && o.dryCarpetM2 > 0) addOns.push(`🧶 Химчистка ковра: ${o.dryCarpetM2} м²`);
 
     const addOnsFormatted = addOns.length > 0
       ? `\n✨ *Дополнительные услуги:*\n${addOns.map((item) => `• ${item}`).join('\n')}\n`
       : '';
 
-    // Расчет выплаты клинеру (40% делится поровну на бригаду)
+    // Расчет выплаты клинеру (40% на команду)
     const cleanersCount = order.assignedCleaners.length;
     const payoutPerCleaner = Math.round((order.price * 0.4) / cleanersCount);
 
     const results = [];
 
     for (const item of order.assignedCleaners) {
-      const cleaner = item.cleaner;
-      const chatId = (cleaner as any)?.telegramChatId || (cleaner as any)?.telegramId;
+      const cleaner = item.cleaner as any;
+      const chatId = cleaner?.telegramChatId || cleaner?.telegramId;
+
+      // Вытаскиваем теги и особенности клинера
+      const cleanerTags = Array.isArray(cleaner?.tags) && cleaner.tags.length > 0
+        ? cleaner.tags.map((t: string) => `\`${t.replace(/_/g, ' ')}\``).join(', ')
+        : null;
 
       const messageText = `🧹 *НОВЫЙ НАРЯД НА УБОРКУ!*
 
@@ -93,7 +99,7 @@ export async function POST(
 • Комнат: ${order.roomsCount || 1} | Санузлов: ${order.bathroomsCount || 1}
 ${addOnsFormatted}
 👥 *Состав бригады:* ${teamList}
-💰 *Твоя выплата за заказ:* *${payoutPerCleaner} zł* _(общий чек: ${order.price} zł)_
+${cleanerTags ? `🏷 *Особенности/навыки клинера:* ${cleanerTags}\n` : ''}💰 *Твоя выплата за заказ:* *${payoutPerCleaner} zł* _(общий чек: ${order.price} zł)_
 
 📝 *Особенности / ТЗ:*
 ${order.notes || 'Без особых указаний'}
