@@ -69,7 +69,6 @@ model Cleaner {
   expenses         Expense[]
   collectedCashOrders Order[]  @relation("CashCollector")
   equipmentItems   Equipment[]       // Техника, которая сейчас на руках у клинера
-  equipmentLogs    EquipmentLog[]
 }
 
 model ServiceTariff {
@@ -222,26 +221,16 @@ enum InventoryCategory {
 
 model Equipment {
   id           Int      @id @default(autoincrement())
-  name         String   // Название оборудования
-  category     String   @default("EQUIPMENT") // HEAVY, CLEANING, SMALL_VACUUM, LADDER, STEAMER
-  status       String   @default("IN_STOCK")  // IN_STOCK (на складе), ISSUED (выдано), REPAIR (в ремонте)
-  holderId     Int?     // У какого клинера на руках
+  name         String   
+  category     String   @default("EQUIPMENT") 
+  status       String   @default("IN_STOCK")  
+  holderId     Int?     
   holder       Cleaner? @relation(fields: [holderId], references: [id], onDelete: SetNull)
-  notes        String?  // Примечание
+  notes        String?  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-}
+}}
 
-model EquipmentLog {
-  id          String      @id @default(cuid())
-  equipmentId Int
-  equipment   Equipment   @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  cleanerId   Int?
-  cleaner     Cleaner?    @relation(fields: [cleanerId], references: [id], onDelete: SetNull)
-  action      String      // ISSUED (выдано), RETURNED (возвращено на склад), REPAIR (отправлено в ремонт)
-  date        DateTime    @default(now())
-  comment     String?
-}
 
 model InventoryItem {
   id          String            @id @default(cuid())
