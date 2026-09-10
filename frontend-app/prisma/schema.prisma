@@ -222,10 +222,10 @@ enum InventoryCategory {
 
 model Equipment {
   id           Int      @id @default(autoincrement())
-  name         String   // Например: "Строительный пылесос Kärcher WD3"
-  category     String   @default("EQUIPMENT") // EQUIPMENT, SMALL_VACUUM, LADDER, STEAMER
-  status       String   @default("IN_STOCK")  // IN_STOCK (на складе), ISSUED (у клинера), REPAIR (в ремонте)
-  holderId     Int?     // ID клинера, у которого на руках
+  name         String   // Название оборудования
+  category     String   @default("EQUIPMENT") // HEAVY, CLEANING, SMALL_VACUUM, LADDER, STEAMER
+  status       String   @default("IN_STOCK")  // IN_STOCK (на складе), ISSUED (выдано), REPAIR (в ремонте)
+  holderId     Int?     // У какого клинера на руках
   holder       Cleaner? @relation(fields: [holderId], references: [id], onDelete: SetNull)
   notes        String?  // Примечание
   createdAt    DateTime @default(now())
