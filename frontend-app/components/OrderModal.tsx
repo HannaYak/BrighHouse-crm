@@ -52,6 +52,11 @@ export interface OrderDetail {
   cleanersCount: number;
   assignedCleaners: { id: number; name: string; phone?: string; tags?: string[]; district?: string }[];
   notes?: string;
+
+  // Оплата и касса
+  paymentMethod?: string;
+  paymentNote?: string;
+  cashCollectedById?: number | null;
 }
 
 interface OrderModalProps {
@@ -112,6 +117,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       cleanersCount: 1,
       assignedCleaners: [],
       notes: '',
+      paymentMethod: 'CASH',
+      paymentNote: '',
+      cashCollectedById: null,
     }
   );
 
@@ -703,7 +711,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   </span>
                 </div>
 
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                   {eligibleCleaners.map((cleaner) => {
                     const isSelected = form.assignedCleaners.some((c) => c.id === cleaner.id);
                     const info = availabilityMap[cleaner.id];
@@ -758,6 +766,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 )}
               </div>
 
+              {/* ТЗ */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
                   ТЗ / Особенности клиента
@@ -769,6 +778,64 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   placeholder="Код от подъезда, кровати не трогать..."
                   className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:outline-none"
                 />
+              </div>
+
+              {/* Способ оплаты и фиксация кассы/нала */}
+              <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2.5 shadow-xs">
+                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
+                  💳 Способ оплаты заказа ({form.price} zł)
+                </label>
+
+                <select
+                  value={form.paymentMethod || 'CASH'}
+                  onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800"
+                >
+                  <option value="CASH">💵 Наличные</option>
+                  <option value="BIZ_CARD">🏢 Перевод на карту Бизнес</option>
+                  <option value="SILA_CARD">💳 Карта Силы</option>
+                  <option value="REVOLUT">⚡ Revolut</option>
+                  <option value="PAYPAL">🅿️ PayPal</option>
+                  <option value="MOMS_CARD">👩 Карта мамы</option>
+                  <option value="DADS_CARD">👨 Карта бати</option>
+                  <option value="STRIPE">🌐 Stripe</option>
+                  <option value="OTHER">🔄 Другое...</option>
+                </select>
+
+                {form.paymentMethod === 'CASH' && (
+                  <div className="pt-1">
+                    <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1">
+                      Кто из клинеров забрал наличные?
+                    </label>
+                    <select
+                      value={form.cashCollectedById || ''}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          cashCollectedById: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      className="w-full bg-amber-50/50 border border-amber-200 rounded-lg p-2 text-xs text-amber-900 font-semibold"
+                    >
+                      <option value="">Наличные в кассе офиса / у диспетчера</option>
+                      {form.assignedCleaners?.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          Клинер: {c.name} (забрал {form.price} zł)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {form.paymentMethod === 'OTHER' && (
+                  <input
+                    type="text"
+                    placeholder="Укажите, куда именно поступили деньги..."
+                    value={form.paymentNote || ''}
+                    onChange={(e) => setForm({ ...form, paymentNote: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs"
+                  />
+                )}
               </div>
             </div>
 
