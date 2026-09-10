@@ -18,9 +18,10 @@ export interface CalculationInput {
   areaM2: number;
 
   // Окна и балконы
-  windowsCount?: number;          // 35 zł
-  balconyWindowsCount?: number;   // 45 zł
-  mosquitoNetsCount?: number;     // 15 zł
+ windowsCount?: number;          // 35 zł (обычные)
+  balconyWindowsCount?: number;   // 45 zł (балконные)
+  showcaseWindowsCount?: number;  // 50 zł (витрины в коммерции)
+  mosquitoNetsCount?: number;     // 15 zł    // 15 zł
   hasBalcony?: boolean;           // 35 zł
   hasGlassBalcony?: boolean;      // 55 zł
 
@@ -268,6 +269,11 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
     const r = getRate('balconyWindow', 45, 40);
     price += input.balconyWindowsCount * r.price;
     durationMins += input.balconyWindowsCount * r.durationMins;
+  }
+  if (input.showcaseWindowsCount) {
+    const r = getRate('showcaseWindow', 50, 40);
+    price += input.showcaseWindowsCount * r.price;
+    durationMins += input.showcaseWindowsCount * r.durationMins;
   }
   if (input.mosquitoNetsCount) {
     const r = getRate('mosquitoNet', 15, 10);
