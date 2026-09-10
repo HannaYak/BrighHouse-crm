@@ -28,6 +28,8 @@ enum ServiceType {
   STANDARD_PLUS
   GENERAL
   AFTER_REPAIR
+  OFFICE_REGULAR
+  OFFICE_GENERAL
 }
 
 model Client {
