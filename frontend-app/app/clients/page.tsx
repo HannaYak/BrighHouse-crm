@@ -3,15 +3,38 @@ import React, { useState, useEffect } from 'react';
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
+  const [cleanersList, setCleanersList] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
 
-  // Редактирование заметок
+  // Редактирование заметок и предпочтений
   const [notes, setNotes] = useState('');
-  const [favoriteCleaner, setFavoriteCleaner] = useState('');
-  const [blacklistCleaner, setBlacklistCleaner] = useState('');
+  const [favoriteCleaners, setFavoriteCleaners] = useState<string[]>([]);
+  const [blacklistCleaners, setBlacklistCleaners] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Загрузка клинеров для выпадающего списка
+  useEffect(() => {
+    fetch('/api/cleaners')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setCleanersList(data))
+      .catch(console.error);
+  }, []);
+
+  const parseCleanerList = (val: any): string[] => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map((v) => (typeof v === 'object' ? v.name : String(v)));
+    if (typeof val === 'string') {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return val.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  };
 
   const fetchClients = async () => {
     try {
@@ -21,10 +44,7 @@ export default function ClientsPage() {
         const data = await res.json();
         setClients(data);
         if (data.length > 0 && !selectedClient) {
-          setSelectedClient(data[0]);
-          setNotes(data[0].notes || '');
-          setFavoriteCleaner(data[0].favoriteCleaner || '');
-          setBlacklistCleaner(data[0].blacklistCleaner || '');
+          applyClientSelection(data[0]);
         }
       }
     } catch (e) {
@@ -38,11 +58,15 @@ export default function ClientsPage() {
     fetchClients();
   }, []);
 
-  const handleSelectClient = (client: any) => {
+  const applyClientSelection = (client: any) => {
     setSelectedClient(client);
     setNotes(client.notes || '');
-    setFavoriteCleaner(client.favoriteCleaner || '');
-    setBlacklistCleaner(client.blacklistCleaner || '');
+    setFavoriteCleaners(parseCleanerList(client.favoriteCleaners || client.favoriteCleaner));
+    setBlacklistCleaners(parseCleanerList(client.blacklistedCleaners || client.blacklistCleaner));
+  };
+
+  const handleSelectClient = (client: any) => {
+    applyClientSelection(client);
   };
 
   const handleSaveNotes = async () => {
@@ -55,32 +79,41 @@ export default function ClientsPage() {
         body: JSON.stringify({
           id: selectedClient.id,
           notes,
-          favoriteCleaner,
-          blacklistCleaner,
+          favoriteCleaners,
+          favoriteCleaner: favoriteCleaners.join(', '),
+          blacklistedCleaners: blacklistCleaners,
+          blacklistCleaner: blacklistCleaners.join(', '),
         }),
       });
+
       if (res.ok) {
         alert('✅ Данные клиента сохранены');
         fetchClients();
+      } else {
+        alert('Ошибка сохранения данных клиента');
       }
     } catch (e) {
       console.error(e);
+      alert('Ошибка соединения с сервером');
     } finally {
       setSaving(false);
     }
   };
 
-  const filteredClients = clients.filter(c =>
-    (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (c.phone || '').includes(search) ||
-    (c.address || '').toLowerCase().includes(search.toLowerCase())
+  const filteredClients = clients.filter(
+    (c) =>
+      (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone || '').includes(search) ||
+      (c.address || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  if (loading) return <div className="p-10 text-center text-slate-500 text-xs">Загрузка клиентской базы...</div>;
+  if (loading) {
+    return <div className="p-10 text-center text-slate-500 text-xs">Загрузка клиентской базы...</div>;
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col">
-      <div className="flex justify-between items-center flex-shrink-0">
+      <div className="flex justify-between items-center shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-900">👥 База клиентов и LTV</h1>
           <p className="text-xs text-slate-500">История заказов, предпочтения, любимые клинеры и заметки</p>
@@ -91,14 +124,14 @@ export default function ClientsPage() {
             placeholder="🔍 Поиск по имени, телефону, адресу..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 shadow-sm"
+            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 shadow-xs"
           />
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 flex-1 overflow-hidden">
-        {/* Список клиентов (слева) */}
-        <div className="md:col-span-5 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
+        {/* Список клиентов слева */}
+        <div className="md:col-span-5 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
           <div className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center text-xs font-bold text-slate-600">
             <span>Клиенты ({filteredClients.length})</span>
             <span>Сумма LTV</span>
@@ -112,7 +145,7 @@ export default function ClientsPage() {
                   key={client.id}
                   onClick={() => handleSelectClient(client)}
                   className={`p-4 cursor-pointer transition flex justify-between items-start ${
-                    isSelected ? 'bg-brand-50/70 border-l-4 border-brand-600' : 'hover:bg-slate-50'
+                    isSelected ? 'bg-blue-50/70 border-l-4 border-blue-600' : 'hover:bg-slate-50'
                   }`}
                 >
                   <div>
@@ -124,9 +157,9 @@ export default function ClientsPage() {
                   </div>
 
                   <div className="text-right">
-                    <span className="text-xs font-extrabold text-emerald-600 block">{client.totalSpent} zł</span>
+                    <span className="text-xs font-extrabold text-emerald-600 block">{client.totalSpent || 0} zł</span>
                     <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-semibold">
-                      {client.ordersCount} заказов
+                      {client.ordersCount || 0} заказов
                     </span>
                   </div>
                 </div>
@@ -135,56 +168,132 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        {/* Детальная карточка клиента (справа) */}
-        <div className="md:col-span-7 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
+        {/* Карточка выбранного клиента справа */}
+        <div className="md:col-span-7 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
           {selectedClient ? (
             <div className="flex flex-col h-full overflow-y-auto p-6 space-y-6">
               {/* Шапка карточки */}
               <div className="flex justify-between items-start border-b border-slate-100 pb-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">{selectedClient.name}</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">📞 {selectedClient.phone} • 📍 {selectedClient.address}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    📞 {selectedClient.phone} • 📍 {selectedClient.address}
+                  </p>
                 </div>
-                <div className="text-right bg-brand-50 border border-brand-100 p-2.5 rounded-xl">
-                  <span className="text-[10px] uppercase font-bold text-brand-700 block">LTV Клиента</span>
-                  <span className="text-base font-extrabold text-brand-600">{selectedClient.totalSpent} zł</span>
+                <div className="text-right bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
+                  <span className="text-[10px] uppercase font-bold text-blue-700 block">LTV Клиента</span>
+                  <span className="text-base font-extrabold text-blue-600">{selectedClient.totalSpent || 0} zł</span>
                 </div>
               </div>
 
-              {/* Предпочтения и заметки */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">📝 Предпочтения и особенности</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">⭐ Любимый клинер</label>
-                    <input
-                      type="text"
-                      placeholder="Например: Анна"
-                      value={favoriteCleaner}
-                      onChange={(e) => setFavoriteCleaner(e.target.value)}
-                      className="w-full mt-1 bg-white border border-slate-200 rounded-lg p-2 text-xs"
-                    />
+              {/* Предпочтения и особенности */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  📝 Предпочтения и клинеры
+                </h3>
+
+                {/* Селекторы клинеров */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* ЛЮБИМЫЕ КЛИНЕРЫ */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-emerald-700 uppercase flex items-center gap-1">
+                      💚 Любимые клинеры
+                    </label>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const selectedId = Number(e.target.value);
+                        if (!selectedId) return;
+                        const cl = cleanersList.find((c) => c.id === selectedId);
+                        if (cl && !favoriteCleaners.includes(cl.name)) {
+                          setFavoriteCleaners([...favoriteCleaners, cl.name]);
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700"
+                    >
+                      <option value="">+ Добавить любимого клинера...</option>
+                      {cleanersList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {favoriteCleaners.map((name) => (
+                        <span
+                          key={name}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-semibold"
+                        >
+                          ⭐️ {name}
+                          <button
+                            type="button"
+                            onClick={() => setFavoriteCleaners(favoriteCleaners.filter((n) => n !== name))}
+                            className="hover:text-emerald-950 font-bold ml-1"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">🚫 Не отправлять клинера</label>
-                    <input
-                      type="text"
-                      placeholder="Кого не назначать"
-                      value={blacklistCleaner}
-                      onChange={(e) => setBlacklistCleaner(e.target.value)}
-                      className="w-full mt-1 bg-white border border-slate-200 rounded-lg p-2 text-xs"
-                    />
+
+                  {/* ЧЕРНЫЙ СПИСОК КЛИЕНТА */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-rose-700 uppercase flex items-center gap-1">
+                      🚫 Не отправлять (Черный список)
+                    </label>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const selectedId = Number(e.target.value);
+                        if (!selectedId) return;
+                        const cl = cleanersList.find((c) => c.id === selectedId);
+                        if (cl && !blacklistCleaners.includes(cl.name)) {
+                          setBlacklistCleaners([...blacklistCleaners, cl.name]);
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700"
+                    >
+                      <option value="">+ Добавить в нежелательные...</option>
+                      {cleanersList.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {blacklistCleaners.map((name) => (
+                        <span
+                          key={name}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs font-semibold"
+                        >
+                          ⛔️ {name}
+                          <button
+                            type="button"
+                            onClick={() => setBlacklistCleaners(blacklistCleaners.filter((n) => n !== name))}
+                            className="hover:text-rose-950 font-bold ml-1"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
+                {/* Заметки */}
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Важные детали квартиры / пожелания</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    Важные детали квартиры / пожелания
+                  </label>
                   <textarea
                     rows={2}
                     placeholder="Например: Дома кот, ключи у консьержа, использовать эко-химию..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="w-full mt-1 bg-white border border-slate-200 rounded-lg p-2 text-xs"
+                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs"
                   />
                 </div>
 
@@ -205,12 +314,17 @@ export default function ClientsPage() {
 
                 <div className="space-y-2">
                   {selectedClient.orders?.map((order: any) => {
-                    const team = order.assignedCleaners?.map((ac: any) => ac.cleaner?.name).join(' + ') || 'Бригада не указана';
+                    const team =
+                      order.assignedCleaners?.map((ac: any) => ac.cleaner?.name).join(' + ') ||
+                      'Бригада не указана';
                     return (
-                      <div key={order.id} className="p-3 bg-white border border-slate-200 rounded-xl flex justify-between items-center text-xs">
+                      <div
+                        key={order.id}
+                        className="p-3 bg-white border border-slate-200 rounded-xl flex justify-between items-center text-xs"
+                      >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-brand-600">{order.orderNumber}</span>
+                            <span className="font-bold text-blue-600">{order.orderNumber}</span>
                             <span className="font-bold text-slate-800">{order.serviceType}</span>
                             <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                               {new Date(order.date).toLocaleDateString('ru-RU')}
