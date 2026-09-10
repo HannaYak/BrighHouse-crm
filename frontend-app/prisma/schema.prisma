@@ -65,6 +65,8 @@ model Cleaner {
   shifts           CleanerShift[]
   assignments      OrderCleaner[]
   createdAt        DateTime       @default(now())
+
+  expenses         Expense[]
 }
 
 model ServiceTariff {
