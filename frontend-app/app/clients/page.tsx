@@ -14,6 +14,35 @@ export default function ClientsPage() {
   const [blacklistCleaners, setBlacklistCleaners] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // Удаление клиента
+  const handleDeleteClient = async () => {
+    if (!selectedClient) return;
+
+    const confirmed = window.confirm(
+      `Вы уверены, что хотите удалить клиента "${selectedClient.name || 'Без имени'}"?\nЭто действие нельзя отменить.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/clients?id=${selectedClient.id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        alert('🗑️ Клиент успешно удален');
+        setSelectedClient(null);
+        fetchClients();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Ошибка при удалении клиента');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка соединения с сервером');
+    }
+  };
+
   // Загрузка клинеров для выпадающего списка
   useEffect(() => {
     fetch('/api/cleaners')
@@ -175,9 +204,19 @@ export default function ClientsPage() {
               {/* Шапка карточки */}
               <div className="flex justify-between items-start border-b border-slate-100 pb-4">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900">{selectedClient.name}</h2>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-bold text-slate-900">{selectedClient.name || 'Без имени'}</h2>
+                    <button
+                      type="button"
+                      onClick={handleDeleteClient}
+                      className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition flex items-center gap-1"
+                      title="Удалить клиента из базы"
+                    >
+                      🗑️ Удалить
+                    </button>
+                  </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    📞 {selectedClient.phone} • 📍 {selectedClient.address}
+                    📞 {selectedClient.phone || '—'} • 📍 {selectedClient.address || '—'}
                   </p>
                 </div>
                 <div className="text-right bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
@@ -349,32 +388,4 @@ export default function ClientsPage() {
       </div>
     </div>
   );
-}
-
-export async function DELETE(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    let id = searchParams.get('id');
-
-    if (!id) {
-      const body = await request.json().catch(() => ({}));
-      id = body.id;
-    }
-
-    if (!id) {
-      return NextResponse.json({ error: 'ID клиента обязателен' }, { status: 400 });
-    }
-
-    // Если ID в базе числовой — парсим, если строка (cuid/uuid) — оставляем как есть
-    const clientWhere = isNaN(Number(id)) ? { id } : { id: Number(id) };
-
-    await prisma.client.delete({
-      where: clientWhere as any,
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Ошибка удаления клиента:', error);
-    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
-  }
 }
