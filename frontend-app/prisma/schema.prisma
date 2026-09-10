@@ -67,6 +67,7 @@ model Cleaner {
   createdAt        DateTime       @default(now())
 
   expenses         Expense[]
+  collectedCashOrders Order[]  @relation("CashCollector")
 }
 
 model ServiceTariff {
@@ -131,6 +132,12 @@ model Order {
   assignedCleaners  OrderCleaner[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
+
+  // Способ оплаты
+  paymentMethod      String?   @default("CASH") // CASH, BIZ_CARD, SILA_CARD, REVOLUT, PAYPAL, MOMS_CARD, DADS_CARD, STRIPE, OTHER
+  paymentNote        String?   // Пометка куда ушли деньги (если OTHER или коммент)
+  cashCollectedById  Int?      // ID клинера, если нал забрал сотрудник
+  cashCollectedBy    Cleaner?  @relation("CashCollector", fields: [cashCollectedById], references: [id], onDelete: SetNull)
 }
 
 model OrderCleaner {
