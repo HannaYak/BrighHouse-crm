@@ -236,3 +236,18 @@ model CleanerShift {
   @@unique([cleanerId, date])
 }
 
+model Expense {
+  id          String   @id @default(cuid())
+  type        String   @default("EXPENSE") // EXPENSE или INCOME
+  category    String   // Химия и инвентарь, Маркетинг, Зарплата клинеру, Транспорт, Аренда, Свой вариант
+  amount      Float
+  date        DateTime @default(now())
+  comment     String?
+  cleanerId   Int?
+  cleaner     Cleaner? @relation(fields: [cleanerId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+}
