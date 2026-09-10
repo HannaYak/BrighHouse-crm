@@ -11,7 +11,7 @@ export async function GET(request: Request) {
       orderBy: { name: 'asc' },
     });
 
-    // 2. Загружаем все заказы с привязанными клинерами
+    // 2. Загружаем все активные заказы
     const allOrders = await prisma.order.findMany({
       where: { status: { not: 'CANCELLED' as any } },
       include: {
@@ -21,30 +21,57 @@ export async function GET(request: Request) {
       },
     });
 
-    // Фильтруем по выбранному месяцу, если он указан
+    // Фильтруем по выбранному месяцу (YYYY-MM), если передан
     const filteredOrders = month
-      ? allOrders.filter(o => o.date.toISOString().startsWith(month))
+      ? allOrders.filter((o) => {
+          const d = new Date(o.date).toISOString().slice(0, 7);
+          return d === month;
+        })
       : allOrders;
 
-    const totalRevenue = filteredOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-    const completedOrders = filteredOrders.filter(o => o.status === ('COMPLETED' as any));
-    const completedRevenue = completedOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+    const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+    const completedOrders = filteredOrders.filter((o) => o.status === ('COMPLETED' as any));
+    const completedRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
-    // 3. Считаем начисления каждому клинеру по выполненным заказам
-    const cleanerStats = cleaners.map(cleaner => {
-      // Находим все завершенные заказы, где участвовал данный клинер
-      const completedForCleaner = completedOrders.filter(order =>
-        order.assignedCleaners.some(ac => ac.cleanerId === cleaner.id || (ac.cleaner && ac.cleaner.id === cleaner.id))
+    // Вспомогательная функция расчета часов из строки таймслота ("10:00 — 14:30")
+    const getOrderHours = (order: any): number => {
+      const slot = order.timeSlot || '';
+      if (slot.includes('—')) {
+        const [start, end] = slot.split('—').map((s: string) => s.trim());
+        const [sh, sm] = (start || '10:00').split(':').map(Number);
+        const [eh, em] = (end || '13:30').split(':').map(Number);
+        const diffMins = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+        if (diffMins > 0) {
+          return diffMins / 60;
+        }
+      }
+      return 3.5; // Базовое резервное значение при отсутствии слота
+    };
+
+    // Вспомогательная функция определения почасовой ставки
+    const getHourlyRate = (serviceType: string): number => {
+      const isHeavy = ['GENERAL', 'AFTER_REPAIR', 'OFFICE_GENERAL'].includes(serviceType);
+      return isHeavy ? 35 : 30;
+    };
+
+    // 3. Считаем начисления каждому клинеру по фактически завершенным уборкам
+    const cleanerStats = cleaners.map((cleaner) => {
+      const completedForCleaner = completedOrders.filter((order) =>
+        order.assignedCleaners.some(
+          (ac) => ac.cleanerId === cleaner.id || (ac.cleaner && ac.cleaner.id === cleaner.id)
+        )
       );
 
-      const totalEarned = completedForCleaner.reduce((sum, order) => {
-        const orderPrice = order.price || 0;
-        // Базовая ставка 40% от суммы заказа
-        const rate = (cleaner as any).hourlyRate && (cleaner as any).hourlyRate <= 1 
-          ? (cleaner as any).hourlyRate 
-          : 0.4;
-        return sum + (orderPrice * rate);
-      }, 0);
+      let totalHours = 0;
+      let totalEarned = 0;
+
+      completedForCleaner.forEach((order) => {
+        const hours = getOrderHours(order);
+        const rate = getHourlyRate(order.serviceType);
+        
+        totalHours += hours;
+        totalEarned += hours * rate;
+      });
 
       return {
         id: cleaner.id,
@@ -52,6 +79,7 @@ export async function GET(request: Request) {
         phone: cleaner.phone,
         telegramHandle: cleaner.telegramHandle,
         completedCount: completedForCleaner.length,
+        totalHours: Math.round(totalHours * 10) / 10,
         totalPayout: Math.round(totalEarned),
       };
     });
@@ -66,7 +94,7 @@ export async function GET(request: Request) {
       netProfit,
       ordersCount: filteredOrders.length,
       completedCount: completedOrders.length,
-      cleanerStats,
+      cleanerStats: cleanerStats.sort((a, b) => b.totalPayout - a.totalPayout),
     });
   } catch (error) {
     console.error('Ошибка загрузки финансов:', error);
