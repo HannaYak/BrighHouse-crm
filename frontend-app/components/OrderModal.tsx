@@ -64,6 +64,8 @@ const serviceTitles: Record<ServiceType, string> = {
   STANDARD_PLUS: 'Стандарт +',
   GENERAL: 'Генеральная',
   AFTER_REPAIR: 'После ремонта',
+  OFFICE_REGULAR: 'Офис: Обычная (4 zł/м²)',
+  OFFICE_GENERAL: 'Офис: Генеральная (12 zł/м²)',
 };
 
 export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
@@ -287,6 +289,87 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
           </button>
         </div>
 
+<div>
+  <div className="flex items-center justify-between mb-2">
+    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+      Категория помещения и тариф
+    </label>
+    <div className="flex gap-1 bg-slate-200 p-0.5 rounded-lg text-[10px] font-bold">
+      <button
+        type="button"
+        onClick={() => {
+          if (form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL') {
+            setForm({ ...form, serviceType: 'STANDARD' });
+          }
+        }}
+        className={`px-2 py-1 rounded-md transition ${
+          form.serviceType !== 'OFFICE_REGULAR' && form.serviceType !== 'OFFICE_GENERAL'
+            ? 'bg-white text-slate-800 shadow-xs'
+            : 'text-slate-500 hover:text-slate-700'
+        }`}
+      >
+        🏠 Жилые
+      </button>
+      <button
+        type="button"
+        onClick={() => setForm({ ...form, serviceType: 'OFFICE_REGULAR' })}
+        className={`px-2 py-1 rounded-md transition ${
+          form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL'
+            ? 'bg-white text-slate-800 shadow-xs'
+            : 'text-slate-500 hover:text-slate-700'
+        }`}
+      >
+        🏢 Офисы / Коммерция
+      </button>
+    </div>
+  </div>
+
+  {/* Кнопки тарифов в зависимости от выбранной категории */}
+  {form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL' ? (
+    <div className="grid grid-cols-2 gap-2 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-200">
+      <button
+        type="button"
+        onClick={() => setForm({ ...form, serviceType: 'OFFICE_REGULAR' })}
+        className={`py-2 px-3 text-center text-xs font-bold rounded-lg border transition ${
+          form.serviceType === 'OFFICE_REGULAR'
+            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+            : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
+        }`}
+      >
+        🏢 Обычная (4 zł/м²)
+      </button>
+      <button
+        type="button"
+        onClick={() => setForm({ ...form, serviceType: 'OFFICE_GENERAL' })}
+        className={`py-2 px-3 text-center text-xs font-bold rounded-lg border transition ${
+          form.serviceType === 'OFFICE_GENERAL'
+            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+            : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
+        }`}
+      >
+        ✨ Генеральная (12 zł/м²)
+      </button>
+    </div>
+  ) : (
+    <div className="grid grid-cols-4 gap-2">
+      {(['STANDARD', 'STANDARD_PLUS', 'GENERAL', 'AFTER_REPAIR'] as ServiceType[]).map((t) => (
+        <button
+          type="button"
+          key={t}
+          onClick={() => setForm({ ...form, serviceType: t })}
+          className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition ${
+            form.serviceType === t
+              ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+          }`}
+        >
+          {serviceTitles[t]}
+        </button>
+      ))}
+    </div>
+  )}
+</div>
+        
         {/* Двухколоночный контент */}
         <div className="flex-1 flex overflow-hidden">
           {/* Левая часть: Тариф, Параметры, Допы и Химчистка */}
