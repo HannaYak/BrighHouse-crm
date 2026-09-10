@@ -350,3 +350,31 @@ export default function ClientsPage() {
     </div>
   );
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    let id = searchParams.get('id');
+
+    if (!id) {
+      const body = await request.json().catch(() => ({}));
+      id = body.id;
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID клиента обязателен' }, { status: 400 });
+    }
+
+    // Если ID в базе числовой — парсим, если строка (cuid/uuid) — оставляем как есть
+    const clientWhere = isNaN(Number(id)) ? { id } : { id: Number(id) };
+
+    await prisma.client.delete({
+      where: clientWhere as any,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Ошибка удаления клиента:', error);
+    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
+  }
+}
