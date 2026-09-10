@@ -31,7 +31,7 @@ export async function POST(
     const dateFormatted = new Date(order.date).toLocaleDateString('ru-RU');
     const teamList = order.assignedCleaners.map((ac) => ac.cleaner?.name).filter(Boolean).join(' + ');
 
-    // 1. Сборка всех дополнительных услуг с безопасным чтением
+    // 1. Сборка всех дополнительных услуг
     const addOns: string[] = [];
     if (o.hasOven) addOns.push('🍳 Духовка');
     if (o.hasFridge) addOns.push('❄️ Холодильник');
@@ -53,13 +53,17 @@ export async function POST(
 
     // Окна и витрины
     if (o.windowsCount && o.windowsCount > 0) addOns.push(`🪟 Обычные окна: ${o.windowsCount} шт.`);
-    if (o.showcaseWindowsCount && o.showcaseWindowsCount > 0) addOns.push(`🏢 Витрины: ${o.showcaseWindowsCount} шт.`);
-    if (o.balconyWindowsCount && o.balconyWindowsCount > 0) addOns.push(`🪟 Балконные окна: ${o.balconyWindowsCount} шт.`);
+    if (o.showcaseWindowsCount && o.showcaseWindowsCount > 0) {
+      addOns.push(`🏢 Витрины: ${o.showcaseWindowsCount} шт.`);
+    }
+    if (o.balconyWindowsCount && o.balconyWindowsCount > 0) {
+      addOns.push(`🪟 Балконные окна: ${o.balconyWindowsCount} шт.`);
+    }
 
     // Химчистка
     if (o.drySofa2 && o.drySofa2 > 0) addOns.push(`🛋 Химчистка дивана 2-мест: ${o.drySofa2} шт.`);
     if (o.drySofa3 && o.drySofa3 > 0) addOns.push(`🛋 Химчистка дивана 3-мест: ${o.drySofa3} шт.`);
-    if (o.drySofaCorner4 && o.drySofaCorner4 > 0) addOns.push(`🛋 Химчистка дивана углового: ${o.drySofaCorner4} шт.`);
+    if (o.drySofaCorner4 && o.drySofaCorner4 > 0) addOns.push(`🛋 Химчистка углового дивана: ${o.drySofaCorner4} шт.`);
     if (o.drySofaU && o.drySofaU > 0) addOns.push(`🛋 Химчистка П-образного дивана: ${o.drySofaU} шт.`);
     if (o.dryArmchair && o.dryArmchair > 0) addOns.push(`🪑 Химчистка кресла: ${o.dryArmchair} шт.`);
     if (o.dryChair && o.dryChair > 0) addOns.push(`🪑 Химчистка стула: ${o.dryChair} шт.`);
@@ -74,13 +78,14 @@ export async function POST(
     const cleanersCount = order.assignedCleaners.length;
     const payoutPerCleaner = Math.round((order.price * 0.4) / cleanersCount);
 
+    const timeSlotDisplay = o.timeSlot || (o.startTime && o.endTime ? `${o.startTime} — ${o.endTime}` : '10:00 — 14:00');
+
     const results = [];
 
     for (const item of order.assignedCleaners) {
       const cleaner = item.cleaner as any;
       const chatId = cleaner?.telegramChatId || cleaner?.telegramId;
 
-      // Вытаскиваем теги и особенности клинера
       const cleanerTags = Array.isArray(cleaner?.tags) && cleaner.tags.length > 0
         ? cleaner.tags.map((t: string) => `\`${t.replace(/_/g, ' ')}\``).join(', ')
         : null;
@@ -89,7 +94,7 @@ export async function POST(
 
 📋 *Заказ:* \`${order.orderNumber}\`
 📅 *Дата:* ${dateFormatted}
-⏰ *Время:* ${order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`}
+⏰ *Время:* ${timeSlotDisplay}
 📍 *Адрес:* ${order.addressLine1} ${order.addressLine2 ? `(кв/оф ${order.addressLine2})` : ''}
 👤 *Клиент:* ${order.clientName || 'Клиент'} (${order.clientPhone || 'номер уточняйте у менеджера'})
 
