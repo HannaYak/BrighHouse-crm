@@ -4,8 +4,9 @@ import { prisma } from '../../../lib/prisma';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get('startDate'); // YYYY-MM-DD
-    const endDate = searchParams.get('endDate');     // YYYY-MM-DD
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const paymentMethod = searchParams.get('paymentMethod'); // Фильтр по счету/карте
 
     const dateFilter: any = {};
     if (startDate && endDate) {
@@ -13,37 +14,35 @@ export async function GET(request: Request) {
       dateFilter.lte = new Date(`${endDate}T23:59:59.999Z`);
     }
 
-    // 1. Клинеры
     const cleaners = await prisma.cleaner.findMany({
       orderBy: { name: 'asc' },
     });
 
-    // 2. Заказы за период
+    // 1. Заказы за период
     const orders = await prisma.order.findMany({
       where: {
         status: { not: 'CANCELLED' as any },
         ...(startDate && endDate ? { date: dateFilter } : {}),
+        ...(paymentMethod && paymentMethod !== 'ALL' ? { paymentMethod } : {}),
       },
       include: {
         assignedCleaners: {
           include: { cleaner: true },
         },
+        cashCollectedBy: true,
       },
       orderBy: { date: 'desc' },
     });
 
-    // 3. Ручные расходы и доходы за период
+    // 2. Расходы и распределение прибыли
     const expenses = await prisma.expense.findMany({
       where: {
         ...(startDate && endDate ? { date: dateFilter } : {}),
       },
-      include: {
-        cleaner: true,
-      },
+      include: { cleaner: true },
       orderBy: { date: 'desc' },
     });
 
-    // Хелпер вычисления часов из timeSlot
     const getOrderHours = (order: any): number => {
       const slot = order.timeSlot || '';
       if (slot.includes('—')) {
@@ -64,14 +63,14 @@ export async function GET(request: Request) {
     const completedOrders = orders.filter((o) => o.status === ('COMPLETED' as any));
     const completedRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
-    // Дополнительные ручные доходы
-    const manualIncome = expenses
-      .filter((e) => e.type === 'INCOME')
-      .reduce((sum, e) => sum + Number(e.amount), 0);
+    // Разбивка выручки по счетам/кошелькам
+    const paymentBreakdown: Record<string, number> = {};
+    completedOrders.forEach((o: any) => {
+      const method = o.paymentMethod || 'CASH';
+      paymentBreakdown[method] = (paymentBreakdown[method] || 0) + (Number(o.price) || 0);
+    });
 
-    const totalRevenue = completedRevenue + manualIncome;
-
-    // Расчёт начислений по клинерам
+    // Расчет KPI клинеров
     const cleanerStats = cleaners.map((cleaner) => {
       const completedForCleaner = completedOrders.filter((order) =>
         order.assignedCleaners.some(
@@ -93,10 +92,19 @@ export async function GET(request: Request) {
         generatedRevenue += Math.round((Number(order.price) || 0) / teamCount);
       });
 
-      // Выплаты/авансы, выданные этому клинеру через модуль расходов
-      const payoutsIssued = expenses
+      // Нал, который клинер лично забрал с заказов на руки
+      const cashTakenFromOrders = completedOrders
+        .filter((o: any) => o.cashCollectedById === cleaner.id)
+        .reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+
+      // Прямые выплаты/авансы из журнала расходов
+      const directPayouts = expenses
         .filter((e) => e.cleanerId === cleaner.id && e.type === 'EXPENSE')
         .reduce((sum, e) => sum + Number(e.amount), 0);
+
+      const totalReceived = cashTakenFromOrders + directPayouts;
+      const totalAccrued = Math.round(totalEarned);
+      const balance = totalAccrued - totalReceived; // Плюс: компания должна клинеру. Минус: клинер должен сдать нал в кассу!
 
       return {
         id: cleaner.id,
@@ -105,38 +113,53 @@ export async function GET(request: Request) {
         completedCount: completedForCleaner.length,
         totalHours: Math.round(totalHours * 10) / 10,
         generatedRevenue,
-        totalAccrued: Math.round(totalEarned), // Начислено по ставке 30/35 zł
-        payoutsIssued,                         // Фактически выплачено
-        balanceDue: Math.round(totalEarned) - payoutsIssued, // Остаток к выплате
+        totalAccrued,
+        cashTakenFromOrders,
+        directPayouts,
+        totalReceived,
+        balance,
       };
     });
 
     const totalCleanersAccrued = cleanerStats.reduce((sum, c) => sum + c.totalAccrued, 0);
 
-    // Все операционные расходы (кроме прямых выплат клинерам, чтобы не задваивать ФОТ)
+    // Операционные расходы (без дивидендов и зарплат клинеров)
     const opexExpenses = expenses
-      .filter((e) => e.type === 'EXPENSE' && e.category !== 'Зарплата клинеру')
+      .filter((e) => e.type === 'EXPENSE' && !['Зарплата клинеру', 'Аванс клинеру', 'Дивиденды владельцам', 'Резервный фонд'].includes(e.category))
       .reduce((sum, e) => sum + Number(e.amount), 0);
 
-    const netProfit = totalRevenue - totalCleanersAccrued - opexExpenses;
-    const marginPercent = totalRevenue > 0 ? Math.round((netProfit / totalRevenue) * 100) : 0;
+    // Чистая прибыль бизнеса
+    const netProfit = completedRevenue - totalCleanersAccrued - opexExpenses;
+    const marginPercent = completedRevenue > 0 ? Math.round((netProfit / completedRevenue) * 100) : 0;
+
+    // Выплаты учредителям и резерв
+    const dividendsPaid = expenses
+      .filter((e) => e.type === 'EXPENSE' && e.category === 'Дивиденды владельцам')
+      .reduce((sum, e) => sum + Number(e.amount), 0);
+
+    const reserveFundAdded = expenses
+      .filter((e) => e.type === 'EXPENSE' && e.category === 'Резервный фонд')
+      .reduce((sum, e) => sum + Number(e.amount), 0);
 
     return NextResponse.json({
       summary: {
-        totalRevenue,
-        completedRevenue,
-        manualIncome,
+        totalRevenue: completedRevenue,
         totalCleanersAccrued,
         opexExpenses,
         netProfit,
         marginPercent,
+        dividendsPaid,
+        reserveFundAdded,
+        retainedEarnings: netProfit - dividendsPaid - reserveFundAdded, // Остаток после дележки
         completedCount: completedOrders.length,
       },
-      cleanerStats: cleanerStats.filter((c) => c.completedCount > 0 || c.totalAccrued > 0 || c.payoutsIssued > 0),
+      paymentBreakdown,
+      cleanerStats: cleanerStats.filter((c) => c.completedCount > 0 || c.totalAccrued > 0 || c.totalReceived > 0),
       expenses,
+      recentOrders: completedOrders,
     });
   } catch (error: any) {
-    console.error('Ошибка финансов:', error);
+    console.error('Ошибка расчета финансов:', error);
     return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
   }
 }
@@ -164,7 +187,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, expense });
   } catch (error: any) {
-    console.error('Ошибка сохранения расхода:', error);
+    console.error('Ошибка сохранения операции:', error);
     return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
   }
 }
@@ -175,16 +198,13 @@ export async function DELETE(request: Request) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return NextResponse.json({ error: 'ID записи обязателен' }, { status: 400 });
+      return NextResponse.json({ error: 'ID обязателен' }, { status: 400 });
     }
 
-    await prisma.expense.delete({
-      where: { id },
-    });
-
+    await prisma.expense.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Ошибка удаления расхода:', error);
+    console.error('Ошибка удаления:', error);
     return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
   }
 }
