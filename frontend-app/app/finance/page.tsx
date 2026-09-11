@@ -15,12 +15,13 @@ const PAYMENT_METHODS_MAP: Record<string, string> = {
 };
 
 const EXPENSE_CATEGORIES = [
+  'Сдача налички клинером',
+  'Зарплата клинеру',
+  'Аванс клинеру',
   'Химия и инвентарь',
   'Маркетинг и реклама',
   'Дивиденды владельцам',
   'Резервный фонд',
-  'Зарплата клинеру',
-  'Аванс клинеру',
   'Транспорт и бензин',
   'Ремонт оборудования',
   'Аренда склада / офиса',
@@ -32,7 +33,6 @@ export default function FinancePage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Диапазон дат: текущий месяц по умолчанию
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
   const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
@@ -41,10 +41,8 @@ export default function FinancePage() {
   const [endDate, setEndDate] = useState(lastDay);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('ALL');
 
-  // Список клинеров для привязки расхода
   const [cleanersList, setCleanersList] = useState<{ id: number; name: string }[]>([]);
 
-  // Модалка добавления расхода/дохода
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [form, setForm] = useState({
@@ -196,7 +194,6 @@ export default function FinancePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Пресеты дат */}
             <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 gap-1">
               <button onClick={() => setQuickRange('today')} className="px-2.5 py-1 hover:bg-white rounded-lg transition">
                 Сегодня
@@ -209,7 +206,6 @@ export default function FinancePage() {
               </button>
             </div>
 
-            {/* Диапазон С и ПО */}
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1.5 rounded-xl text-xs font-semibold">
               <span className="text-slate-400 pl-1">С:</span>
               <input
@@ -227,7 +223,6 @@ export default function FinancePage() {
               />
             </div>
 
-            {/* Кнопка создания операции */}
             <button
               onClick={() => setIsModalOpen(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow-xs"
@@ -237,7 +232,6 @@ export default function FinancePage() {
           </div>
         </div>
 
-        {/* Строка фильтрации по счетам/кассам */}
         <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
           <span className="text-xs font-bold text-slate-500">Фильтр по счёту / кассе:</span>
           <select
@@ -252,7 +246,7 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* Мультикасса: Фактические поступления по счетам */}
+      {/* Мультикасса */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
           🏦 Фактические поступления по счетам и кошелькам
@@ -273,7 +267,6 @@ export default function FinancePage() {
 
       {/* Карточки KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Выручка */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
             Выручка (Оборот)
@@ -286,7 +279,6 @@ export default function FinancePage() {
           </span>
         </div>
 
-        {/* Начислено клинерам */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">
             ФОТ клинеров (30/35 zł/ч)
@@ -297,7 +289,6 @@ export default function FinancePage() {
           <span className="text-[11px] text-slate-500 mt-1 block">Почасовые начисления</span>
         </div>
 
-        {/* Операционные расходы */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">
             Расходы (OPEX)
@@ -308,7 +299,6 @@ export default function FinancePage() {
           <span className="text-[11px] text-slate-500 mt-1 block">Химия, реклама, прочее</span>
         </div>
 
-        {/* Чистая прибыль */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">
             Чистая прибыль
@@ -319,7 +309,6 @@ export default function FinancePage() {
           <span className="text-[11px] text-slate-500 mt-1 block">Итог компании</span>
         </div>
 
-        {/* Маржинальность */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">
             Маржинальность
@@ -331,9 +320,9 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* Сетка: Слева Клинеры, Справа Расходы */}
+      {/* Таблицы: Слева Клинеры, Справа Расходы */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Таблица клинеров и их выработки */}
+        {/* Ведомость и KPI клинеров */}
         <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
           <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
             <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
@@ -358,19 +347,51 @@ export default function FinancePage() {
                     </div>
                   </div>
 
-                  <div className="text-right space-y-0.5">
+                  <div className="text-right space-y-1">
                     <div className="text-xs font-bold text-slate-800">
                       Начислено: <span className="text-amber-600">{c.totalAccrued} zł</span>
                     </div>
+
                     <div className="text-[11px] text-slate-500">
-                      Забрал нал: <span>{c.cashTakenFromOrders || 0} zł</span>
+                      Забрал нал: <span className="font-semibold">{c.cashTakenFromOrders || 0} zł</span>
                     </div>
-                    <div className="text-xs font-extrabold">
-                      К выплате:{' '}
-                      <span className={c.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                        {c.balance} zł
-                      </span>
+
+                    <div className="text-xs font-extrabold flex items-center justify-end gap-1.5 pt-0.5">
+                      {c.balance >= 0 ? (
+                        <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                          К выплате: {c.balance} zł
+                        </span>
+                      ) : (
+                        <span className="text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-lg">
+                          ⚠️ Долг в кассу: {Math.abs(c.balance)} zł
+                        </span>
+                      )}
                     </div>
+
+                    {/* Быстрая кнопка принять наличные */}
+                    {(c.cashTakenFromOrders > 0 || c.balance < 0) && (
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const suggestedAmount = c.balance < 0 ? Math.abs(c.balance) : c.cashTakenFromOrders;
+                            setForm({
+                              type: 'INCOME',
+                              category: 'Сдача налички клинером',
+                              customCategory: '',
+                              amount: String(suggestedAmount),
+                              date: new Date().toISOString().slice(0, 10),
+                              cleanerId: String(c.id),
+                              comment: `Клинер ${c.name} сдал наличные в кассу`,
+                            });
+                            setIsModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-bold text-[10px] transition shadow-2xs"
+                        >
+                          💵 Принять нал
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
@@ -382,7 +403,7 @@ export default function FinancePage() {
           </div>
         </div>
 
-        {/* Журнал расходов и доходов с комментариями */}
+        {/* Журнал операций и затрат */}
         <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
           <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
             <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
@@ -468,7 +489,6 @@ export default function FinancePage() {
             </div>
 
             <form onSubmit={handleCreateExpense} className="space-y-3.5 text-xs">
-              {/* Тип: Расход или Доход */}
               <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl font-bold">
                 <button
                   type="button"
@@ -486,11 +506,10 @@ export default function FinancePage() {
                     form.type === 'INCOME' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500'
                   }`}
                 >
-                  🟢 Доход
+                  🟢 Доход / Прием налички
                 </button>
               </div>
 
-              {/* Категория */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="font-bold text-slate-500 uppercase text-[10px]">Категория</label>
@@ -507,7 +526,7 @@ export default function FinancePage() {
                   <input
                     type="text"
                     required
-                    placeholder="Например: Покупка пылесоса Kärcher..."
+                    placeholder="Например: Закупка салфеток..."
                     value={form.customCategory}
                     onChange={(e) => setForm({ ...form, customCategory: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold"
@@ -527,7 +546,6 @@ export default function FinancePage() {
                 )}
               </div>
 
-              {/* Сумма и Дата */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-500 uppercase text-[10px] block mb-1">
@@ -557,7 +575,6 @@ export default function FinancePage() {
                 </div>
               </div>
 
-              {/* Привязка к клинеру (если аванс, зарплата или покупка для него) */}
               <div>
                 <label className="font-bold text-slate-500 uppercase text-[10px] block mb-1">
                   Привязать к клинеру (необязательно)
@@ -576,14 +593,13 @@ export default function FinancePage() {
                 </select>
               </div>
 
-              {/* Комментарий */}
               <div>
                 <label className="font-bold text-slate-500 uppercase text-[10px] block mb-1">
-                  Комментарий / Описание затраты
+                  Комментарий / Описание
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="Например: Закупка 5л химии Kiehl на Таргувке, чек №412..."
+                  placeholder="Детали операции..."
                   value={form.comment}
                   onChange={(e) => setForm({ ...form, comment: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none"
