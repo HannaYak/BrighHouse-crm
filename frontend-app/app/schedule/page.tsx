@@ -13,11 +13,8 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [onlyWorkingToday, setOnlyWorkingToday] = useState(true);
-
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  // Храним перетаскиваемый заказ и ID колонки, откуда его взяли
   const [draggedOrderInfo, setDraggedOrderInfo] = useState<{ order: any; fromCleanerId: number } | null>(null);
 
   const loadData = async (silent = false) => {
@@ -25,9 +22,8 @@ export default function SchedulePage() {
       if (!silent) setLoading(true);
       const [cleanersRes, ordersRes] = await Promise.all([
         fetch('/api/cleaners'),
-        fetch('/api/orders')
+        fetch('/api/orders'),
       ]);
-
       if (cleanersRes.ok) setAllCleaners(await cleanersRes.json());
       if (ordersRes.ok) setOrders(await ordersRes.json());
     } catch (e) {
@@ -62,16 +58,39 @@ export default function SchedulePage() {
     gridTemplateColumns: `80px repeat(${Math.max(visibleCleaners.length, 1)}, minmax(180px, 1fr))`,
   };
 
+  // ЦВЕТА КАРТОЧЕК В ЗАВИСИМОСТИ ОТ СТАТУСА И ТАРИФА
+  const getOrderColorClass = (order: any, isPair: boolean) => {
+    if (order.status === 'COMPLETED') {
+      return 'bg-emerald-600 hover:bg-emerald-700 border-emerald-400 text-white shadow-emerald-900/20';
+    }
+    if (isPair) {
+      return 'bg-purple-600 hover:bg-purple-700 border-purple-400 text-white shadow-purple-900/20';
+    }
+    switch (order.serviceType) {
+      case 'GENERAL':
+        return 'bg-indigo-600 hover:bg-indigo-700 border-indigo-400 text-white';
+      case 'AFTER_REPAIR':
+        return 'bg-amber-600 hover:bg-amber-700 border-amber-400 text-white';
+      case 'OFFICE_REGULAR':
+      case 'OFFICE_GENERAL':
+        return 'bg-teal-600 hover:bg-teal-700 border-teal-400 text-white';
+      case 'STANDARD_PLUS':
+        return 'bg-cyan-600 hover:bg-cyan-700 border-cyan-400 text-white';
+      default:
+        return 'bg-blue-600 hover:bg-blue-700 border-blue-400 text-white';
+    }
+  };
+
   const handleCellClick = (hour: number, cleaner: any) => {
     const startStr = `${hour < 10 ? '0' + hour : hour}:00`;
     const endHour = Math.min(20, hour + 3);
     const endStr = `${endHour < 10 ? '0' + endHour : endHour}:00`;
-
     const newOrderTemplate: OrderDetail = {
       date: selectedDate,
       startTime: startStr,
       endTime: endStr,
       timeSlot: `${startStr} — ${endStr}`,
+      status: 'CONFIRMED',
       serviceType: 'STANDARD',
       areaM2: 45,
       roomsCount: 1,
@@ -102,8 +121,9 @@ export default function SchedulePage() {
       cleanersCount: 1,
       assignedCleaners: [{ id: cleaner.id, name: cleaner.name, district: cleaner.district }],
       notes: '',
+      paymentMethod: 'CASH',
+      cashCollectedById: null,
     };
-
     setEditingOrder(newOrderTemplate);
     setIsModalOpen(true);
   };
@@ -114,16 +134,14 @@ export default function SchedulePage() {
         ...saved,
         date: saved.date || selectedDate,
         assignedCleaners: (saved.assignedCleaners || []).map((c: any) => ({
-          id: typeof c === 'object' ? (c.id || c.cleanerId) : c
+          id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
         })),
       };
-
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       if (res.ok) {
         await loadData(true);
         setIsModalOpen(false);
@@ -137,25 +155,19 @@ export default function SchedulePage() {
     }
   };
 
-  // Умное перемещение клинера / замена одного из напарников
   const handleDropOnCell = async (targetCleanerId: number, targetHour: number) => {
     if (!draggedOrderInfo) return;
-
     const { order, fromCleanerId } = draggedOrderInfo;
 
-    // Собираем всех текущих клинеров заказа
     const currentCleanerIds: number[] = (order.assignedCleaners || [])
       .map((ac: any) => Number(ac.cleanerId || ac.cleaner?.id || ac.id || ac))
       .filter(Boolean);
 
     let updatedCleanerIds: number[];
-
     if (currentCleanerIds.length > 1) {
-      // Если в заказе пара: заменяем только того клинера, из чьей колонки потащили!
       const remainingCleaners = currentCleanerIds.filter((id) => id !== fromCleanerId);
       updatedCleanerIds = Array.from(new Set([...remainingCleaners, targetCleanerId]));
     } else {
-      // Если клинер был один: просто назначаем нового
       updatedCleanerIds = [targetCleanerId];
     }
 
@@ -178,7 +190,6 @@ export default function SchedulePage() {
     };
 
     setDraggedOrderInfo(null);
-
     try {
       const res = await fetch('/api/orders', {
         method: 'POST',
@@ -204,8 +215,8 @@ export default function SchedulePage() {
       startTime: startStr,
       endTime: endStr,
       timeSlot: `${startStr} — ${endStr}`,
-      assignedCleaners: (order.assignedCleaners || []).map((c: any) => ({ 
-        id: c.cleanerId || c.cleaner?.id || c.id 
+      assignedCleaners: (order.assignedCleaners || []).map((c: any) => ({
+        id: c.cleanerId || c.cleaner?.id || c.id,
       })),
     };
 
@@ -231,7 +242,9 @@ export default function SchedulePage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <h1 className="text-xl font-bold text-slate-900">📅 Расписание смен</h1>
-          <p className="text-xs text-slate-500">Перетаскивание с умной заменой напарников. Клик по свободной ячейке — новая запись.</p>
+          <p className="text-xs text-slate-500">
+            Перетаскивание с умной заменой напарников. Клик по свободной ячейке — новая запись.
+          </p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -281,7 +294,7 @@ export default function SchedulePage() {
       </div>
 
       {/* Сетка расписания */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto select-none">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-x-auto select-none">
         <div className="min-w-[900px]">
           {/* Шапка клинеров */}
           <div className="grid border-b border-slate-200 bg-slate-50 sticky top-0 z-20" style={gridStyle}>
@@ -304,13 +317,11 @@ export default function SchedulePage() {
             <div className="divide-y divide-slate-100">
               {HOURS.map((hour) => {
                 const hourStr = `${hour < 10 ? '0' + hour : hour}:00`;
-
                 return (
                   <div key={hour} className="grid" style={{ ...gridStyle, height: `${ROW_HEIGHT}px` }}>
                     <div className="p-2 text-center text-xs font-mono font-bold text-slate-400 border-r border-slate-100 bg-slate-50/50 flex items-center justify-center">
                       {hourStr}
                     </div>
-
                     {visibleCleaners.map((cleaner) => (
                       <div
                         key={cleaner.id}
@@ -338,7 +349,6 @@ export default function SchedulePage() {
             {/* Карточки заказов поверх сетки */}
             <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
               <div></div>
-
               {visibleCleaners.map((cleaner) => {
                 const cleanerOrders = dayOrders.filter((o) =>
                   o.assignedCleaners?.some((ac: any) => {
@@ -354,10 +364,8 @@ export default function SchedulePage() {
                       const parts = slot.split('—').map((s: string) => s.trim());
                       const startTime = parts[0] || order.startTime || '10:00';
                       const endTime = parts[1] || order.endTime || '14:00';
-
                       const [startH, startM] = startTime.split(':').map(Number);
                       const [endH, endM] = endTime.split(':').map(Number);
-
                       const safeStartH = isNaN(startH) ? 10 : startH;
                       const safeStartM = isNaN(startM) ? 0 : startM;
                       const safeEndH = isNaN(endH) ? safeStartH + 3 : endH;
@@ -365,12 +373,12 @@ export default function SchedulePage() {
 
                       const startMinutes = (safeStartH - START_HOUR) * 60 + safeStartM;
                       const durationMinutes = Math.max(30, (safeEndH * 60 + safeEndM) - (safeStartH * 60 + safeStartM));
-
                       const topPx = (startMinutes / 60) * ROW_HEIGHT;
                       const heightPx = (durationMinutes / 60) * ROW_HEIGHT - 4;
 
                       const totalAssigned = order.assignedCleaners?.length || 1;
                       const isPair = totalAssigned > 1;
+                      const isCompleted = order.status === 'COMPLETED';
 
                       return (
                         <div
@@ -397,21 +405,28 @@ export default function SchedulePage() {
                             top: `${topPx}px`,
                             height: `${Math.max(heightPx, 44)}px`,
                           }}
-                          className={`absolute left-1.5 right-1.5 text-white p-2 rounded-xl shadow-md cursor-move active:opacity-50 transition overflow-hidden flex flex-col justify-between border pointer-events-auto group ${
+                          className={`absolute left-1.5 right-1.5 p-2 rounded-xl shadow-md cursor-move active:opacity-50 transition overflow-hidden flex flex-col justify-between border pointer-events-auto group ${getOrderColorClass(
+                            order,
                             isPair
-                              ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-400'
-                              : 'bg-blue-600 hover:bg-blue-700 border-blue-400'
-                          }`}
+                          )}`}
                         >
                           <div>
                             <div className="flex justify-between items-center font-bold text-xs">
                               <span className="truncate">{order.orderNumber}</span>
-                              <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] shrink-0 font-mono">
-                                {order.price} zł
-                              </span>
+                              <div className="flex items-center gap-1">
+                                {isCompleted && (
+                                  <span className="bg-white/30 text-white px-1 py-0.5 rounded text-[9px] font-extrabold">
+                                    ✓ Оплачен
+                                  </span>
+                                )}
+                                <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] shrink-0 font-mono">
+                                  {order.price} zł
+                                </span>
+                              </div>
                             </div>
                             <div className="font-semibold text-xs truncate mt-0.5">
-                              {isPair ? '👥 ' : ''}{order.clientName || 'Без имени'}
+                              {isPair ? '👥 ' : ''}
+                              {order.clientName || 'Без имени'}
                             </div>
                             <div className="text-[10px] text-white/80 truncate">📍 {order.addressLine1}</div>
                           </div>
@@ -461,7 +476,6 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Модалка заказа */}
       <OrderModal
         order={editingOrder}
         isOpen={isModalOpen}
