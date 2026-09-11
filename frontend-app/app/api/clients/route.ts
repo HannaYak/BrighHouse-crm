@@ -17,10 +17,41 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
-    const formattedClients = clients.map(client => {
-      const totalSpent = client.orders
-        .filter(o => o.status !== ('CANCELLED' as any))
-        .reduce((sum, o) => sum + (o.price || 0), 0);
+    const allOrders = await prisma.order.findMany({
+      include: {
+        assignedCleaners: {
+          include: { cleaner: true },
+        },
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    const formattedClients = clients.map((client) => {
+      const cleanClientPhone = (client.phone || '').replace(/\D/g, '');
+
+      // Собираем заказы: сначала прямые по связи, плюс по совпадению телефона
+      const matchedOrders = allOrders.filter((o) => {
+        if (o.clientId && String(o.clientId) === String(client.id)) return true;
+        const cleanOrderPhone = (o.clientPhone || '').replace(/\D/g, '');
+        return (
+          cleanClientPhone.length >= 6 &&
+          cleanOrderPhone.length >= 6 &&
+          (cleanClientPhone.includes(cleanOrderPhone) || cleanOrderPhone.includes(cleanClientPhone))
+        );
+      });
+
+      // Исключаем дубликаты по id заказа
+      const uniqueOrdersMap = new Map();
+      [...(client.orders || []), ...matchedOrders].forEach((ord) => {
+        uniqueOrdersMap.set(ord.id, ord);
+      });
+      const finalOrders = Array.from(uniqueOrdersMap.values()).sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      const totalSpent = finalOrders
+        .filter((o) => o.status !== ('CANCELLED' as any))
+        .reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
       return {
         id: client.id,
@@ -30,16 +61,16 @@ export async function GET() {
         notes: client.notes,
         favoriteCleaner: client.favoriteCleaner,
         blacklistCleaner: client.blacklistCleaner,
-        ordersCount: client.orders.length,
+        ordersCount: finalOrders.length,
         totalSpent,
-        orders: client.orders,
+        orders: finalOrders,
       };
     });
 
     return NextResponse.json(formattedClients);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка загрузки клиентов:', error);
-    return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
   }
 }
 
@@ -52,19 +83,21 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'ID клиента обязателен' }, { status: 400 });
     }
 
+    const clientWhere = isNaN(Number(id)) ? { id: String(id) } : { id: Number(id) };
+
     const updatedClient = await prisma.client.update({
-      where: { id: parseInt(id, 10) },
+      where: clientWhere as any,
       data: {
-        notes,
-        favoriteCleaner,
-        blacklistCleaner,
+        ...(notes !== undefined ? { notes } : {}),
+        ...(favoriteCleaner !== undefined ? { favoriteCleaner } : {}),
+        ...(blacklistCleaner !== undefined ? { blacklistCleaner } : {}),
       },
     });
 
     return NextResponse.json(updatedClient);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка обновления клиента:', error);
-    return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
   }
 }
 
@@ -82,8 +115,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'ID клиента обязателен' }, { status: 400 });
     }
 
-    // Если ID в базе числовой — парсим, если строка (cuid/uuid) — оставляем как есть
-    const clientWhere = isNaN(Number(id)) ? { id } : { id: Number(id) };
+    const clientWhere = isNaN(Number(id)) ? { id: String(id) } : { id: Number(id) };
 
     await prisma.client.delete({
       where: clientWhere as any,
