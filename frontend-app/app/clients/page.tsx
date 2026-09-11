@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import OrderModal, { OrderDetail } from '../components/OrderModal';
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
@@ -8,42 +9,14 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
 
-  // Редактирование заметок и предпочтений
   const [notes, setNotes] = useState('');
   const [favoriteCleaners, setFavoriteCleaners] = useState<string[]>([]);
   const [blacklistCleaners, setBlacklistCleaners] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // Удаление клиента
-  const handleDeleteClient = async () => {
-    if (!selectedClient) return;
+  const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
 
-    const confirmed = window.confirm(
-      `Вы уверены, что хотите удалить клиента "${selectedClient.name || 'Без имени'}"?\nЭто действие нельзя отменить.`
-    );
-
-    if (!confirmed) return;
-
-    try {
-      const res = await fetch(`/api/clients?id=${selectedClient.id}`, {
-        method: 'DELETE',
-      });
-
-      if (res.ok) {
-        alert('🗑️ Клиент успешно удален');
-        setSelectedClient(null);
-        fetchClients();
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Ошибка при удалении клиента');
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Ошибка соединения с сервером');
-    }
-  };
-
-  // Загрузка клинеров для выпадающего списка
   useEffect(() => {
     fetch('/api/cleaners')
       .then((r) => (r.ok ? r.json() : []))
@@ -51,7 +24,7 @@ export default function ClientsPage() {
       .catch(console.error);
   }, []);
 
-  const parseCleanerList = (val: any): string[] => {
+  const parseCleaners = (val: any): string[] => {
     if (!val) return [];
     if (Array.isArray(val)) return val.map((v) => (typeof v === 'object' ? v.name : String(v)));
     if (typeof val === 'string') {
@@ -73,11 +46,14 @@ export default function ClientsPage() {
         const data = await res.json();
         setClients(data);
         if (data.length > 0 && !selectedClient) {
-          applyClientSelection(data[0]);
+          applyClientData(data[0]);
+        } else if (selectedClient) {
+          const fresh = data.find((c: any) => c.id === selectedClient.id);
+          if (fresh) applyClientData(fresh);
         }
       }
     } catch (e) {
-      console.error(e);
+      console.error('Ошибка загрузки клиентов:', e);
     } finally {
       setLoading(false);
     }
@@ -87,15 +63,15 @@ export default function ClientsPage() {
     fetchClients();
   }, []);
 
-  const applyClientSelection = (client: any) => {
+  const applyClientData = (client: any) => {
     setSelectedClient(client);
     setNotes(client.notes || '');
-    setFavoriteCleaners(parseCleanerList(client.favoriteCleaners || client.favoriteCleaner));
-    setBlacklistCleaners(parseCleanerList(client.blacklistedCleaners || client.blacklistCleaner));
+    setFavoriteCleaners(parseCleaners(client.favoriteCleaner || client.favoriteCleaners));
+    setBlacklistCleaners(parseCleaners(client.blacklistCleaner || client.blacklistedCleaners));
   };
 
   const handleSelectClient = (client: any) => {
-    applyClientSelection(client);
+    applyClientData(client);
   };
 
   const handleSaveNotes = async () => {
@@ -108,24 +84,97 @@ export default function ClientsPage() {
         body: JSON.stringify({
           id: selectedClient.id,
           notes,
-          favoriteCleaners,
           favoriteCleaner: favoriteCleaners.join(', '),
-          blacklistedCleaners: blacklistCleaners,
           blacklistCleaner: blacklistCleaners.join(', '),
         }),
       });
 
       if (res.ok) {
-        alert('✅ Данные клиента сохранены');
+        alert('✅ Предпочтения клиента успешно сохранены');
         fetchClients();
       } else {
-        alert('Ошибка сохранения данных клиента');
+        alert('Ошибка сохранения');
       }
     } catch (e) {
       console.error(e);
-      alert('Ошибка соединения с сервером');
+      alert('Ошибка соединения');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOpenOrder = (order: any) => {
+    const parts = (order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '13:00'}`)
+      .split('—')
+      .map((s: string) => s.trim());
+
+    const orderData: OrderDetail = {
+      ...order,
+      date: order.date ? new Date(order.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      startTime: parts[0] || order.startTime || '10:00',
+      endTime: parts[1] || order.endTime || '13:00',
+      assignedCleaners: (order.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+    };
+
+    setEditingOrder(orderData);
+    setIsOrderModalOpen(true);
+  };
+
+  const handleRepeatOrder = (pastOrder: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    const parts = (pastOrder.timeSlot || `${pastOrder.startTime || '10:00'} — ${pastOrder.endTime || '13:00'}`)
+      .split('—')
+      .map((s: string) => s.trim());
+
+    const clonedOrder: OrderDetail = {
+      ...pastOrder,
+      id: undefined,
+      orderNumber: undefined,
+      status: 'CONFIRMED',
+      date: new Date().toISOString().slice(0, 10),
+      startTime: parts[0] || pastOrder.startTime || '10:00',
+      endTime: parts[1] || pastOrder.endTime || '13:00',
+      clientName: selectedClient.name || pastOrder.clientName,
+      clientPhone: selectedClient.phone || pastOrder.clientPhone,
+      addressLine1: pastOrder.addressLine1 || selectedClient.address,
+      addressLine2: pastOrder.addressLine2 || '',
+      assignedCleaners: (pastOrder.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+      notes: pastOrder.notes || selectedClient.notes || '',
+      paymentMethod: 'CASH',
+      cashCollectedById: null,
+    };
+
+    setEditingOrder(clonedOrder);
+    setIsOrderModalOpen(true);
+  };
+
+  const handleSaveOrder = async (saved: OrderDetail) => {
+    try {
+      const payload = {
+        ...saved,
+        assignedCleaners: (saved.assignedCleaners || []).map((c: any) => ({
+          id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+          name: c.name,
+        })),
+      };
+
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setIsOrderModalOpen(false);
+        setEditingOrder(null);
+        fetchClients();
+      } else {
+        alert('Ошибка при сохранении заказа');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка соединения');
     }
   };
 
@@ -141,11 +190,14 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col">
+    <div className="space-y-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col pb-6">
+      {/* Шапка */}
       <div className="flex justify-between items-center shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-900">👥 База клиентов и LTV</h1>
-          <p className="text-xs text-slate-500">История заказов, предпочтения, любимые клинеры и заметки</p>
+          <p className="text-xs text-slate-500">
+            История заказов, быстрый повтор заказа, предпочтения и клинеры
+          </p>
         </div>
         <div className="w-72">
           <input
@@ -159,7 +211,7 @@ export default function ClientsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 flex-1 overflow-hidden">
-        {/* Список клиентов слева */}
+        {/* Список клиентов (слева) */}
         <div className="md:col-span-5 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
           <div className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center text-xs font-bold text-slate-600">
             <span>Клиенты ({filteredClients.length})</span>
@@ -184,11 +236,12 @@ export default function ClientsPage() {
                       📍 {client.address || 'Адрес не указан'}
                     </div>
                   </div>
-
                   <div className="text-right">
-                    <span className="text-xs font-extrabold text-emerald-600 block">{client.totalSpent || 0} zł</span>
+                    <span className="text-xs font-extrabold text-emerald-600 block">
+                      {client.totalSpent || 0} zł
+                    </span>
                     <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-semibold">
-                      {client.ordersCount || 0} заказов
+                      {client.ordersCount || client.orders?.length || 0} заказов
                     </span>
                   </div>
                 </div>
@@ -197,49 +250,39 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        {/* Карточка выбранного клиента справа */}
+        {/* Детальная карточка клиента (справа) */}
         <div className="md:col-span-7 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
           {selectedClient ? (
             <div className="flex flex-col h-full overflow-y-auto p-6 space-y-6">
-              {/* Шапка карточки */}
+              {/* Шапка клиента */}
               <div className="flex justify-between items-start border-b border-slate-100 pb-4">
                 <div>
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-lg font-bold text-slate-900">{selectedClient.name || 'Без имени'}</h2>
-                    <button
-                      type="button"
-                      onClick={handleDeleteClient}
-                      className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-lg transition flex items-center gap-1"
-                      title="Удалить клиента из базы"
-                    >
-                      🗑️ Удалить
-                    </button>
-                  </div>
+                  <h2 className="text-lg font-bold text-slate-900">{selectedClient.name}</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    📞 {selectedClient.phone || '—'} • 📍 {selectedClient.address || '—'}
+                    📞 {selectedClient.phone} • 📍 {selectedClient.address || 'Адрес не указан'}
                   </p>
                 </div>
                 <div className="text-right bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
                   <span className="text-[10px] uppercase font-bold text-blue-700 block">LTV Клиента</span>
-                  <span className="text-base font-extrabold text-blue-600">{selectedClient.totalSpent || 0} zł</span>
+                  <span className="text-base font-extrabold text-blue-600">
+                    {selectedClient.totalSpent || 0} zł
+                  </span>
                 </div>
               </div>
 
-              {/* Предпочтения и особенности */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+              {/* Предпочтения и выбор клинеров */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4">
                 <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  📝 Предпочтения и клинеры
+                  📝 Предпочтения и назначение клинеров
                 </h3>
 
-                {/* Селекторы клинеров */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* ЛЮБИМЫЕ КЛИНЕРЫ */}
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-emerald-700 uppercase flex items-center gap-1">
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold text-emerald-800 uppercase flex items-center gap-1">
                       💚 Любимые клинеры
                     </label>
                     <select
-                      value=""
                       onChange={(e) => {
                         const selectedId = Number(e.target.value);
                         if (!selectedId) return;
@@ -247,10 +290,11 @@ export default function ClientsPage() {
                         if (cl && !favoriteCleaners.includes(cl.name)) {
                           setFavoriteCleaners([...favoriteCleaners, cl.name]);
                         }
+                        e.target.value = '';
                       }}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700"
                     >
-                      <option value="">+ Добавить любимого клинера...</option>
+                      <option value="">+ Добавить любимого...</option>
                       {cleanersList.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
@@ -258,7 +302,7 @@ export default function ClientsPage() {
                       ))}
                     </select>
 
-                    <div className="flex flex-wrap gap-1.5 pt-1">
+                    <div className="flex flex-wrap gap-1.5 min-h-6">
                       {favoriteCleaners.map((name) => (
                         <span
                           key={name}
@@ -277,13 +321,12 @@ export default function ClientsPage() {
                     </div>
                   </div>
 
-                  {/* ЧЕРНЫЙ СПИСОК КЛИЕНТА */}
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold text-rose-700 uppercase flex items-center gap-1">
-                      🚫 Не отправлять (Черный список)
+                  {/* НЕЛИЮБИМЫЕ КЛИНЕРЫ */}
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold text-rose-800 uppercase flex items-center gap-1">
+                      🚫 Черный список (не отправлять)
                     </label>
                     <select
-                      value=""
                       onChange={(e) => {
                         const selectedId = Number(e.target.value);
                         if (!selectedId) return;
@@ -291,6 +334,7 @@ export default function ClientsPage() {
                         if (cl && !blacklistCleaners.includes(cl.name)) {
                           setBlacklistCleaners([...blacklistCleaners, cl.name]);
                         }
+                        e.target.value = '';
                       }}
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700"
                     >
@@ -302,7 +346,7 @@ export default function ClientsPage() {
                       ))}
                     </select>
 
-                    <div className="flex flex-wrap gap-1.5 pt-1">
+                    <div className="flex flex-wrap gap-1.5 min-h-6">
                       {blacklistCleaners.map((name) => (
                         <span
                           key={name}
@@ -322,62 +366,103 @@ export default function ClientsPage() {
                   </div>
                 </div>
 
-                {/* Заметки */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                    Важные детали квартиры / пожелания
+                    Важные детали квартиры / домофон / ключи
                   </label>
                   <textarea
                     rows={2}
-                    placeholder="Например: Дома кот, ключи у консьержа, использовать эко-химию..."
+                    placeholder="Например: Дома кот, домофон 41K, ключи под ковриком..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs"
+                    className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none"
                   />
                 </div>
 
                 <button
                   onClick={handleSaveNotes}
                   disabled={saving}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-lg transition"
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs"
                 >
-                  {saving ? 'Сохранение...' : 'Сохранить заметки'}
+                  {saving ? 'Сохранение...' : 'Сохранить предпочтения'}
                 </button>
               </div>
 
-              {/* История уборок */}
+              {/* История заказов клиента (Кликабельная + Повтор) */}
               <div className="space-y-3 flex-1">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  🗓 История всех уборок ({selectedClient.orders?.length || 0})
-                </h3>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    🗓 История всех уборок ({selectedClient.orders?.length || 0})
+                  </h3>
+                  <span className="text-[10px] text-slate-400">Нажмите на заказ для просмотра</span>
+                </div>
 
                 <div className="space-y-2">
-                  {selectedClient.orders?.map((order: any) => {
-                    const team =
-                      order.assignedCleaners?.map((ac: any) => ac.cleaner?.name).join(' + ') ||
-                      'Бригада не указана';
-                    return (
-                      <div
-                        key={order.id}
-                        className="p-3 bg-white border border-slate-200 rounded-xl flex justify-between items-center text-xs"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-blue-600">{order.orderNumber}</span>
-                            <span className="font-bold text-slate-800">{order.serviceType}</span>
-                            <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                              {new Date(order.date).toLocaleDateString('ru-RU')}
-                            </span>
+                  {selectedClient.orders && selectedClient.orders.length > 0 ? (
+                    selectedClient.orders.map((order: any) => {
+                      const team =
+                        order.assignedCleaners?.map((ac: any) => ac.cleaner?.name || ac.name).join(' + ') ||
+                        'Бригада не указана';
+
+                      const isCompleted = order.status === 'COMPLETED';
+
+                      return (
+                        <div
+                          key={order.id}
+                          onClick={() => handleOpenOrder(order)}
+                          className="p-3.5 bg-white border border-slate-200 hover:border-blue-300 hover:shadow-xs rounded-xl flex justify-between items-center text-xs transition cursor-pointer group"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-blue-600 group-hover:underline">
+                                {order.orderNumber}
+                              </span>
+                              <span className="font-bold text-slate-800">{order.serviceType}</span>
+                              <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                {new Date(order.date).toLocaleDateString('ru-RU')}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isCompleted
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                }`}
+                              >
+                                {isCompleted ? '✓ Оплачен' : order.status}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              👥 Клинеры: <span className="font-medium text-slate-700">{team}</span>
+                            </div>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-1">👥 Клинеры: {team}</div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <span className="font-extrabold text-slate-900 text-sm block">
+                                {order.price} zł
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {order.timeSlot || '10:00 — 14:00'}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleRepeatOrder(order, e)}
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 font-bold rounded-lg text-xs transition flex items-center gap-1 shadow-2xs"
+                              title="Создать новый заказ с такими же параметрами"
+                            >
+                              🔁 Повторить
+                            </button>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className="font-extrabold text-slate-900">{order.price} zł</span>
-                          <span className="text-[10px] text-slate-400 block">{order.status}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  ) : (
+                    <div className="p-6 text-center text-slate-400 text-xs bg-slate-50 rounded-xl">
+                      У клиента пока нет оформленных заказов
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -386,6 +471,16 @@ export default function ClientsPage() {
           )}
         </div>
       </div>
+
+      <OrderModal
+        order={editingOrder}
+        isOpen={isOrderModalOpen}
+        onClose={() => {
+          setIsOrderModalOpen(false);
+          setEditingOrder(null);
+        }}
+        onSave={handleSaveOrder}
+      />
     </div>
   );
 }
