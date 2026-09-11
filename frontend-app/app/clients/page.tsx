@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import OrderModal, { OrderDetail } from '../components/OrderModal';
+import OrderModal, { OrderDetail } from '@/components/OrderModal';
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
