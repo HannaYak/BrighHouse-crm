@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
-import { sendPersonalOrderNotification } from '../../../lib/telegram';
-import { createGoogleCalendarEvent } from '../../../lib/googleCalendar';
 
-function parseServiceType(type?: string): 'STANDARD' | 'STANDARD_PLUS' | 'GENERAL' | 'AFTER_REPAIR' {
+function parseServiceType(type?: string): string {
   if (!type) return 'STANDARD';
   const t = type.toUpperCase();
+  if (t.includes('OFFICE_GENERAL') || t.includes('ОФИС_ГЕНЕРАЛЬН')) return 'OFFICE_GENERAL';
+  if (t.includes('OFFICE') || t.includes('ОФИС')) return 'OFFICE_REGULAR';
   if (t.includes('PLUS') || t.includes('СТАНДАРТ+')) return 'STANDARD_PLUS';
   if (t.includes('GENERAL') || t.includes('ГЕНЕРАЛЬН')) return 'GENERAL';
   if (t.includes('REPAIR') || t.includes('РЕМОНТ') || t.includes('POST_CONSTRUCTION') || t.includes('AFTER_REPAIR')) return 'AFTER_REPAIR';
@@ -19,6 +19,7 @@ export async function GET() {
         assignedCleaners: {
           include: { cleaner: true },
         },
+        cashCollectedBy: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -77,14 +78,16 @@ export async function POST(request: Request) {
 
     const parsedDate = body.date ? new Date(body.date) : new Date();
 
-    const orderData = {
+    const orderData: any = {
       date: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
-      timeSlot: body.timeSlot || body.startTime || '10:00 — 14:00',
+      timeSlot: body.timeSlot || `${body.startTime || '10:00'} — ${body.endTime || '14:00'}`,
       serviceType: parseServiceType(body.serviceType),
       areaM2: Number(body.areaM2) || 45,
       roomsCount: Number(body.roomsCount) || 1,
       bathroomsCount: Number(body.bathroomsCount) || 1,
       windowsCount: Number(body.windowsCount) || 0,
+      showcaseWindowsCount: Number(body.showcaseWindowsCount) || 0,
+      balconyWindowsCount: Number(body.balconyWindowsCount) || 0,
       hasOven: Boolean(body.hasOven),
       hasFridge: Boolean(body.hasFridge),
       hasFridgeFreeze: Boolean(body.hasFridgeFreeze),
@@ -98,6 +101,11 @@ export async function POST(request: Request) {
       hasVacuum: Boolean(body.hasVacuum),
       hasPets: Boolean(body.hasPets),
       hasKeys: Boolean(body.hasKeys),
+      drySofa2: Number(body.drySofa2) || 0,
+      drySofa3: Number(body.drySofa3) || 0,
+      drySofaCorner4: Number(body.drySofaCorner4) || 0,
+      dryArmchair: Number(body.dryArmchair) || 0,
+      dryMattressSide: Number(body.dryMattressSide) || 0,
       clientName: (body.clientName || 'Клиент').trim(),
       clientPhone: (body.clientPhone || '').trim(),
       addressLine1: (body.addressLine1 || '').trim(),
@@ -107,11 +115,16 @@ export async function POST(request: Request) {
       price: Number(body.price) || 0,
       cleanersCount: (body.assignedCleaners || []).length || 1,
       notes: body.notes || '',
-      status: body.status || 'NEW',
+      status: body.status || 'CONFIRMED',
       clientId: clientId,
+
+      // Фиксация оплаты и ответственного за наличные
+      paymentMethod: body.paymentMethod || 'CASH',
+      paymentNote: body.paymentNote || null,
+      cashCollectedById: body.cashCollectedById ? Number(body.cashCollectedById) : null,
     };
 
-   const rawCleaners = (body.assignedCleaners || [])
+    const rawCleaners = (body.assignedCleaners || [])
       .map((c: any) => (typeof c === 'object' ? c?.id : c))
       .filter(Boolean);
     const uniqueCleanerIds: number[] = Array.from(new Set(rawCleaners.map((id: any) => Number(id))));
@@ -137,6 +150,7 @@ export async function POST(request: Request) {
           assignedCleaners: {
             include: { cleaner: true },
           },
+          cashCollectedBy: true,
         },
       });
     } else {
@@ -154,33 +168,39 @@ export async function POST(request: Request) {
           assignedCleaners: {
             include: { cleaner: true },
           },
+          cashCollectedBy: true,
         },
       });
     }
 
     return NextResponse.json(order, { status: 200 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка сохранения заказа:', error);
-    return NextResponse.json({ error: 'Ошибка сохранения заказа в базе' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Ошибка сохранения заказа в базе' }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { id, status, cancelReason } = body;
+    const { id, status, cancelReason, paymentMethod, cashCollectedById } = body;
+
+    const updateData: any = {};
+    if (status !== undefined) updateData.status = status;
+    if (cancelReason !== undefined) updateData.cancelReason = cancelReason;
+    if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
+    if (cashCollectedById !== undefined) {
+      updateData.cashCollectedById = cashCollectedById ? Number(cashCollectedById) : null;
+    }
 
     const updated = await prisma.order.update({
       where: { id },
-      data: {
-        status,
-        ...(cancelReason ? { cancelReason } : {}),
-      },
+      data: updateData,
     });
 
     return NextResponse.json(updated);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка обновления статуса:', error);
-    return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Ошибка обновления' }, { status: 500 });
   }
 }
