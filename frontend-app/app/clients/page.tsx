@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import OrderModal, { OrderDetail } from '@/components/OrderModal';
+import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<any[]>([]);
@@ -103,49 +103,73 @@ export default function ClientsPage() {
     }
   };
 
-  const handleOpenOrder = (order: any) => {
-    const parts = (order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '13:00'}`)
-      .split('—')
-      .map((s: string) => s.trim());
+  // Нормализация заказа для модалки
+  const normalizeOrderForModal = (rawOrder: any, isClone = false): OrderDetail => {
+    const slot = rawOrder.timeSlot || `${rawOrder.startTime || '10:00'} — ${rawOrder.endTime || '13:00'}`;
+    const parts = slot.split('—').map((s: string) => s.trim());
+    const start = parts[0] || rawOrder.startTime || '10:00';
+    const end = parts[1] || rawOrder.endTime || '13:00';
 
-    const orderData: OrderDetail = {
-      ...order,
-      date: order.date ? new Date(order.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-      startTime: parts[0] || order.startTime || '10:00',
-      endTime: parts[1] || order.endTime || '13:00',
-      assignedCleaners: (order.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+    return {
+      id: isClone ? undefined : rawOrder.id,
+      orderNumber: isClone ? undefined : rawOrder.orderNumber,
+      date: isClone
+        ? new Date().toISOString().slice(0, 10)
+        : rawOrder.date
+        ? new Date(rawOrder.date).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10),
+      startTime: start,
+      endTime: end,
+      timeSlot: `${start} — ${end}`,
+      status: isClone ? 'CONFIRMED' : rawOrder.status || 'CONFIRMED',
+      serviceType: rawOrder.serviceType || 'STANDARD',
+      areaM2: Number(rawOrder.areaM2) || 45,
+      roomsCount: Number(rawOrder.roomsCount) || 1,
+      bathroomsCount: Number(rawOrder.bathroomsCount) || 1,
+      windowsCount: Number(rawOrder.windowsCount) || 0,
+      showcaseWindowsCount: Number(rawOrder.showcaseWindowsCount) || 0,
+      balconyWindowsCount: Number(rawOrder.balconyWindowsCount) || 0,
+      hasOven: Boolean(rawOrder.hasOven),
+      hasFridge: Boolean(rawOrder.hasFridge),
+      hasFridgeFreeze: Boolean(rawOrder.hasFridgeFreeze),
+      hasMicrowave: Boolean(rawOrder.hasMicrowave),
+      hasBalcony: Boolean(rawOrder.hasBalcony),
+      hasKitchenClosets: Boolean(rawOrder.hasKitchenClosets),
+      hasStairs: Boolean(rawOrder.hasStairs),
+      hasSteamer: Boolean(rawOrder.hasSteamer),
+      hasDishesHours: Number(rawOrder.hasDishesHours) || 0,
+      hasIroningHours: Number(rawOrder.hasIroningHours) || 0,
+      hasVacuum: Boolean(rawOrder.hasVacuum),
+      hasPets: Boolean(rawOrder.hasPets),
+      hasKeys: Boolean(rawOrder.hasKeys),
+      drySofa2: Number(rawOrder.drySofa2) || 0,
+      drySofa3: Number(rawOrder.drySofa3) || 0,
+      drySofaCorner4: Number(rawOrder.drySofaCorner4) || 0,
+      dryArmchair: Number(rawOrder.dryArmchair) || 0,
+      dryMattressSide: Number(rawOrder.dryMattressSide) || 0,
+      clientName: selectedClient?.name || rawOrder.clientName || '',
+      clientPhone: selectedClient?.phone || rawOrder.clientPhone || '',
+      addressLine1: rawOrder.addressLine1 || selectedClient?.address || '',
+      addressLine2: rawOrder.addressLine2 || '',
+      price: Number(rawOrder.price) || 0,
+      cleanersCount: Math.max(1, rawOrder.assignedCleaners?.length || 1),
+      assignedCleaners: (rawOrder.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+      notes: rawOrder.notes || '',
+      paymentMethod: rawOrder.paymentMethod || 'CASH',
+      cashCollectedById: rawOrder.cashCollectedById || null,
     };
+  };
 
-    setEditingOrder(orderData);
+  const handleOpenOrder = (order: any) => {
+    const formatted = normalizeOrderForModal(order, false);
+    setEditingOrder(formatted);
     setIsOrderModalOpen(true);
   };
 
   const handleRepeatOrder = (pastOrder: any, e: React.MouseEvent) => {
     e.stopPropagation();
-
-    const parts = (pastOrder.timeSlot || `${pastOrder.startTime || '10:00'} — ${pastOrder.endTime || '13:00'}`)
-      .split('—')
-      .map((s: string) => s.trim());
-
-    const clonedOrder: OrderDetail = {
-      ...pastOrder,
-      id: undefined,
-      orderNumber: undefined,
-      status: 'CONFIRMED',
-      date: new Date().toISOString().slice(0, 10),
-      startTime: parts[0] || pastOrder.startTime || '10:00',
-      endTime: parts[1] || pastOrder.endTime || '13:00',
-      clientName: selectedClient.name || pastOrder.clientName,
-      clientPhone: selectedClient.phone || pastOrder.clientPhone,
-      addressLine1: pastOrder.addressLine1 || selectedClient.address,
-      addressLine2: pastOrder.addressLine2 || '',
-      assignedCleaners: (pastOrder.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
-      notes: pastOrder.notes || selectedClient.notes || '',
-      paymentMethod: 'CASH',
-      cashCollectedById: null,
-    };
-
-    setEditingOrder(clonedOrder);
+    const cloned = normalizeOrderForModal(pastOrder, true);
+    setEditingOrder(cloned);
     setIsOrderModalOpen(true);
   };
 
@@ -382,7 +406,7 @@ export default function ClientsPage() {
                 <button
                   onClick={handleSaveNotes}
                   disabled={saving}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs"
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
                 >
                   {saving ? 'Сохранение...' : 'Сохранить предпочтения'}
                 </button>
@@ -394,7 +418,7 @@ export default function ClientsPage() {
                   <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                     🗓 История всех уборок ({selectedClient.orders?.length || 0})
                   </h3>
-                  <span className="text-[10px] text-slate-400">Нажмите на заказ для просмотра</span>
+                  <span className="text-[10px] text-slate-400">Нажмите на карточку для просмотра</span>
                 </div>
 
                 <div className="space-y-2">
@@ -409,13 +433,18 @@ export default function ClientsPage() {
                       return (
                         <div
                           key={order.id}
+                          role="button"
+                          tabIndex={0}
                           onClick={() => handleOpenOrder(order)}
-                          className="p-3.5 bg-white border border-slate-200 hover:border-blue-300 hover:shadow-xs rounded-xl flex justify-between items-center text-xs transition cursor-pointer group"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleOpenOrder(order);
+                          }}
+                          className="w-full text-left p-3.5 bg-white border border-slate-200 hover:border-blue-400 hover:shadow-xs rounded-xl flex justify-between items-center text-xs transition cursor-pointer group pointer-events-auto"
                         >
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-blue-600 group-hover:underline">
-                                {order.orderNumber}
+                                {order.orderNumber || `#${String(order.id).slice(0, 6)}`}
                               </span>
                               <span className="font-bold text-slate-800">{order.serviceType}</span>
                               <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
@@ -428,7 +457,7 @@ export default function ClientsPage() {
                                     : 'bg-amber-50 text-amber-700 border border-amber-200'
                                 }`}
                               >
-                                {isCompleted ? '✓ Оплачен' : order.status}
+                                {isCompleted ? '✓ Оплачен' : order.status || 'В работе'}
                               </span>
                             </div>
                             <div className="text-[11px] text-slate-500">
@@ -449,7 +478,7 @@ export default function ClientsPage() {
                             <button
                               type="button"
                               onClick={(e) => handleRepeatOrder(order, e)}
-                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 font-bold rounded-lg text-xs transition flex items-center gap-1 shadow-2xs"
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 font-bold rounded-lg text-xs transition flex items-center gap-1 shadow-2xs cursor-pointer z-10"
                               title="Создать новый заказ с такими же параметрами"
                             >
                               🔁 Повторить
@@ -472,6 +501,7 @@ export default function ClientsPage() {
         </div>
       </div>
 
+      {/* Модалка заказа */}
       <OrderModal
         order={editingOrder}
         isOpen={isOrderModalOpen}
