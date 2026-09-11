@@ -18,7 +18,6 @@ export async function GET(request: Request) {
       orderBy: { name: 'asc' },
     });
 
-    // 1. Заказы за выбранный период
     const orders = await prisma.order.findMany({
       where: {
         status: { not: 'CANCELLED' as any },
@@ -34,7 +33,6 @@ export async function GET(request: Request) {
       orderBy: { date: 'desc' },
     });
 
-    // 2. Расходы, выплаты и возвраты налички
     const expenses = await prisma.expense.findMany({
       where: {
         ...(startDate && endDate ? { date: dateFilter } : {}),
@@ -60,21 +58,47 @@ export async function GET(request: Request) {
       return isHeavy ? 35 : 30;
     };
 
+    // Расчет чека услуг мастера (химчистка + окна)
+    const calculateSpecialistServicesRevenue = (order: any): { dryCleanTotal: number; windowsTotal: number } => {
+      const dryCleanTotal =
+        (Number(order.drySofa2) || 0) * 180 +
+        (Number(order.drySofa3) || 0) * 200 +
+        (Number(order.drySofaCorner4) || 0) * 220 +
+        (Number((order as any).drySofaU) || 0) * 260 +
+        (Number(order.dryArmchair) || 0) * 60 +
+        (Number((order as any).dryChair) || 0) * 15 +
+        (Number((order as any).dryMattressDouble) || 0) * 140 +
+        (Number(order.dryMattressSide) || 0) * 90 +
+        (Number((order as any).dryCarpetM2) || 0) * 15;
+
+      const windowsTotal =
+        (Number(order.windowsCount) || 0) * 35 +
+        (Number((order as any).balconyWindowsCount) || 0) * 45 +
+        (Number((order as any).showcaseWindowsCount) || 0) * 50;
+
+      return { dryCleanTotal, windowsTotal };
+    };
+
     const completedOrders = orders.filter((o) => o.status === ('COMPLETED' as any));
     const completedRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
-    // Разбивка поступлений по счетам/кошелькам (мультикасса)
     const paymentBreakdown: Record<string, number> = {};
     completedOrders.forEach((o: any) => {
       const method = o.paymentMethod || 'CASH';
       paymentBreakdown[method] = (paymentBreakdown[method] || 0) + (Number(o.price) || 0);
     });
 
-    // 3. Расчет выработки, начислений и взаиморасчетов клинеров
-    const cleanerStats = cleaners.map((cleaner) => {
-      const completedForCleaner = completedOrders.filter((order) =>
+    // Расчет показателей персонала
+    const allStaffStats = cleaners.map((staff) => {
+      const tags: string[] = Array.isArray((staff as any).tags) ? (staff as any).tags : [];
+      const isSpecialist =
+        tags.some((t) => t.includes('мастер') || t.includes('химчистк') || t.includes('окна')) ||
+        staff.name.toLowerCase().includes('мастер') ||
+        staff.name.toLowerCase().includes('химчист');
+
+      const completedForStaff = completedOrders.filter((order) =>
         order.assignedCleaners.some(
-          (ac) => ac.cleanerId === cleaner.id || (ac.cleaner && ac.cleaner.id === cleaner.id)
+          (ac) => ac.cleanerId === staff.id || (ac.cleaner && ac.cleaner.id === staff.id)
         )
       );
 
@@ -82,49 +106,72 @@ export async function GET(request: Request) {
       let totalEarned = 0;
       let generatedRevenue = 0;
 
-      completedForCleaner.forEach((order) => {
-        const hours = getOrderHours(order);
-        const rate = getHourlyRate(order.serviceType);
-        const teamCount = Math.max(1, order.assignedCleaners.length);
+      completedForStaff.forEach((order) => {
+        const { dryCleanTotal, windowsTotal } = calculateSpecialistServicesRevenue(order);
+        const specialistSubtotal = dryCleanTotal + windowsTotal;
 
-        totalHours += hours;
-        totalEarned += hours * rate;
-        generatedRevenue += Math.round((Number(order.price) || 0) / teamCount);
+        if (isSpecialist) {
+          // Мастер получает 40% от химчистки и окон
+          const payout = Math.round(specialistSubtotal * 0.4);
+          totalEarned += payout;
+          generatedRevenue += specialistSubtotal;
+          totalHours += getOrderHours(order);
+        } else {
+          // Обычный клинер: если в заказе был мастер, базовый чек уборки очищается от химчистки
+          const hasSpecialistInOrder = order.assignedCleaners.some((ac: any) => {
+            const clTags = ac.cleaner?.tags || [];
+            return (
+              clTags.some((t: string) => t.includes('мастер') || t.includes('химчистк') || t.includes('окна')) ||
+              ac.cleaner?.name?.toLowerCase().includes('мастер')
+            );
+          });
+
+          const standardOrderPrice = hasSpecialistInOrder
+            ? Math.max(0, (Number(order.price) || 0) - specialistSubtotal)
+            : Number(order.price) || 0;
+
+          const nonSpecialistCount = Math.max(
+            1,
+            order.assignedCleaners.filter((ac: any) => {
+              const clTags = ac.cleaner?.tags || [];
+              return !clTags.some((t: string) => t.includes('мастер') || t.includes('химчистк'));
+            }).length
+          );
+
+          const hours = getOrderHours(order);
+          const rate = getHourlyRate(order.serviceType);
+
+          totalHours += hours;
+          totalEarned += hours * rate;
+          generatedRevenue += Math.round(standardOrderPrice / nonSpecialistCount);
+        }
       });
 
-      // Все операции клинера из журнала расходов/доходов
-      const cleanerOperations = expenses.filter((e) => e.cleanerId === cleaner.id);
+      const staffOperations = expenses.filter((e) => e.cleanerId === staff.id);
 
-      // Нал, который клинер лично забрал с заказов у клиентов
       const cashTakenFromOrders = completedOrders
-        .filter((o: any) => o.cashCollectedById === cleaner.id)
+        .filter((o: any) => o.cashCollectedById === staff.id)
         .reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
-      // Нал, который клинер уже сдал обратно в кассу компании
-      const cashReturnedToDesk = cleanerOperations
+      const cashReturnedToDesk = staffOperations
         .filter((e) => e.category === 'Сдача налички клинером' || e.type === 'INCOME')
         .reduce((sum, e) => sum + Number(e.amount), 0);
 
-      // Выплаты зарплат и авансов на руки или на карту
-      const directPayouts = cleanerOperations
+      const directPayouts = staffOperations
         .filter((e) => e.type === 'EXPENSE' && ['Зарплата клинеру', 'Аванс клинеру'].includes(e.category))
         .reduce((sum, e) => sum + Number(e.amount), 0);
 
-      // Остаток наличных денег на руках у клинера прямо сейчас
       const currentCashOnHand = Math.max(0, cashTakenFromOrders - cashReturnedToDesk);
-
       const totalAccrued = Math.round(totalEarned);
-
-      // Итоговый баланс взаиморасчетов:
-      // Положительный: компания должна выплатить клинеру.
-      // Отрицательный: клинер должен вернуть в кассу наличные.
       const balance = totalAccrued - directPayouts - currentCashOnHand;
 
       return {
-        id: cleaner.id,
-        name: cleaner.name,
-        phone: cleaner.phone,
-        completedCount: completedForCleaner.length,
+        id: staff.id,
+        name: staff.name,
+        phone: staff.phone,
+        isSpecialist,
+        roleTitle: isSpecialist ? 'Мастер химчистки и окон' : 'Клинер',
+        completedCount: completedForStaff.length,
         totalHours: Math.round(totalHours * 10) / 10,
         generatedRevenue,
         totalAccrued,
@@ -136,9 +183,11 @@ export async function GET(request: Request) {
       };
     });
 
-    const totalCleanersAccrued = cleanerStats.reduce((sum, c) => sum + c.totalAccrued, 0);
+    const cleanerStats = allStaffStats.filter((s) => !s.isSpecialist);
+    const masterStats = allStaffStats.filter((s) => s.isSpecialist);
 
-    // Операционные расходы (без зарплат, дивидендов и фондов)
+    const totalCleanersAccrued = allStaffStats.reduce((sum, c) => sum + c.totalAccrued, 0);
+
     const opexExpenses = expenses
       .filter(
         (e) =>
@@ -172,6 +221,7 @@ export async function GET(request: Request) {
       },
       paymentBreakdown,
       cleanerStats: cleanerStats.filter((c) => c.completedCount > 0 || c.totalAccrued > 0 || c.cashTakenFromOrders > 0),
+      masterStats: masterStats.filter((m) => m.completedCount > 0 || m.totalAccrued > 0 || m.cashTakenFromOrders > 0),
       expenses,
       recentOrders: completedOrders,
     });
