@@ -9,6 +9,7 @@ export interface OrderDetail {
   startTime: string;
   endTime: string;
   timeSlot?: string;
+  status?: string;
   serviceType: ServiceType;
   areaM2: number;
   roomsCount: number;
@@ -17,7 +18,6 @@ export interface OrderDetail {
   showcaseWindowsCount?: number;
   balconyWindowsCount?: number;
 
-  // Дополнительные услуги
   hasOven: boolean;
   hasFridge: boolean;
   hasFridgeFreeze: boolean;
@@ -32,7 +32,6 @@ export interface OrderDetail {
   hasPets: boolean;
   hasKeys: boolean;
 
-  // Химчистка
   drySofa2: number;
   drySofa3: number;
   drySofaCorner4: number;
@@ -53,7 +52,6 @@ export interface OrderDetail {
   assignedCleaners: { id: number; name: string; phone?: string; tags?: string[]; district?: string }[];
   notes?: string;
 
-  // Оплата и касса
   paymentMethod?: string;
   paymentNote?: string;
   cashCollectedById?: number | null;
@@ -84,6 +82,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       date: new Date().toISOString().split('T')[0],
       startTime: '10:00',
       endTime: '13:00',
+      status: 'CONFIRMED',
       serviceType: 'STANDARD',
       areaM2: 45,
       roomsCount: 2,
@@ -132,7 +131,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
   const isOffice = form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL';
 
-  // Загрузка прайса допов
   useEffect(() => {
     fetch('/api/settings/addons')
       .then((res) => res.json())
@@ -148,7 +146,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       .catch(console.error);
   }, []);
 
-  // Загрузка списка клинеров
   useEffect(() => {
     fetch('/api/cleaners')
       .then((res) => (res.ok ? res.json() : []))
@@ -156,10 +153,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       .catch((err) => console.error('Ошибка загрузки клинеров:', err));
   }, []);
 
-  // Проверка доступности клинеров
   useEffect(() => {
     if (!form.date) return;
-
     const checkAvailability = async () => {
       try {
         setLoadingAvailability(true);
@@ -185,7 +180,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     checkAvailability();
   }, [form.date, form.startTime]);
 
-  // Автоматический пересчёт стоимости и времени
   useEffect(() => {
     const res = calculateBrightHouseOrder({
       serviceType: form.serviceType,
@@ -254,7 +248,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     addonRates,
   ]);
 
-  // Фильтр клинеров
   const eligibleCleaners = allCleaners.filter((cleaner) => {
     const tags = cleaner.tags || [];
     if (form.hasPets && tags.includes('аллергия_на_животных')) return false;
@@ -297,6 +290,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             <span className="font-mono text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded">
               {form.orderNumber || 'НОВЫЙ ЗАКАЗ'}
             </span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${form.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
+              {form.status === 'COMPLETED' ? '✓ ОПЛАЧЕН' : form.status || 'В РАБОТЕ'}
+            </span>
             <h2 className="text-base font-bold text-slate-800">
               {form.clientName ? `Заказ: ${form.clientName}` : 'Новая заявка BrightHouse'}
             </h2>
@@ -309,11 +305,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
           </button>
         </div>
 
-        {/* Двухколоночный контент */}
+        {/* Контент */}
         <div className="flex-1 flex overflow-hidden">
-          {/* ЛЕВАЯ КОЛОНКА */}
+          {/* Левая колонка */}
           <div className="w-[55%] p-6 border-r border-slate-100 overflow-y-auto space-y-4">
-            {/* Переключатель категории: Жилые / Офисы */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -343,7 +338,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
               </div>
 
-              {/* Кнопки тарифов */}
               {isOffice ? (
                 <div className="grid grid-cols-2 gap-2 bg-indigo-50/50 p-2 rounded-xl border border-indigo-200">
                   <button
@@ -656,7 +650,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             </div>
           </div>
 
-          {/* ПРАВАЯ КОЛОНКА */}
+          {/* Правая колонка */}
           <div className="w-[45%] p-6 flex flex-col justify-between bg-slate-50/40 overflow-y-auto space-y-4">
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
@@ -780,7 +774,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 />
               </div>
 
-              {/* Способ оплаты и фиксация кассы/нала */}
+              {/* Способ оплаты */}
               <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2.5 shadow-xs">
                 <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
                   💳 Способ оплаты заказа ({form.price} zł)
@@ -857,6 +851,67 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               <div className="flex items-center gap-2 pt-2 flex-wrap">
                 {form.id && (
                   <>
+                    {/* КНОПКА ЗАКРЫТЬ / ОПЛАТИТЬ */}
+                    {form.status !== 'COMPLETED' ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm(`Завершить заказ ${form.orderNumber} на сумму ${form.price} zł и отметить оплаченным?`)) return;
+                          
+                          const payload = {
+                            ...form,
+                            status: 'COMPLETED',
+                            timeSlot: `${form.startTime} — ${form.endTime}`,
+                            assignedCleaners: form.assignedCleaners.map((c: any) => ({
+                              id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+                              name: c.name,
+                            })),
+                          };
+
+                          await fetch('/api/orders', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                          });
+
+                          onSave(payload as any);
+                          onClose();
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-3 rounded-xl text-xs transition shadow-xs flex items-center justify-center gap-1"
+                        title="Отметить заказ выполненным и оплаченным"
+                      >
+                        ✅ Оплачен / Закрыть
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const payload = {
+                            ...form,
+                            status: 'CONFIRMED',
+                            timeSlot: `${form.startTime} — ${form.endTime}`,
+                            assignedCleaners: form.assignedCleaners.map((c: any) => ({
+                              id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+                              name: c.name,
+                            })),
+                          };
+
+                          await fetch('/api/orders', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                          });
+
+                          onSave(payload as any);
+                          onClose();
+                        }}
+                        className="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                        title="Вернуть заказ в статус В работе"
+                      >
+                        🔄 Вернуть в работу
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
