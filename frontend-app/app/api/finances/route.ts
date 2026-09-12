@@ -53,12 +53,7 @@ export async function GET(request: Request) {
       return 3.5;
     };
 
-    const getHourlyRate = (serviceType: string): number => {
-      const isHeavy = ['GENERAL', 'AFTER_REPAIR', 'OFFICE_GENERAL'].includes(serviceType);
-      return isHeavy ? 35 : 30;
-    };
-
-    // Чек химчистки и мойки окон/витрин
+    // Чек химчистки и окон/витрин
     const calculateSpecialistServicesRevenue = (order: any): number => {
       const dryCleanTotal =
         (Number(order.drySofa2) || 0) * 180 +
@@ -84,6 +79,15 @@ export async function GET(request: Request) {
       return dryCleanTotal + windowsTotal;
     };
 
+    // Общее число окон на заказе
+    const getTotalWindowsCount = (order: any): number => {
+      return (
+        (Number(order.windowsCount) || 0) +
+        (Number((order as any).balconyWindowsCount) || 0) +
+        (Number((order as any).showcaseWindowsCount) || 0)
+      );
+    };
+
     const completedOrders = orders.filter((o) => o.status === ('COMPLETED' as any));
     const completedRevenue = completedOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
@@ -93,22 +97,26 @@ export async function GET(request: Request) {
       paymentBreakdown[method] = (paymentBreakdown[method] || 0) + (Number(o.price) || 0);
     });
 
-    // Расчет взаиморасчетов по каждому сотруднику
+    // Расчет начислений и баланса по сотрудникам
     const allStaffStats = cleaners.map((staff) => {
       const nameLower = (staff.name || '').toLowerCase();
       const tags: string[] = Array.isArray((staff as any).tags) ? (staff as any).tags : [];
 
-      // Определение роли и процента мастера
+      // 1. Учредители: Ханна или Админ (30% от ВСЕГО заказа)
+      const isBoss =
+        nameLower.includes('ханна') ||
+        nameLower.includes('админ') ||
+        tags.includes('учредитель') ||
+        tags.includes('админ');
+
+      // 2. Мастера химчистки: Химчистка 1 (30% от окон/химчистки) и Химчистка 2 (90% от окон/химчистки)
       const isDryClean2 = nameLower.includes('химчистка 2') || tags.includes('химчистка_2');
       const isDryClean1 =
-        nameLower.includes('химчистка 1') ||
-        nameLower.includes('химчистка1') ||
-        nameLower.includes('админ') ||
-        nameLower.includes('ханна') ||
-        tags.includes('химчистка_1');
+        (nameLower.includes('химчистка 1') || nameLower.includes('химчистка1') || tags.includes('химчистка_1')) &&
+        !isBoss;
 
-      const isSpecialist = isDryClean1 || isDryClean2 || tags.includes('мастер');
-      const specialistRate = isDryClean2 ? 0.9 : isDryClean1 ? 0.3 : 0.3; // 90% для Химчистки 2, 30% для Химчистки 1
+      const isMaster = isDryClean1 || isDryClean2;
+      const isSpecialist = isBoss || isMaster;
 
       const completedForStaff = completedOrders.filter((order) =>
         order.assignedCleaners.some(
@@ -121,74 +129,112 @@ export async function GET(request: Request) {
       let generatedRevenue = 0;
 
       completedForStaff.forEach((order) => {
-        const specialistSubtotal = calculateSpecialistServicesRevenue(order);
+        const orderPrice = Number(order.price) || 0;
+        const specialistServicesSubtotal = calculateSpecialistServicesRevenue(order);
 
-        if (isSpecialist) {
-          // Если заказ был только на окна/химчистку — берем всю сумму заказа, если смешанный — чек химчистки/окон
-          const targetBase = specialistSubtotal > 0 ? specialistSubtotal : Number(order.price) || 0;
-          const payout = Math.round(targetBase * specialistRate);
+        if (isBoss) {
+          // Ханна и Админ: 30% от ВСЕГО ЧЕКА заказа
+          const payout = Math.round(orderPrice * 0.3);
+          totalEarned += payout;
+          generatedRevenue += orderPrice;
+          totalHours += getOrderHours(order);
+        } else if (isMaster) {
+          // Химчистка 1 (30%) и Химчистка 2 (90%) - ТОЛЬКО от окон и химчистки
+          const rate = isDryClean2 ? 0.9 : 0.3;
+          const targetBase = specialistServicesSubtotal > 0 ? specialistServicesSubtotal : orderPrice;
+          const payout = Math.round(targetBase * rate);
 
           totalEarned += payout;
           generatedRevenue += targetBase;
           totalHours += getOrderHours(order);
         } else {
-          // Обычный клинер: часы * 30/35 zł/ч
+          // ОБЫЧНЫЙ КЛИНЕР
           const hours = getOrderHours(order);
-          const rate = getHourlyRate(order.serviceType);
+          const totalWindows = getTotalWindowsCount(order);
+
+          // Проверяем, есть ли на заказе Ханна, Админ или мастер Химчистки
+          const hasWindowWasher = order.assignedCleaners.some((ac: any) => {
+            const clName = (ac.cleaner?.name || ac.name || '').toLowerCase();
+            const clTags: string[] = Array.isArray(ac.cleaner?.tags) ? ac.cleaner.tags : [];
+            return (
+              clName.includes('ханна') ||
+              clName.includes('админ') ||
+              clName.includes('химчист') ||
+              clTags.includes('химчистка_1') ||
+              clTags.includes('химчистка_2')
+            );
+          });
+
+          // Определение почасовой ставки клинера:
+          const isHeavyService = ['GENERAL', 'AFTER_REPAIR', 'OFFICE_GENERAL'].includes(order.serviceType);
+          let hourlyRate = 30;
+
+          if (isHeavyService) {
+            hourlyRate = 35; // Генеральные и после ремонта всегда 35
+          } else if (totalWindows >= 2 && !hasWindowWasher) {
+            // Если 2+ окна и моют сами клинеры -> повышаем ставку до 35
+            hourlyRate = 35;
+          } else {
+            // Если окна моют Ханна/Админ/Химчистка или окон < 2 -> стандартные 30
+            hourlyRate = 30;
+          }
 
           totalHours += hours;
-          totalEarned += hours * rate;
+          totalEarned += hours * hourlyRate;
 
           const nonSpecialistCount = Math.max(
             1,
             order.assignedCleaners.filter((ac: any) => {
-              const clName = (ac.cleaner?.name || '').toLowerCase();
-              return !clName.includes('химчист');
+              const clName = (ac.cleaner?.name || ac.name || '').toLowerCase();
+              return !clName.includes('химчист') && !clName.includes('ханна') && !clName.includes('админ');
             }).length
           );
 
-          const standardCleanRevenue = Math.max(0, (Number(order.price) || 0) - specialistSubtotal);
+          const standardCleanRevenue = Math.max(0, orderPrice - specialistServicesSubtotal);
           generatedRevenue += Math.round(standardCleanRevenue / nonSpecialistCount);
         }
       });
 
-      // Финансовые операции сотрудника (выплаты зарплат, сдача налички)
+      // Финансовые операции сотрудника (выплаты, сдача налички)
       const staffOperations = expenses.filter((e) => e.cleanerId === staff.id);
 
-      // Нал, который сотрудник лично забрал с заказов
       const cashTakenFromOrders = completedOrders
         .filter((o: any) => o.cashCollectedById === staff.id)
         .reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
-      // Нал, который сотрудник уже вернул в кассу компании
       const cashReturnedToDesk = staffOperations
         .filter((e) => e.category === 'Сдача налички клинером' || e.type === 'INCOME')
         .reduce((sum, e) => sum + Number(e.amount), 0);
 
-      // Прямые выплаты зарплат и авансов через расходный ордер
       const directPayouts = staffOperations
         .filter((e) => e.type === 'EXPENSE' && ['Зарплата клинеру', 'Аванс клинеру'].includes(e.category))
         .reduce((sum, e) => sum + Number(e.amount), 0);
 
-      // Наличные деньги на руках у сотрудника прямо сейчас
       const currentCashOnHand = Math.max(0, cashTakenFromOrders - cashReturnedToDesk);
-
       const totalAccrued = Math.round(totalEarned);
-
-      // Баланс: Положительный — компания должна выплатить. Отрицательный — сотрудник должен вернуть в кассу.
       const balance = totalAccrued - directPayouts - currentCashOnHand;
+
+      let roleTitle = 'Клинер (30-35 zł/ч)';
+      let specialistRatePercent: number | null = null;
+
+      if (isBoss) {
+        roleTitle = 'Админ/Ханна (30% со всего чека)';
+        specialistRatePercent = 30;
+      } else if (isDryClean2) {
+        roleTitle = 'Химчистка 2 (90% окна/химчистка)';
+        specialistRatePercent = 90;
+      } else if (isDryClean1) {
+        roleTitle = 'Химчистка 1 (30% окна/химчистка)';
+        specialistRatePercent = 30;
+      }
 
       return {
         id: staff.id,
         name: staff.name,
         phone: staff.phone,
         isSpecialist,
-        specialistRatePercent: isSpecialist ? Math.round(specialistRate * 100) : null,
-        roleTitle: isDryClean2
-          ? 'Химчистка 2 (90%)'
-          : isDryClean1
-          ? 'Химчистка 1 (30%)'
-          : 'Клинер (30-35 zł/ч)',
+        specialistRatePercent,
+        roleTitle,
         completedCount: completedForStaff.length,
         totalHours: Math.round(totalHours * 10) / 10,
         generatedRevenue,
