@@ -52,6 +52,8 @@ export interface OrderDetail {
   assignedCleaners: { id: number; name: string; phone?: string; tags?: string[]; district?: string }[];
   notes?: string;
 
+  discountPercent?: number;
+  discountFixed?: number;
   paymentMethod?: string;
   paymentNote?: string;
   cashCollectedById?: number | null;
@@ -79,7 +81,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   if (!isOpen) return null;
 
   const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
-
+  
   const getInitialForm = (): OrderDetail => {
     if (order) return order;
     if (typeof window !== 'undefined') {
@@ -130,6 +132,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       cleanersCount: 1,
       assignedCleaners: [],
       notes: '',
+      discountPercent: 0,
+      discountFixed: 0,
       paymentMethod: 'CASH',
       paymentNote: '',
       cashCollectedById: null,
@@ -232,6 +236,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       cleanersCount: Math.max(1, form.assignedCleaners.length),
       startTime: form.startTime || '10:00',
       addonRates,
+      discountPercent: form.discountPercent || 0,
+      discountFixed: form.discountFixed || 0,
     });
 
     setForm((prev) => ({
@@ -266,6 +272,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.drySofaCorner4,
     form.dryArmchair,
     form.dryMattressSide,
+    form.discountPercent,
+    form.discountFixed,
     form.assignedCleaners.length,
     form.startTime,
     addonRates,
@@ -821,6 +829,34 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 )}
               </div>
 
+              {/* Блок акций и скидок */}
+              <div className="bg-purple-50/60 border border-purple-200 rounded-xl p-3 space-y-2">
+                <span className="text-[11px] font-bold text-purple-900 uppercase block">🎁 Акции и скидки</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-purple-800 block">Скидка (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={form.discountPercent || 0}
+                      onChange={(e) => setForm({ ...form, discountPercent: Number(e.target.value), discountFixed: 0 })}
+                      className="w-full bg-white border border-purple-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-purple-800 block">Скидка (zł)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.discountFixed || 0}
+                      onChange={(e) => setForm({ ...form, discountFixed: Number(e.target.value), discountPercent: 0 })}
+                      className="w-full bg-white border border-purple-200 rounded p-1 text-xs font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* ТЗ */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
@@ -934,6 +970,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                             body: JSON.stringify(payload),
                           });
 
+                          if (typeof window !== 'undefined') {
+                            localStorage.removeItem(DRAFT_KEY);
+                          }
+
                           onSave(payload as any);
                           onClose();
                         }}
@@ -961,6 +1001,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload),
                           });
+
+                          if (typeof window !== 'undefined') {
+                            localStorage.removeItem(DRAFT_KEY);
+                          }
 
                           onSave(payload as any);
                           onClose();
