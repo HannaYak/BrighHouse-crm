@@ -17,6 +17,15 @@ export default function SchedulePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draggedOrderInfo, setDraggedOrderInfo] = useState<{ order: any; fromCleanerId: number } | null>(null);
 
+  const getCleanerHours = (cleaner: any) => {
+    const [startH] = (cleaner.defaultStartTime || '08:00').split(':').map(Number);
+    const [endH] = (cleaner.defaultEndTime || '20:00').split(':').map(Number);
+    return {
+      start: isNaN(startH) ? 8 : startH,
+      end: isNaN(endH) ? 20 : endH,
+    };
+  };
+
   const loadData = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
@@ -81,7 +90,7 @@ export default function SchedulePage() {
   };
 
   const handleCellClick = (hour: number, cleaner: any) => {
-    const shiftEnd = cleaner.shiftEnd ?? 16;
+    const { end: shiftEnd } = getCleanerHours(cleaner);
     if (hour >= shiftEnd) {
       alert(`Смена клинера ${cleaner.name} заканчивается в ${shiftEnd}:00.`);
       return;
@@ -101,6 +110,8 @@ export default function SchedulePage() {
       roomsCount: 1,
       bathroomsCount: 1,
       windowsCount: 0,
+      showcaseWindowsCount: 0,
+      balconyWindowsCount: 0,
       hasOven: false,
       hasFridge: false,
       hasFridgeFreeze: false,
@@ -165,7 +176,7 @@ export default function SchedulePage() {
     const { order, fromCleanerId } = draggedOrderInfo;
 
     const targetCleaner = allCleaners.find((c) => c.id === targetCleanerId);
-    const shiftEnd = targetCleaner?.shiftEnd ?? 16;
+    const { end: shiftEnd } = getCleanerHours(targetCleaner);
     if (targetHour >= shiftEnd) {
       alert(`Невозможно перенести заказ: смена заканчивается в ${shiftEnd}:00`);
       setDraggedOrderInfo(null);
@@ -315,7 +326,7 @@ export default function SchedulePage() {
               Время
             </div>
             {visibleCleaners.map((cleaner) => {
-              const shiftEnd = cleaner.shiftEnd ?? 16;
+              const { end: shiftEnd } = getCleanerHours(cleaner);
               return (
                 <div key={cleaner.id} className="p-3 text-center border-r border-slate-200 last:border-r-0">
                   <div className="font-bold text-xs text-slate-900 truncate">{cleaner.name}</div>
@@ -341,7 +352,7 @@ export default function SchedulePage() {
                       {hourStr}
                     </div>
                     {visibleCleaners.map((cleaner) => {
-                      const shiftEnd = cleaner.shiftEnd ?? 16;
+                      const { end: shiftEnd } = getCleanerHours(cleaner);
                       const isOffDuty = hour >= shiftEnd;
 
                       return (
@@ -381,7 +392,7 @@ export default function SchedulePage() {
             <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
               <div></div>
               {visibleCleaners.map((cleaner) => {
-                const shiftEnd = cleaner.shiftEnd ?? 16;
+                const { end: shiftEnd } = getCleanerHours(cleaner);
                 const offDutyStartMinutes = Math.max(0, (shiftEnd - START_HOUR) * 60);
                 const totalMinutesInGrid = (END_HOUR - START_HOUR + 1) * 60;
                 const offDutyDurationMinutes = Math.max(0, totalMinutesInGrid - offDutyStartMinutes);
