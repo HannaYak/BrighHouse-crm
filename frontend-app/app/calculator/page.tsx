@@ -1,545 +1,563 @@
 "use client";
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import {
+  calculateBrightHouseOrder,
+  CalculationInput,
+  ServiceType,
+  DiscountTarget,
+  SubscriptionType,
+} from '../../lib/calculator';
 
-interface ExtraService {
-  id: string;
-  name: string;
-  price: number;
-}
+const CALC_DRAFT_KEY = 'brighthouse_calculator_page_draft';
 
-interface DryCleanItem {
-  id: string;
-  name: string;
-  price: number;
-}
-
-const EXTRA_SERVICES: ExtraService[] = [
-  { id: 'oven', name: '🧽 Духовка изнутри', price: 50 },
-  { id: 'fridge', name: '🧊 Холодильник изнутри', price: 50 },
-  { id: 'microwave', name: '📻 Микроволновка', price: 25 },
-  { id: 'hood', name: '💨 Вытяжка', price: 40 },
-  { id: 'dishes', name: '🍽 Посуда вручную', price: 40 },
-  { id: 'balcony', name: '🌿 Балкон / лоджия', price: 60 },
-  { id: 'ironing', name: '👔 Глажка (за 1 час)', price: 50 },
-  { id: 'pets', name: '🐾 Доплата за шерсть', price: 30 },
-];
-
-const DRY_CLEAN_ITEMS: DryCleanItem[] = [
-  { id: 'sofa_2', name: '🛋 Прямой диван (2-местный)', price: 150 },
-  { id: 'sofa_3', name: '🛋 Прямой диван (3-местный)', price: 180 },
-  { id: 'sofa_corner', name: '🛋 Угловой диван (3-4 места)', price: 230 },
-  { id: 'sofa_u', name: '🛋 П-образный большой диван', price: 290 },
-  { id: 'armchair', name: '🪑 Кресло', price: 70 },
-  { id: 'chair', name: '💺 Стул / пуф с мягкой спинкой', price: 30 },
-  { id: 'mattress_single', name: '🛏 Матрас односпальный (с 2 сторон)', price: 120 },
-  { id: 'mattress_double', name: '🛏 Матрас двуспальный (с 2 сторон)', price: 170 },
-  { id: 'carpet', name: '🧶 Ковер / ковролин (за м²)', price: 25 },
-];
+const SERVICE_NAMES: Record<ServiceType, { ru: string; pl: string; en: string }> = {
+  STANDARD: { ru: 'Стандартная уборка', pl: 'Sprzątanie standardowe', en: 'Standard cleaning' },
+  STANDARD_PLUS: { ru: 'Стандарт +', pl: 'Standard +', en: 'Standard +' },
+  GENERAL: { ru: 'Генеральная уборка', pl: 'Sprzątanie gruntowne (generalne)', en: 'Deep cleaning' },
+  AFTER_REPAIR: { ru: 'После ремонта', pl: 'Sprzątanie po remoncie', en: 'Post-construction cleaning' },
+  OFFICE_REGULAR: { ru: 'Офис: Обычная уборка', pl: 'Biuro: Sprzątanie regularne', en: 'Office: Regular cleaning' },
+  OFFICE_GENERAL: { ru: 'Офис: Генеральная уборка', pl: 'Biuro: Sprzątanie gruntowne', en: 'Office: Deep cleaning' },
+};
 
 export default function CalculatorPage() {
-  const router = useRouter();
-
-  const [activeTab, setActiveTab] = useState<'CLEANING' | 'DRY_CLEANING'>('CLEANING');
-
-  const [cleaningType, setCleaningType] = useState<'STANDARD' | 'STANDARD_PLUS' | 'GENERAL' | 'POST_CONSTRUCTION'>('STANDARD');
-  const [rooms, setRooms] = useState<number>(2);
-  const [bathrooms, setBathrooms] = useState<number>(1);
-  const [area, setArea] = useState<number>(50);
-  const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
-  
-  const [windowCount, setWindowCount] = useState<number>(0);
-  const [balconyWindowCount, setBalconyWindowCount] = useState<number>(0);
-
-  const [dryCleanCounts, setDryCleanCounts] = useState<{ [key: string]: number }>({});
-  const [carpetArea, setCarpetArea] = useState<number>(10);
-
-  // Промокоды
-  const [promoInput, setPromoInput] = useState('');
-  const [appliedPromo, setAppliedPromo] = useState<{ code: string; discountAmount: number } | null>(null);
-  const [promoError, setPromoError] = useState('');
-  const [checkingPromo, setCheckingPromo] = useState(false);
-
-  // Данные клиента
-  const [clientName, setClientName] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-
-  const [copySuccess, setCopySuccess] = useState(false);
-  const [creating, setCreating] = useState(false);
-
-  const calculateBaseCleaningPrice = () => {
-    if (cleaningType === 'STANDARD') return 160 + (rooms - 1) * 35 + (bathrooms - 1) * 45;
-    if (cleaningType === 'STANDARD_PLUS') return 210 + (rooms - 1) * 45 + (bathrooms - 1) * 55;
-    if (cleaningType === 'GENERAL') return 280 + (rooms - 1) * 65 + (bathrooms - 1) * 75;
-    if (cleaningType === 'POST_CONSTRUCTION') return Math.max(380, area * 8);
-    return 0;
-  };
-
-  const calculateExtrasPrice = () => {
-    const fixedExtras = selectedExtras.reduce((sum, extraId) => {
-      const item = EXTRA_SERVICES.find(e => e.id === extraId);
-      return sum + (item ? item.price : 0);
-    }, 0);
-    return fixedExtras + (windowCount * 35) + (balconyWindowCount * 45);
-  };
-
-  const calculateDryCleanPrice = () => {
-    return Object.entries(dryCleanCounts).reduce((sum, [id, count]) => {
-      if (id === 'carpet') return sum + (count > 0 ? carpetArea * 25 : 0);
-      const item = DRY_CLEAN_ITEMS.find(e => e.id === id);
-      return sum + (item ? item.price * count : 0);
-    }, 0);
-  };
-
-  const cleaningBase = calculateBaseCleaningPrice();
-  const cleaningExtras = calculateExtrasPrice();
-  const dryCleanTotal = calculateDryCleanPrice();
-  const subTotal = cleaningBase + cleaningExtras + dryCleanTotal;
-  const discountAmount = appliedPromo ? appliedPromo.discountAmount : 0;
-  const grandTotal = Math.max(0, subTotal - discountAmount);
-
-  const toggleExtra = (id: string) => {
-    setSelectedExtras(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
-
-  const updateDryCleanCount = (id: string, delta: number) => {
-    setDryCleanCounts(prev => {
-      const current = prev[id] || 0;
-      const next = Math.max(0, current + delta);
-      if (next === 0) {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
+  const getInitialState = (): CalculationInput => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(CALC_DRAFT_KEY);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
       }
-      return { ...prev, [id]: next };
-    });
-  };
-
-  const applyPromoCode = async () => {
-    if (!promoInput.trim()) return;
-    setCheckingPromo(true);
-    setPromoError('');
-    try {
-      const res = await fetch('/api/discounts/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: promoInput.trim(), orderSum: subTotal }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setAppliedPromo({ code: data.code, discountAmount: data.discountAmount });
-        setPromoError('');
-      } else {
-        setPromoError(data.error || 'Недействительный промокод');
-        setAppliedPromo(null);
-      }
-    } catch {
-      setPromoError('Ошибка при проверке промокода');
-    } finally {
-      setCheckingPromo(false);
     }
+    return {
+      serviceType: 'STANDARD',
+      roomsCount: 2,
+      bathroomsCount: 1,
+      areaM2: 45,
+      cleanersCount: 1,
+      startTime: '10:00',
+      windowsCount: 0,
+      balconyWindowsCount: 0,
+      showcaseWindowsCount: 0,
+      discountTarget: 'ALL',
+      subscriptionType: 'NONE',
+      isComboGeneralDryClean: false,
+      discountPercent: 0,
+      discountFixed: 0,
+    };
   };
 
-  const removePromo = () => {
-    setAppliedPromo(null);
-    setPromoInput('');
-    setPromoError('');
-  };
+  const [input, setInput] = useState<CalculationInput>(getInitialState);
+  const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
+  const [lang, setLang] = useState<'RU' | 'PL' | 'EN'>('PL');
+  const [copied, setCopied] = useState(false);
 
-  const getTypeNameRu = () => {
-    if (cleaningType === 'STANDARD') return 'Стандартная уборка';
-    if (cleaningType === 'STANDARD_PLUS') return 'Стандарт+ (Освежающая + фасады/техника)';
-    if (cleaningType === 'GENERAL') return 'Генеральная уборка';
-    return 'Уборка после ремонта';
-  };
-
-  const generateOfferText = () => {
-    const extrasLines: string[] = [];
-    selectedExtras.forEach(id => {
-      const item = EXTRA_SERVICES.find(e => e.id === id);
-      if (item) extrasLines.push(`• ${item.name} — ${item.price} zł`);
-    });
-
-    if (windowCount > 0) extrasLines.push(`• 🪟 Мытье стандартных окон (${windowCount} шт.) — ${windowCount * 35} zł`);
-    if (balconyWindowCount > 0) extrasLines.push(`• 🚪 Мытье балконных окон/дверей (${balconyWindowCount} шт.) — ${balconyWindowCount * 45} zł`);
-
-    const dryCleanList = Object.entries(dryCleanCounts)
-      .map(([id, count]) => {
-        if (id === 'carpet') return `• Химчистка ковра (~${carpetArea} м²) — ${carpetArea * 25} zł`;
-        const item = DRY_CLEAN_ITEMS.find(e => e.id === id);
-        return item && count > 0 ? `• ${item.name} x${count} — ${item.price * count} zł` : '';
+  // Загрузка тарифов из базы
+  useEffect(() => {
+    fetch('/api/settings/addons')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const rates: Record<string, { price: number; durationMins: number }> = {};
+          data.forEach((item: any) => {
+            rates[item.code] = { price: item.price, durationMins: item.durationMins };
+          });
+          setAddonRates(rates);
+        }
       })
-      .filter(Boolean)
-      .join('\n');
+      .catch(console.error);
+  }, []);
 
-    let text = `Здравствуйте${clientName ? `, ${clientName}` : ''}! 🌸\n\nРасчет стоимости вашего заказа:\n`;
+  // Автосохранение черновика при смене вкладок
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(CALC_DRAFT_KEY, JSON.stringify(input));
+    }
+  }, [input]);
 
-    if (cleaningBase > 0) {
-      text += `✨ <b>${getTypeNameRu()}</b> (${rooms} комн., ${bathrooms} санузел${bathrooms > 1 ? 'а' : ''}${area ? `, ~${area} м²` : ''}) — <b>${cleaningBase} zł</b>\n`;
+  // Расчет через единое ядро
+  const calcResult = calculateBrightHouseOrder({
+    ...input,
+    addonRates,
+  });
+
+  const isOffice = input.serviceType === 'OFFICE_REGULAR' || input.serviceType === 'OFFICE_GENERAL';
+
+  // Генератор текста КП для клиента на 3 языках
+  const generateProposalText = () => {
+    const sName = SERVICE_NAMES[input.serviceType][lang.toLowerCase() as 'ru' | 'pl' | 'en'];
+
+    if (lang === 'PL') {
+      let text = `Dzień dobry! Dziękujemy za kontakt z BrightHouse Cleaning 🏠✨\n\n`;
+      text += `📋 Szczegóły Twojej wyceny:\n`;
+      text += `• Usługa: ${sName}\n`;
+      text += `• Metraż: ${input.areaM2} m²\n`;
+      if (!isOffice) {
+        text += `• Pokoje: ${input.roomsCount}, Łazienki: ${input.bathroomsCount}\n`;
+      }
+      text += `• Szacowany czas: około ${calcResult.formattedDuration}\n\n`;
+
+      const addonsList: string[] = [];
+      if (input.windowsCount) addonsList.push(`Mycie okien standardowych: ${input.windowsCount} szt.`);
+      if (input.balconyWindowsCount) addonsList.push(`Mycie okien balkonowych: ${input.balconyWindowsCount} szt.`);
+      if (input.showcaseWindowsCount) addonsList.push(`Mycie witryn: ${input.showcaseWindowsCount} szt.`);
+      if (input.hasOven) addonsList.push(`Czyszczenie piekarnika`);
+      if (input.hasFridge) addonsList.push(`Mycie lodówki`);
+      if (input.hasMicrowave) addonsList.push(`Mycie mikrofalówki`);
+      if (input.hasKitchenClosets) addonsList.push(`Szafki kuchenne wewnątrz`);
+      if (input.hasBalcony) addonsList.push(`Sprzątanie balkonu`);
+      if (input.hasSteamer) addonsList.push(`Czyszczenie parowe`);
+      if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4) addonsList.push(`Pranie tapicerki meblowej`);
+
+      if (addonsList.length > 0) {
+        text += `➕ Usługi dodatkowe:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
+      }
+
+      if (calcResult.discountAmount > 0) {
+        text += `🎁 Zastosowany rabat/promocja: -${calcResult.discountAmount} zł\n`;
+      }
+
+      text += `💰 Całkowity koszt: ${calcResult.totalPrice} zł\n\n`;
+      text += `Przyjeżdżamy z własnym profesjonalnym sprzętem i chemią.\n`;
+      text += `Czy proponowany termin Państwu odpowiada?`;
+      return text;
     }
 
-    if (extrasLines.length > 0) text += `\nДополнительные услуги:\n${extrasLines.join('\n')}\n`;
-    if (dryCleanList) text += `\n🛋 Профессиональная экстракторная химчистка:\n${dryCleanList}\n`;
+    if (lang === 'EN') {
+      let text = `Hello! Thank you for contacting BrightHouse Cleaning 🏠✨\n\n`;
+      text += `📋 Your cleaning estimate details:\n`;
+      text += `• Service: ${sName}\n`;
+      text += `• Area: ${input.areaM2} m²\n`;
+      if (!isOffice) {
+        text += `• Rooms: ${input.roomsCount}, Bathrooms: ${input.bathroomsCount}\n`;
+      }
+      text += `• Estimated time: approx. ${calcResult.formattedDuration}\n\n`;
 
-    if (appliedPromo) {
-      text += `\n🏷 Скидка по промокоду (${appliedPromo.code}): -${appliedPromo.discountAmount} zł\n`;
+      const addonsList: string[] = [];
+      if (input.windowsCount) addonsList.push(`Standard windows: ${input.windowsCount}`);
+      if (input.balconyWindowsCount) addonsList.push(`Balcony windows: ${input.balconyWindowsCount}`);
+      if (input.showcaseWindowsCount) addonsList.push(`Showcases: ${input.showcaseWindowsCount}`);
+      if (input.hasOven) addonsList.push(`Oven cleaning`);
+      if (input.hasFridge) addonsList.push(`Fridge cleaning`);
+      if (input.hasKitchenClosets) addonsList.push(`Inside kitchen cabinets`);
+      if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4) addonsList.push(`Upholstery dry cleaning`);
+
+      if (addonsList.length > 0) {
+        text += `➕ Add-ons included:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
+      }
+
+      if (calcResult.discountAmount > 0) {
+        text += `🎁 Applied discount: -${calcResult.discountAmount} zł\n`;
+      }
+
+      text += `💰 Total price: ${calcResult.totalPrice} zł\n\n`;
+      text += `We provide all professional equipment and eco-safe supplies.\n`;
+      text += `Would you like to book this appointment?`;
+      return text;
     }
 
-    text += `\n💰 <b>Итоговая стоимость: ${grandTotal} zł</b>\n\nВ стоимость включен весь профессиональный инвентарь, немецкая химия и оборудование. Оплата производится после завершения работы и проверки качества.\n\nПодскажите, пожалуйста, какой день и время для вас будут наиболее удобны? ☺️`;
+    // RU
+    let text = `Здравствуйте! Спасибо за обращение в BrightHouse Cleaning 🏠✨\n\n`;
+    text += `📋 Детали вашего расчета:\n`;
+    text += `• Услуга: ${sName}\n`;
+    text += `• Площадь: ${input.areaM2} м²\n`;
+    if (!isOffice) {
+      text += `• Комнат: ${input.roomsCount}, Санузлов: ${input.bathroomsCount}\n`;
+    }
+    text += `• Оценочное время уборки: около ${calcResult.formattedDuration}\n\n`;
 
+    const addonsList: string[] = [];
+    if (input.windowsCount) addonsList.push(`Мойка окон (стандарт): ${input.windowsCount} шт.`);
+    if (input.balconyWindowsCount) addonsList.push(`Мойка окон (балконных): ${input.balconyWindowsCount} шт.`);
+    if (input.showcaseWindowsCount) addonsList.push(`Мойка витрин: ${input.showcaseWindowsCount} шт.`);
+    if (input.hasOven) addonsList.push(`Духовка`);
+    if (input.hasFridge) addonsList.push(`Холодильник`);
+    if (input.hasKitchenClosets) addonsList.push(`Кухонные шкафы внутри`);
+    if (input.hasSteamer) addonsList.push(`Обработка пароочистителем`);
+    if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4) addonsList.push(`Химчистка дивана / мебели`);
+
+    if (addonsList.length > 0) {
+      text += `➕ Дополнительные услуги:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
+    }
+
+    if (calcResult.discountAmount > 0) {
+      text += `🎁 Скидка / акция: -${calcResult.discountAmount} zł\n`;
+    }
+
+    text += `💰 Итоговая стоимость: ${calcResult.totalPrice} zł\n\n`;
+    text += `Всё профессиональное оборудование и химию привозим с собой.\n`;
+    text += `Подходит ли вам такая стоимость и дата?`;
     return text;
   };
 
-  const copyOffer = () => {
-    const plainText = generateOfferText().replace(/<\/?b>/g, '');
-    navigator.clipboard.writeText(plainText);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2500);
-  };
-
-  const handleCreateOrder = async () => {
-    setCreating(true);
-    try {
-      let mainService = getTypeNameRu();
-      if (dryCleanTotal > 0 && cleaningBase === 0) mainService = 'Химчистка мебели';
-      else if (dryCleanTotal > 0 && cleaningBase > 0) mainService = `${getTypeNameRu()} + Химчистка`;
-
-      const windowsNote = [
-        windowCount > 0 ? `Окон станд: ${windowCount}` : '',
-        balconyWindowCount > 0 ? `Балк. окон: ${balconyWindowCount}` : ''
-      ].filter(Boolean).join(', ');
-
-      const promoNote = appliedPromo ? `Промокод: ${appliedPromo.code} (-${appliedPromo.discountAmount} zł)` : '';
-
-      const orderPayload = {
-        clientName: clientName || 'Клиент из калькулятора',
-        clientPhone: clientPhone || '',
-        addressLine1: address || 'Адрес уточняется',
-        serviceType: mainService,
-        price: grandTotal,
-        date: new Date(date).toISOString(),
-        status: 'NEW',
-        notes: `Сформировано калькулятором. Допы: ${selectedExtras.join(', ')}. ${windowsNote}. Химчистка: ${Object.keys(dryCleanCounts).join(', ')}. ${promoNote}`,
-      };
-
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload),
-      });
-
-      if (res.ok) router.push('/kanban');
-      else alert('Не удалось создать заказ');
-    } catch (e) {
-      console.error(e);
-      alert('Ошибка соединения');
-    } finally {
-      setCreating(false);
-    }
+  const handleCopy = () => {
+    navigator.clipboard.writeText(generateProposalText());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">🧮 Умный калькулятор (Уборка + Химчистка)</h1>
-        <p className="text-xs text-slate-500">4 вида уборки, раздельное мытье окон, промокоды, химчистка и создание заказа</p>
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 px-4">
+      {/* Шапка */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">🧮 Калькулятор заказов и Генератор КП</h1>
+          <p className="text-xs text-slate-500">
+            Единый точный расчет для менеджеров с сохранением черновика и экспортом сообщения для клиента
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-400 uppercase">Язык КП:</span>
+          {(['PL', 'RU', 'EN'] as const).map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => setLang(l)}
+              className={`px-3 py-1 text-xs font-bold rounded-xl border transition ${
+                lang === l
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              {l === 'PL' ? '🇵🇱 Polski' : l === 'RU' ? '🇷🇺 Русский' : '🇬🇧 English'}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-            <button
-              onClick={() => setActiveTab('CLEANING')}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                activeTab === 'CLEANING' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              🧹 Уборка квартир
-            </button>
-            <button
-              onClick={() => setActiveTab('DRY_CLEANING')}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                activeTab === 'DRY_CLEANING' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              🛋 Химчистка мебели
-            </button>
-          </div>
-
-          {activeTab === 'CLEANING' && (
-            <div className="space-y-6">
-              <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  Вид уборки (4 варианта)
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { id: 'STANDARD', label: '✨ Стандарт' },
-                    { id: 'STANDARD_PLUS', label: '⭐ Стандарт+' },
-                    { id: 'GENERAL', label: '🧼 Генеральная' },
-                    { id: 'POST_CONSTRUCTION', label: '🏗 После ремонта' },
-                  ].map(type => (
-                    <button
-                      key={type.id}
-                      type="button"
-                      onClick={() => setCleaningType(type.id as any)}
-                      className={`py-2.5 px-2 rounded-xl text-xs font-bold transition border text-center ${
-                        cleaningType === type.id
-                          ? 'bg-brand-50 border-brand-500 text-brand-700 shadow-xs'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Комнаты</label>
-                  <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                    <button onClick={() => setRooms(Math.max(1, rooms - 1))} className="px-3 py-2 font-bold text-slate-600 hover:bg-slate-200">-</button>
-                    <span className="flex-1 text-center font-bold text-xs text-slate-900">{rooms}</span>
-                    <button onClick={() => setRooms(rooms + 1)} className="px-3 py-2 font-bold text-slate-600 hover:bg-slate-200">+</button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Санузлы</label>
-                  <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                    <button onClick={() => setBathrooms(Math.max(1, bathrooms - 1))} className="px-3 py-2 font-bold text-slate-600 hover:bg-slate-200">-</button>
-                    <span className="flex-1 text-center font-bold text-xs text-slate-900">{bathrooms}</span>
-                    <button onClick={() => setBathrooms(bathrooms + 1)} className="px-3 py-2 font-bold text-slate-600 hover:bg-slate-200">+</button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Площадь (м²)</label>
-                  <input
-                    type="number"
-                    value={area}
-                    onChange={(e) => setArea(Number(e.target.value))}
-                    className="w-full border border-slate-200 rounded-xl p-2 text-xs font-bold text-center text-slate-800 bg-slate-50"
-                  />
-                </div>
-              </div>
-
-              <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl space-y-3">
-                <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wider block">
-                  🪟 Мытье окон
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="bg-white p-3 rounded-xl border border-blue-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-slate-900">Обычное окно</div>
-                      <div className="text-[10px] text-blue-600 font-extrabold">35 zł / шт</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setWindowCount(Math.max(0, windowCount - 1))} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">-</button>
-                      <span className="w-6 text-center font-extrabold text-xs text-slate-900">{windowCount}</span>
-                      <button onClick={() => setWindowCount(windowCount + 1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">+</button>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-blue-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-slate-900">Балконное окно / дверь</div>
-                      <div className="text-[10px] text-blue-600 font-extrabold">45 zł / шт</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setBalconyWindowCount(Math.max(0, balconyWindowCount - 1))} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">-</button>
-                      <span className="w-6 text-center font-extrabold text-xs text-slate-900">{balconyWindowCount}</span>
-                      <button onClick={() => setBalconyWindowCount(balconyWindowCount + 1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs">+</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  Дополнительные опции
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {EXTRA_SERVICES.map(extra => {
-                    const isSelected = selectedExtras.includes(extra.id);
-                    return (
-                      <div
-                        key={extra.id}
-                        onClick={() => toggleExtra(extra.id)}
-                        className={`p-2.5 rounded-xl border cursor-pointer transition flex justify-between items-center ${
-                          isSelected
-                            ? 'bg-emerald-50/80 border-emerald-500 text-emerald-950 font-bold'
-                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        <span className="text-xs">{extra.name}</span>
-                        <span className="text-xs font-extrabold text-emerald-600">+{extra.price} zł</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+        {/* Левая колонка: Параметры */}
+        <div className="lg:col-span-7 space-y-4">
+          {/* Тип услуги */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+              1. Категория помещения и тариф
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { type: 'STANDARD', label: 'Стандарт' },
+                { type: 'STANDARD_PLUS', label: 'Стандарт +' },
+                { type: 'GENERAL', label: 'Генеральная' },
+                { type: 'AFTER_REPAIR', label: 'После ремонта' },
+                { type: 'OFFICE_REGULAR', label: 'Офис: Обычная (4 zł/м²)' },
+                { type: 'OFFICE_GENERAL', label: 'Офис: Генеральная (12 zł/м²)' },
+              ].map(({ type, label }) => (
+                <button
+                  type="button"
+                  key={type}
+                  onClick={() => setInput({ ...input, serviceType: type as ServiceType })}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition text-left ${
+                    input.serviceType === type
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-          )}
 
-          {activeTab === 'DRY_CLEANING' && (
-            <div className="space-y-4">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                Выберите позиции для экстракторной химчистки
-              </label>
-
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
-                {DRY_CLEAN_ITEMS.map(item => {
-                  const count = dryCleanCounts[item.id] || 0;
-                  return (
-                    <div key={item.id} className="p-3 flex justify-between items-center bg-white hover:bg-slate-50">
-                      <div>
-                        <div className="text-xs font-bold text-slate-800">{item.name}</div>
-                        <div className="text-[10px] text-emerald-600 font-extrabold">{item.price} zł / шт</div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => updateDryCleanCount(item.id, -1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-700">-</button>
-                        <span className="w-6 text-center font-bold text-xs text-slate-900">{count}</span>
-                        <button onClick={() => updateDryCleanCount(item.id, 1)} className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-700">+</button>
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Метраж и комнаты */}
+            <div className="grid grid-cols-3 gap-3 pt-2">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Метраж (м²)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={input.areaM2}
+                  onChange={(e) => setInput({ ...input, areaM2: Math.max(1, Number(e.target.value)) })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold"
+                />
               </div>
-
-              {dryCleanCounts['carpet'] > 0 && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-900">Площадь ковра (м²):</span>
-                  <input
-                    type="number"
-                    value={carpetArea}
-                    onChange={(e) => setCarpetArea(Math.max(1, Number(e.target.value)))}
-                    className="w-20 bg-white border border-amber-300 rounded-lg p-1.5 text-xs font-bold text-center"
-                  />
-                </div>
+              {!isOffice && (
+                <>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Комнат</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={input.roomsCount}
+                      onChange={(e) => setInput({ ...input, roomsCount: Math.max(1, Number(e.target.value)) })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Санузлов</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={input.bathroomsCount}
+                      onChange={(e) => setInput({ ...input, bathroomsCount: Math.max(1, Number(e.target.value)) })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold"
+                    />
+                  </div>
+                </>
               )}
             </div>
-          )}
+          </div>
+
+          {/* Окна и витрины */}
+          <div className="bg-sky-50/70 border border-sky-200 rounded-2xl p-4 space-y-2">
+            <span className="text-xs font-bold text-sky-950 uppercase block">🪟 Мойка окон и витрин</span>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-[10px] font-semibold text-sky-900 block mb-1">Обычные (35 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.windowsCount || 0}
+                  onChange={(e) => setInput({ ...input, windowsCount: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-sky-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-sky-900 block mb-1">Балконные (45 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.balconyWindowsCount || 0}
+                  onChange={(e) => setInput({ ...input, balconyWindowsCount: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-sky-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-sky-900 block mb-1">Витрины (50 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.showcaseWindowsCount || 0}
+                  onChange={(e) => setInput({ ...input, showcaseWindowsCount: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-sky-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Допы */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+              3. Дополнительные опции
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { k: 'hasOven', label: '🍳 Духовка (45 zł)' },
+                { k: 'hasFridge', label: '❄️ Холодильник (35 zł)' },
+                { k: 'hasFridgeFreeze', label: '🧊 Морозилка (50 zł)' },
+                { k: 'hasMicrowave', label: '📡 СВЧ (20 zł)' },
+                { k: 'hasBalcony', label: '🌿 Балкон (35 zł)' },
+                { k: 'hasKitchenClosets', label: '🗄️ Кух. шкафы (100 zł)' },
+                { k: 'hasStairs', label: '🪜 Лестница (30 zł)' },
+                { k: 'hasSteamer', label: '💨 Пароочиститель (75 zł)' },
+                { k: 'hasVacuum', label: '🔌 Пылесос (30 zł)' },
+              ].map(({ k, label }) => {
+                const active = input[k as keyof CalculationInput];
+                return (
+                  <button
+                    type="button"
+                    key={k}
+                    onClick={() => setInput({ ...input, [k]: !active })}
+                    className={`p-2 rounded-xl text-xs font-medium border text-left flex justify-between items-center transition ${
+                      active
+                        ? 'bg-blue-50 border-blue-500 text-blue-700 font-bold'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="truncate">{label}</span>
+                    <span>{active ? '✓' : ''}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Химчистка */}
+          <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 space-y-2">
+            <span className="text-xs font-bold text-amber-950 uppercase block">🛋️ Химчистка мебели</span>
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <label className="text-[10px] text-slate-600 block mb-0.5">Диван 2-м (180 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.drySofa2 || 0}
+                  onChange={(e) => setInput({ ...input, drySofa2: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-600 block mb-0.5">Диван 3-м (200 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.drySofa3 || 0}
+                  onChange={(e) => setInput({ ...input, drySofa3: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-600 block mb-0.5">Угловой (220 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.drySofaCorner4 || 0}
+                  onChange={(e) => setInput({ ...input, drySofaCorner4: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-600 block mb-0.5">Кресло (60 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.dryArmchair || 0}
+                  onChange={(e) => setInput({ ...input, dryArmchair: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Акции, Абонементы и Таргет скидки */}
+          <div className="bg-purple-50/70 border border-purple-200 rounded-2xl p-4 space-y-3">
+            <span className="text-xs font-bold text-purple-950 uppercase block">
+              🎁 Акции, абонементы и выбор таргета скидки
+            </span>
+
+            {/* Абонементы */}
+            <div>
+              <label className="text-[10px] font-bold text-purple-900 uppercase block mb-1">Абонемент</label>
+              <select
+                value={input.subscriptionType || 'NONE'}
+                onChange={(e) => setInput({ ...input, subscriptionType: e.target.value as SubscriptionType })}
+                className="w-full bg-white border border-purple-200 rounded-lg p-2 text-xs font-bold text-purple-950"
+              >
+                <option value="NONE">Без абонемента</option>
+                <option value="SUB_100_OFF">🎫 Скидка 100 zł на первый месяц абонемента (-100 zł)</option>
+                <option value="SUB_4_MONTH">📅 Регулярный: 4 раза в месяц (-15% на базу)</option>
+                <option value="SUB_2_MONTH">📅 Регулярный: 2 раза в месяц (-10% на базу)</option>
+              </select>
+            </div>
+
+            {/* Комбо */}
+            <label className="flex items-center gap-2 cursor-pointer bg-white/80 p-2 rounded-xl border border-purple-200">
+              <input
+                type="checkbox"
+                checked={Boolean(input.isComboGeneralDryClean)}
+                onChange={(e) => setInput({ ...input, isComboGeneralDryClean: e.target.checked })}
+                className="w-4 h-4 rounded text-purple-600"
+              />
+              <span className="text-xs font-bold text-purple-900">
+                ✨ Комбо: Генеральная уборка + Химчистка (-10% на ВСЮ сумму)
+              </span>
+            </label>
+
+            {/* Ручная скидка и на что распространяется */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <div>
+                <label className="text-[10px] text-purple-900 block font-semibold mb-1">Применить скидку к:</label>
+                <select
+                  value={input.discountTarget || 'ALL'}
+                  onChange={(e) => setInput({ ...input, discountTarget: e.target.value as DiscountTarget })}
+                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-semibold"
+                >
+                  <option value="ALL">На всё (итог)</option>
+                  <option value="BASE_ONLY">Только уборка (база)</option>
+                  <option value="DRY_CLEAN_ONLY">Только химчистка</option>
+                  <option value="ADDONS_ONLY">Только доп. услуги</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-purple-900 block font-semibold mb-1">Скидка (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={input.discountPercent || 0}
+                  onChange={(e) => setInput({ ...input, discountPercent: Number(e.target.value), discountFixed: 0 })}
+                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] text-purple-900 block font-semibold mb-1">Скидка (zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.discountFixed || 0}
+                  onChange={(e) => setInput({ ...input, discountFixed: Number(e.target.value), discountPercent: 0 })}
+                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
+        {/* Правая колонка: Итог и Текст предложения для клиента */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Плашка суммы */}
-          <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-md space-y-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Итоговая смета</span>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-emerald-400">{grandTotal} zł</span>
-              {appliedPromo && (
-                <span className="text-xs text-slate-400 line-through">{subTotal} zł</span>
-              )}
+          {/* Плашка итоговой стоимости */}
+          <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-lg space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Итоговая стоимость</span>
+              <div className="text-2xl font-black font-mono text-emerald-400">
+                {calcResult.totalPrice} <span className="text-sm font-normal text-slate-300">zł</span>
+              </div>
             </div>
-            {appliedPromo && (
-              <div className="text-xs text-emerald-400 font-semibold">
-                Скидка по промокоду ({appliedPromo.code}): -{appliedPromo.discountAmount} zł
-              </div>
-            )}
-          </div>
 
-          {/* Применение промокода */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-2">
-            <label className="text-xs font-bold text-slate-800 block">🏷 Промокод на скидку</label>
-            {!appliedPromo ? (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Ввести промокод..."
-                  value={promoInput}
-                  onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 uppercase"
-                />
-                <button
-                  onClick={applyPromoCode}
-                  disabled={checkingPromo || !promoInput.trim()}
-                  className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs transition"
-                >
-                  {checkingPromo ? '...' : 'Применить'}
-                </button>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-300">
+                <span>Базовая уборка:</span>
+                <span className="font-mono">{calcResult.basePrice} zł</span>
               </div>
-            ) : (
-              <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
-                <div className="text-xs font-bold text-emerald-800">
-                  ✓ {appliedPromo.code} (-{appliedPromo.discountAmount} zł)
+              {calcResult.addonsPrice > 0 && (
+                <div className="flex justify-between text-slate-300">
+                  <span>Дополнительные опции:</span>
+                  <span className="font-mono">+{calcResult.addonsPrice} zł</span>
                 </div>
-                <button
-                  onClick={removePromo}
-                  className="text-xs text-rose-600 font-bold hover:underline"
-                >
-                  Отменить
-                </button>
+              )}
+              {calcResult.dryCleanPrice > 0 && (
+                <div className="flex justify-between text-amber-300 font-semibold">
+                  <span>Химчистка мебели:</span>
+                  <span className="font-mono">+{calcResult.dryCleanPrice} zł</span>
+                </div>
+              )}
+              {calcResult.discountAmount > 0 && (
+                <div className="flex justify-between text-purple-300 font-bold">
+                  <span>Скидка / Абонемент:</span>
+                  <span className="font-mono">-{calcResult.discountAmount} zł</span>
+                </div>
+              )}
+              <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800">
+                <span>Расчетное время:</span>
+                <span className="font-mono font-bold text-white">{calcResult.formattedDuration}</span>
               </div>
-            )}
-            {promoError && <p className="text-[11px] text-rose-600 font-semibold">{promoError}</p>}
+            </div>
           </div>
 
-          {/* Превью ответа */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+          {/* Готовое коммерческое предложение для мессенджера */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-800">💬 Ответ для клиента в мессенджер</span>
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                💬 Текст сообщения клиенту ({lang})
+              </span>
               <button
-                onClick={copyOffer}
-                className="bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold px-3 py-1.5 rounded-lg transition border border-brand-200"
+                type="button"
+                onClick={handleCopy}
+                className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1 shadow-2xs"
               >
-                {copySuccess ? '✓ Скопировано!' : '📋 Скопировать'}
+                {copied ? '✅ Скопировано!' : '📋 Копировать текст'}
               </button>
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 whitespace-pre-line font-mono leading-relaxed max-h-60 overflow-y-auto">
-              {generateOfferText().replace(/<\/?b>/g, '')}
-            </div>
-          </div>
-
-          {/* Быстрое создание */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
-            <span className="text-xs font-bold text-slate-800 block">⚡ Создать заказ в CRM</span>
-            <div className="space-y-2">
-              <input
-                type="text"
-                placeholder="Имя клиента"
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl p-2 text-xs"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Телефон (+48...)"
-                  value={clientPhone}
-                  onChange={(e) => setClientPhone(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl p-2 text-xs"
-                />
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-700"
-                />
-              </div>
-              <input
-                type="text"
-                placeholder="Адрес (Улица, дом, кв.)"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl p-2 text-xs"
-              />
-            </div>
-
-            <button
-              onClick={handleCreateOrder}
-              disabled={creating}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-sm"
-            >
-              {creating ? 'Создание...' : '✓ Добавить заказ в CRM'}
-            </button>
+            <textarea
+              readOnly
+              rows={15}
+              value={generateProposalText()}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-mono text-slate-800 leading-relaxed outline-none select-all"
+            />
           </div>
         </div>
       </div>
