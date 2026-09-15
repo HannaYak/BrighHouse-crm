@@ -9,6 +9,7 @@ import {
 
 export interface OrderDetail {
   id?: string;
+  clientId?: number | null;
   orderNumber?: string;
   date: string;
   startTime: string;
