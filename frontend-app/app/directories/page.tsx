@@ -77,6 +77,7 @@ export default function DirectoriesPage() {
         setIsModalOpen(true);
       } else {
         // Если прошлых заказов нет — создаем базовый шаблон с данными клиента
+        // Если прошлых заказов нет — создаем базовый шаблон с данными клиента
         const todayStr = new Date().toISOString().slice(0, 10);
         setRepeatOrderData({
           date: todayStr,
@@ -87,15 +88,34 @@ export default function DirectoriesPage() {
           areaM2: 45,
           roomsCount: 1,
           bathroomsCount: 1,
+          windowsCount: 0,
+          hasOven: false,
+          hasFridge: false,
+          hasFridgeFreeze: false,
+          hasMicrowave: false,
+          hasBalcony: false,
+          hasKitchenClosets: false,
+          hasStairs: false,
+          hasSteamer: false,
+          hasDishesHours: 0,
+          hasIroningHours: 0,
+          hasVacuum: false,
+          hasPets: false,
+          hasKeys: false,
+          drySofa2: 0,
+          drySofa3: 0,
+          drySofaCorner4: 0,
+          dryArmchair: 0,
+          dryMattressSide: 0,
           price: 170,
           cleanersCount: 1,
           clientName: client.name,
           clientPhone: client.phone,
           addressLine1: client.address || '',
-          clientId: client.id,
           assignedCleaners: [],
           status: 'NEW',
-        });
+        } as any);
+        setIsModalOpen(true);
         setIsModalOpen(true);
       }
     } catch (e) {
