@@ -562,7 +562,7 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   finalPrice = Math.round(finalPrice);
 
   return {
-  totalPrice: price,
+  totalPrice: finalPrice,
   specialistRevenue: specialistTotal,
   baseDurationMinutes: durationMins,
   actualDurationMinutes,
