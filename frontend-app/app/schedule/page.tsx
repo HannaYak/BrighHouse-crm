@@ -10,6 +10,7 @@ const ROW_HEIGHT = 64;
 export default function SchedulePage() {
   const [allCleaners, setAllCleaners] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [shiftsMap, setShiftsMap] = useState<Record<number, any>>({});
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [onlyWorkingToday, setOnlyWorkingToday] = useState(true);
@@ -17,9 +18,9 @@ export default function SchedulePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draggedOrderInfo, setDraggedOrderInfo] = useState<{ order: any; fromCleanerId: number } | null>(null);
 
- const getCleanerHours = (cleaner: any) => {
+  const getCleanerHours = (cleaner: any) => {
     const shift = shiftsMap[cleaner.id];
-    
+
     // Если на эту дату задан отгул
     if (shift && shift.isWorking === false) {
       return { start: 0, end: 0, isDayOff: true };
@@ -37,7 +38,6 @@ export default function SchedulePage() {
       isDayOff: false,
     };
   };
-  const [shiftsMap, setShiftsMap] = useState<Record<number, any>>({});
 
   const loadData = async (silent = false) => {
     try {
@@ -118,7 +118,11 @@ export default function SchedulePage() {
   };
 
   const handleCellClick = (hour: number, cleaner: any) => {
-    const { end: shiftEnd } = getCleanerHours(cleaner);
+    const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
+    if (isDayOff) {
+      alert(`Клинер ${cleaner.name} сегодня на выходном/отгуле.`);
+      return;
+    }
     if (hour >= shiftEnd) {
       alert(`Смена клинера ${cleaner.name} заканчивается в ${shiftEnd}:00.`);
       return;
@@ -204,7 +208,12 @@ export default function SchedulePage() {
     const { order, fromCleanerId } = draggedOrderInfo;
 
     const targetCleaner = allCleaners.find((c) => c.id === targetCleanerId);
-    const { end: shiftEnd } = getCleanerHours(targetCleaner);
+    const { end: shiftEnd, isDayOff } = getCleanerHours(targetCleaner);
+    if (isDayOff) {
+      alert(`Невозможно перенести: ${targetCleaner.name} сегодня на выходном`);
+      setDraggedOrderInfo(null);
+      return;
+    }
     if (targetHour >= shiftEnd) {
       alert(`Невозможно перенести заказ: смена заканчивается в ${shiftEnd}:00`);
       setDraggedOrderInfo(null);
@@ -354,12 +363,12 @@ export default function SchedulePage() {
               Время
             </div>
             {visibleCleaners.map((cleaner) => {
-              const { end: shiftEnd } = getCleanerHours(cleaner);
+              const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
               return (
                 <div key={cleaner.id} className="p-3 text-center border-r border-slate-200 last:border-r-0">
                   <div className="font-bold text-xs text-slate-900 truncate">{cleaner.name}</div>
                   <span className="text-[10px] text-slate-400 block truncate">
-                    📍 {cleaner.district || 'Центр'} • до {shiftEnd}:00
+                    📍 {cleaner.district || 'Центр'} • {isDayOff ? 'Выходной' : `до ${shiftEnd}:00`}
                   </span>
                 </div>
               );
@@ -380,8 +389,8 @@ export default function SchedulePage() {
                       {hourStr}
                     </div>
                     {visibleCleaners.map((cleaner) => {
-                      const { end: shiftEnd } = getCleanerHours(cleaner);
-                      const isOffDuty = hour >= shiftEnd;
+                      const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
+                      const isOffDuty = isDayOff || hour >= shiftEnd;
 
                       return (
                         <div
@@ -420,7 +429,19 @@ export default function SchedulePage() {
             <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
               <div></div>
               {visibleCleaners.map((cleaner) => {
-                const { end: shiftEnd } = getCleanerHours(cleaner);
+                const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
+                if (isDayOff) {
+                  return (
+                    <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0">
+                      <div className="absolute inset-0 bg-slate-200/80 backdrop-blur-[1px] flex items-center justify-center select-none">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 bg-white/90 px-2 py-1 rounded shadow-xs">
+                          Выходной / Отгул
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const offDutyStartMinutes = Math.max(0, (shiftEnd - START_HOUR) * 60);
                 const totalMinutesInGrid = (END_HOUR - START_HOUR + 1) * 60;
                 const offDutyDurationMinutes = Math.max(0, totalMinutesInGrid - offDutyStartMinutes);
