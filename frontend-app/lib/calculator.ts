@@ -92,11 +92,13 @@ export interface CalculationResult {
   actualDurationMinutes: number;
   formattedDuration: string;
   endTime: string;
+  specialistRevenue: number; // Окна + химчистка для мастеров
 }
 
 export function calculateBrightHouseOrder(input: CalculationInput): CalculationResult {
   let price = 0;
   let durationMins = 0;
+  let specialistTotal = 0;
 
   const rawRooms = Math.max(1, Number(input.roomsCount) || 1);
   const baths = Math.max(1, Number(input.bathroomsCount) || 1);
@@ -260,19 +262,26 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   // ==========================================
   // 3. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ (С ПОДДЕРЖКОЙ ДИНАМИЧЕСКИХ ЦЕН)
   // ==========================================
+ // Окна и витрины
   if (input.windowsCount) {
     const r = getRate('window', 35, 30);
-    price += input.windowsCount * r.price;
+    const sum = input.windowsCount * r.price;
+    price += sum;
+    specialistTotal += sum;
     durationMins += input.windowsCount * r.durationMins;
   }
   if (input.balconyWindowsCount) {
     const r = getRate('balconyWindow', 45, 40);
-    price += input.balconyWindowsCount * r.price;
+    const sum = input.balconyWindowsCount * r.price;
+    price += sum;
+    specialistTotal += sum;
     durationMins += input.balconyWindowsCount * r.durationMins;
   }
   if (input.showcaseWindowsCount) {
     const r = getRate('showcaseWindow', 50, 40);
-    price += input.showcaseWindowsCount * r.price;
+    const sum = input.showcaseWindowsCount * r.price;
+    price += sum;
+    specialistTotal += sum;
     durationMins += input.showcaseWindowsCount * r.durationMins;
   }
   if (input.mosquitoNetsCount) {
@@ -427,21 +436,99 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   // ==========================================
   // 4. ХИМЧИСТКА
   // ==========================================
-  if (input.drySofa2) { price += input.drySofa2 * 180; durationMins += input.drySofa2 * 60; }
-  if (input.drySofa3) { price += input.drySofa3 * 200; durationMins += input.drySofa3 * 75; }
-  if (input.drySofaCorner4) { price += input.drySofaCorner4 * 220; durationMins += input.drySofaCorner4 * 90; }
-  if (input.drySofaCorner5) { price += input.drySofaCorner5 * 240; durationMins += input.drySofaCorner5 * 105; }
-  if (input.drySofaBig) { price += input.drySofaBig * 260; durationMins += input.drySofaBig * 120; }
-  if (input.dryArmchair) { price += input.dryArmchair * 60; durationMins += input.dryArmchair * 30; }
-  if (input.dryChair) { price += input.dryChair * 15; durationMins += input.dryChair * 15; }
-  if (input.dryPouf) { price += input.dryPouf * 30; durationMins += input.dryPouf * 20; }
-  if (input.dryPillowsSmall) { price += input.dryPillowsSmall * 15; durationMins += input.dryPillowsSmall * 10; }
-  if (input.dryPillowsBig) { price += input.dryPillowsBig * 25; durationMins += input.dryPillowsBig * 15; }
-  if (input.dryHeadboard) { price += input.dryHeadboard * 70; durationMins += input.dryHeadboard * 45; }
-  if (input.dryMattressSingle) { price += input.dryMattressSingle * 90; durationMins += input.dryMattressSingle * 45; }
-  if (input.dryMattressDouble) { price += input.dryMattressDouble * 140; durationMins += input.dryMattressDouble * 60; }
-  if (input.dryMattressSide) { price += input.dryMattressSide * 90; durationMins += input.dryMattressSide * 45; }
-  if (input.dryCarpetM2) { price += input.dryCarpetM2 * 15; durationMins += input.dryCarpetM2 * 15; }
+// ==========================================
+  // 4. ХИМЧИСТКА
+  // ==========================================
+  if (input.drySofa2) {
+    const sum = input.drySofa2 * 180;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.drySofa2 * 60;
+  }
+  if (input.drySofa3) {
+    const sum = input.drySofa3 * 200;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.drySofa3 * 75;
+  }
+  if (input.drySofaCorner4) {
+    const sum = input.drySofaCorner4 * 220;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.drySofaCorner4 * 90;
+  }
+  if (input.drySofaCorner5) {
+    const sum = input.drySofaCorner5 * 240;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.drySofaCorner5 * 105;
+  }
+  if (input.drySofaBig) {
+    const sum = input.drySofaBig * 260;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.drySofaBig * 120;
+  }
+  if (input.dryArmchair) {
+    const sum = input.dryArmchair * 60;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryArmchair * 30;
+  }
+  if (input.dryChair) {
+    const sum = input.dryChair * 15;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryChair * 15;
+  }
+  if (input.dryPouf) {
+    const sum = input.dryPouf * 30;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryPouf * 20;
+  }
+  if (input.dryPillowsSmall) {
+    const sum = input.dryPillowsSmall * 15;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryPillowsSmall * 10;
+  }
+  if (input.dryPillowsBig) {
+    const sum = input.dryPillowsBig * 25;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryPillowsBig * 15;
+  }
+  if (input.dryHeadboard) {
+    const sum = input.dryHeadboard * 70;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryHeadboard * 45;
+  }
+  if (input.dryMattressSingle) {
+    const sum = input.dryMattressSingle * 90;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryMattressSingle * 45;
+  }
+  if (input.dryMattressDouble) {
+    const sum = input.dryMattressDouble * 140;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryMattressDouble * 60;
+  }
+  if (input.dryMattressSide) {
+    const sum = input.dryMattressSide * 90;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryMattressSide * 45;
+  }
+  if (input.dryCarpetM2) {
+    const sum = input.dryCarpetM2 * 15;
+    price += sum;
+    specialistTotal += sum;
+    durationMins += input.dryCarpetM2 * 15;
+  }
 
   // ==========================================
   // 5. ДЕЛЕНИЕ НА БРИГАДУ И ТАЙМИНГ
@@ -461,5 +548,12 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   const endM = totalEndMinutes % 60;
   const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 
-  return { totalPrice: price, baseDurationMinutes: durationMins, actualDurationMinutes, formattedDuration, endTime };
+  return {
+  totalPrice: price,
+  specialistRevenue: specialistTotal,
+  baseDurationMinutes: durationMins,
+  actualDurationMinutes,
+  formattedDuration,
+  endTime,
+};
 }
