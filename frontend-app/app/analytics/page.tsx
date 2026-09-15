@@ -11,13 +11,13 @@ export default function AnalyticsPage() {
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Стейты для фильтра
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true);
         const [resOrders, resCleaners] = await Promise.all([
           fetch('/api/orders'),
           fetch('/api/cleaners')
@@ -33,217 +33,265 @@ export default function AnalyticsPage() {
     fetchData();
   }, []);
 
-  // 1. Фильтруем заказы (не отмененные + попадают в выбранный месяц и год)
+  // Фильтруем неотмененные заказы за выбранный месяц
   const filteredOrders = orders.filter(o => {
     if (o.status === 'CANCELLED') return false;
     const d = new Date(o.date);
     return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
   });
 
-  // 2. Расчет базовой экономики по реальным часам
-  const totalRevenue = filteredOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-  
-  let salaryFund = 0;
-  filteredOrders.forEach(o => {
-    let durationHours = 0;
-    if (o.timeSlot) {
-      const parts = o.timeSlot.split(/[-—]/);
-      if (parts.length === 2) {
-        const [startH, startM] = parts[0].trim().split(':').map(Number);
-        const [endH, endM] = parts[1].trim().split(':').map(Number);
-        let diff = (endH + endM / 60) - (startH + startM / 60);
-        if (diff < 0) diff += 24; // Если переходит через полночь
-        durationHours = diff;
-      }
-    }
-    // Определяем ставку
-    const rate = (o.serviceType === 'GENERAL' || o.serviceType === 'AFTER_REPAIR') ? 35 : 30;
-    const brigadeSize = o.assignedCleaners?.length || 1;
-    
-    // Сумма ЗП за этот заказ на всю бригаду
-    salaryFund += (durationHours * rate) * brigadeSize;
-  });
+  // Общая выручка
+  const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
-  const materialsCost = totalRevenue * 0.10; // 10% на химию от выручки
-  const netProfit = totalRevenue - salaryFund - materialsCost;
-
-  // 3. Статистика по клинерам за период
+  // Расчет по каждому клинеру
   const cleanerStats = cleaners.map(cleaner => {
     const cleanerOrders = filteredOrders.filter(o => 
-      o.assignedCleaners?.some((ac: any) => ac.cleanerId === cleaner.id || ac.cleaner?.id === cleaner.id)
+      o.assignedCleaners?.some((ac: any) => {
+        const cId = ac.cleanerId || ac.cleaner?.id || ac.id;
+        return Number(cId) === Number(cleaner.id);
+      })
     );
-    
+
     let earnedForCompany = 0;
-    let personalSalary = 0;
-    let hoursWorked = 0;
+    let standardHours = 0;
+    let heavyHours = 0;
+    let specialistBonus = 0; // Окна / химчистка, если выделены
 
     cleanerOrders.forEach(o => {
-      const brigadeSize = o.assignedCleaners?.length || 1;
-      // Вклад в компанию (выручка делится на количество человек в бригаде)
-      earnedForCompany += (o.price || 0) / brigadeSize;
+      const brigadeSize = Math.max(1, o.assignedCleaners?.length || 1);
+      earnedForCompany += (Number(o.price) || 0) / brigadeSize;
 
-      // Расчет часов для конкретного клинера
-      let durationHours = 0;
+      // Парсинг времени заказа
+      let duration = 3.5;
       if (o.timeSlot) {
-        const parts = o.timeSlot.split(/[-—]/);
-        if (parts.length === 2) {
-          const [startH, startM] = parts[0].trim().split(':').map(Number);
-          const [endH, endM] = parts[1].trim().split(':').map(Number);
-          let diff = (endH + endM / 60) - (startH + startM / 60);
-          if (diff < 0) diff += 24;
-          durationHours = diff;
-        }
+        const parts = o.timeSlot.split(/[-—]/).map((s: string) => s.trim());
+        const [sh, sm] = (parts[0] || '10:00').split(':').map(Number);
+        const [eh, em] = (parts[1] || '13:30').split(':').map(Number);
+        const diff = (eh + (em || 0) / 60) - (sh + (sm || 0) / 60);
+        if (diff > 0) duration = diff;
       }
-      
-      hoursWorked += durationHours;
-      const rate = (o.serviceType === 'GENERAL' || o.serviceType === 'AFTER_REPAIR') ? 35 : 30;
-      personalSalary += durationHours * rate;
+
+      const isHeavy = o.serviceType === 'GENERAL' || o.serviceType === 'AFTER_REPAIR' || o.serviceType === 'OFFICE_GENERAL';
+      if (isHeavy) {
+        heavyHours += duration;
+      } else {
+        standardHours += duration;
+      }
     });
+
+    // 30 zł/ч за стандарт, 35 zł/ч за генералку/послестрой
+    const salaryStandard = standardHours * 30;
+    const salaryHeavy = heavyHours * 35;
+    const totalSalary = salaryStandard + salaryHeavy + specialistBonus;
 
     return {
       ...cleaner,
       ordersCount: cleanerOrders.length,
+      standardHours,
+      heavyHours,
+      totalHours: standardHours + heavyHours,
       earnedForCompany,
-      personalSalary,
-      hoursWorked
+      totalSalary,
     };
   }).sort((a, b) => b.earnedForCompany - a.earnedForCompany);
 
-  // 4. Функция выгрузки в CSV (Excel)
+  const totalSalaryFund = cleanerStats.reduce((sum, c) => sum + c.totalSalary, 0);
+  const materialsCost = totalRevenue * 0.10; // 10% на химию и расходники
+  const netProfit = totalRevenue - totalSalaryFund - materialsCost;
+
+  // Экспорт в CSV / Excel
   const exportToCSV = () => {
-    const headers = ['Имя сотрудника', 'Выполнено заказов', 'Отработано часов', 'Принес выручки (zl)', 'Зарплата к выплате (zl)'];
+    const headers = [
+      'Сотрудник',
+      'Район',
+      'Заказов',
+      'Стандарт (часы)',
+      'Генеральная/Послестрой (часы)',
+      'Всего часов',
+      'Выручка компании (zł)',
+      'Зарплата к выплате (zł)'
+    ];
+
     const rows = cleanerStats
       .filter(c => c.ordersCount > 0)
       .map(c => [
-        c.name, 
-        c.ordersCount, 
-        c.hoursWorked.toFixed(1),
-        c.earnedForCompany.toFixed(2), 
-        c.personalSalary.toFixed(2)
+        `"${c.name}"`,
+        `"${c.district || 'Центр'}"`,
+        c.ordersCount,
+        c.standardHours.toFixed(1),
+        c.heavyHours.toFixed(1),
+        c.totalHours.toFixed(1),
+        c.earnedForCompany.toFixed(2),
+        c.totalSalary.toFixed(2)
       ]);
 
+    const summaryRow = [
+      '"ИТОГО"',
+      '""',
+      filteredOrders.length,
+      '""',
+      '""',
+      '""',
+      totalRevenue.toFixed(2),
+      totalSalaryFund.toFixed(2)
+    ];
+
     const csvContent = [
-      headers.join(';'), // Разделитель для Excel
-      ...rows.map(r => r.join(';'))
+      headers.join(';'),
+      ...rows.map(r => r.join(';')),
+      summaryRow.join(';')
     ].join('\n');
 
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Зарплаты_BrightHouse_${MONTHS[selectedMonth]}_${selectedYear}.csv`);
+    link.setAttribute('download', `Отчет_BrightHouse_${MONTHS[selectedMonth]}_${selectedYear}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const currentYear = new Date().getFullYear();
-  const years = Array.from({length: 5}, (_, i) => currentYear - 2 + i);
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
-  if (loading) return <div className="p-10 text-center text-slate-500">Загрузка аналитики...</div>;
+  if (loading) {
+    return <div className="p-10 text-center text-xs text-slate-500">Загрузка аналитики и отчетов...</div>;
+  }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12 px-4">
+      {/* Верхняя плашка */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">📈 Финансовая аналитика</h1>
-          <p className="text-xs text-slate-500">Unit-экономика, выручка и статистика по сотрудникам</p>
+          <h1 className="text-xl font-bold text-slate-900">📈 Финансовая аналитика и Расчет зарплат</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Ставки: Стандарт — 30 zł/ч, Генеральная/После ремонта — 35 zł/ч
+          </p>
         </div>
 
-        {/* Панель фильтров и экспорта */}
-        <div className="flex items-center gap-3 bg-white p-2 border border-slate-200 rounded-xl shadow-sm">
-          <select 
-            value={selectedMonth} 
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={selectedMonth}
             onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-bold rounded-lg px-3 py-1.5 focus:outline-none"
+            className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 outline-none"
           >
-            {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            {MONTHS.map((m, i) => (
+              <option key={i} value={i}>{m}</option>
+            ))}
           </select>
 
-          <select 
-            value={selectedYear} 
+          <select
+            value={selectedYear}
             onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="bg-slate-50 border border-slate-200 text-slate-800 text-sm font-bold rounded-lg px-3 py-1.5 focus:outline-none"
+            className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 outline-none"
           >
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
+            {years.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
           </select>
 
-          <button 
+          <button
+            type="button"
             onClick={exportToCSV}
-            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-sm font-bold px-4 py-1.5 rounded-lg transition"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5"
           >
-            📥 Скачать Excel
+            <span>📥</span>
+            <span>Скачать отчет (CSV)</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Карточки */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 mb-1">Выручка за период</div>
+      {/* Карточки метрик */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Выручка за месяц</div>
           <div className="text-2xl font-extrabold text-slate-900">{totalRevenue.toFixed(0)} zł</div>
-          <div className="text-[10px] font-semibold text-emerald-600 mt-2">Заказов в периоде: {filteredOrders.length}</div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 mb-1">Зарплатный фонд (Почасовая)</div>
-          <div className="text-2xl font-extrabold text-indigo-600">{salaryFund.toFixed(0)} zł</div>
-          <div className="text-[10px] font-semibold text-slate-400 mt-2">Выплаты исполнителям (30-35 zł/ч)</div>
+          <div className="text-[11px] font-semibold text-emerald-600 mt-2">
+            Заказов в периоде: {filteredOrders.length}
+          </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 mb-1">Расходники (10%)</div>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Зарплатный фонд</div>
+          <div className="text-2xl font-extrabold text-indigo-600">{totalSalaryFund.toFixed(0)} zł</div>
+          <div className="text-[11px] font-semibold text-slate-400 mt-2">
+            Почасовая выплата клинерам
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Расходники (10%)</div>
           <div className="text-2xl font-extrabold text-amber-600">{materialsCost.toFixed(0)} zł</div>
-          <div className="text-[10px] font-semibold text-slate-400 mt-2">Химия, проезд, амортизация</div>
+          <div className="text-[11px] font-semibold text-slate-400 mt-2">
+            Химия, инвентарь, логистика
+          </div>
         </div>
 
-        <div className="bg-brand-600 p-5 rounded-2xl border border-brand-700 shadow-sm text-white">
-          <div className="text-xs font-bold text-brand-100 mb-1">Чистая прибыль</div>
+        <div className="bg-brand-600 p-5 rounded-2xl border border-brand-700 shadow-xs text-white">
+          <div className="text-xs font-bold text-brand-100 uppercase tracking-wider mb-1">Чистая прибыль</div>
           <div className="text-2xl font-extrabold">{netProfit.toFixed(0)} zł</div>
-          <div className="text-[10px] font-semibold text-brand-200 mt-2">Net Profit за {MONTHS[selectedMonth]}</div>
+          <div className="text-[11px] font-semibold text-brand-200 mt-2">
+            Чистый доход BrightHouse
+          </div>
         </div>
       </div>
 
-      {/* Рейтинг сотрудников */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
-          <h2 className="text-sm font-bold text-slate-800">🏆 Зарплаты и эффективность (Leaderboard)</h2>
+      {/* Детальная таблица зарплат клинеров */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex justify-between items-center">
+          <h2 className="text-sm font-bold text-slate-800">
+            👥 Расчет выплат клинерам за {MONTHS[selectedMonth]} {selectedYear}
+          </h2>
+          <span className="text-[11px] text-slate-500">
+            Сотрудников с заказами: {cleanerStats.filter(c => c.ordersCount > 0).length}
+          </span>
         </div>
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50/50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
-            <tr>
-              <th className="p-3.5 pl-5">Сотрудник</th>
-              <th className="p-3.5 text-center">Заказов</th>
-              <th className="p-3.5 text-center">Часов</th>
-              <th className="p-3.5 text-right">Принес компании (zł)</th>
-              <th className="p-3.5 text-right pr-5">ЗП к выплате (zł)</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {cleanerStats.filter(c => c.ordersCount > 0).map((cleaner, idx) => (
-              <tr key={cleaner.id} className="hover:bg-slate-50 transition">
-                <td className="p-3.5 pl-5">
-                  <div className="font-bold text-slate-900 flex items-center gap-2">
-                    {idx === 0 && '🥇'} {idx === 1 && '🥈'} {idx === 2 && '🥉'} {idx > 2 && '▪️'}
-                    {cleaner.name}
-                  </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 ml-6">{cleaner.district}</div>
-                </td>
-                <td className="p-3.5 text-center font-extrabold text-slate-700">{cleaner.ordersCount}</td>
-                <td className="p-3.5 text-center font-bold text-blue-600">{cleaner.hoursWorked.toFixed(1)} ч</td>
-                <td className="p-3.5 text-right font-bold text-emerald-600">{cleaner.earnedForCompany.toFixed(0)} zł</td>
-                <td className="p-3.5 text-right pr-5 font-bold text-indigo-600">{cleaner.personalSalary.toFixed(0)} zł</td>
-              </tr>
-            ))}
-            {cleanerStats.filter(c => c.ordersCount === 0).length > 0 && (
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
               <tr>
-                <td colSpan={5} className="p-3.5 text-center text-slate-400 text-[10px] bg-slate-50/50">
-                  Остальные {cleanerStats.filter(c => c.ordersCount === 0).length} сотрудников без заказов в этом месяце
-                </td>
+                <th className="p-3.5 pl-5">Клинер</th>
+                <th className="p-3.5 text-center">Заказов</th>
+                <th className="p-3.5 text-center">Стандарт (30 zł/ч)</th>
+                <th className="p-3.5 text-center">Генеральная (35 zł/ч)</th>
+                <th className="p-3.5 text-center">Всего часов</th>
+                <th className="p-3.5 text-right">Выручка (zł)</th>
+                <th className="p-3.5 text-right pr-5 font-black text-slate-900">ЗП к выплате (zł)</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {cleanerStats.filter(c => c.ordersCount > 0).map((c, idx) => (
+                <tr key={c.id} className="hover:bg-slate-50/80 transition">
+                  <td className="p-3.5 pl-5">
+                    <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '👤'}</span>
+                      <span>{c.name}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 ml-6">📍 {c.district || 'Центр'}</div>
+                  </td>
+                  <td className="p-3.5 text-center font-bold text-slate-700">{c.ordersCount}</td>
+                  <td className="p-3.5 text-center font-mono text-slate-600">{c.standardHours.toFixed(1)} ч</td>
+                  <td className="p-3.5 text-center font-mono text-indigo-600 font-semibold">{c.heavyHours.toFixed(1)} ч</td>
+                  <td className="p-3.5 text-center font-bold font-mono text-slate-900">{c.totalHours.toFixed(1)} ч</td>
+                  <td className="p-3.5 text-right font-mono font-bold text-slate-700">{c.earnedForCompany.toFixed(0)} zł</td>
+                  <td className="p-3.5 text-right pr-5 font-mono font-extrabold text-emerald-600 text-sm">
+                    {c.totalSalary.toFixed(0)} zł
+                  </td>
+                </tr>
+              ))}
+
+              {cleanerStats.filter(c => c.ordersCount === 0).length > 0 && (
+                <tr>
+                  <td colSpan={7} className="p-4 text-center text-slate-400 text-[11px] bg-slate-50/40">
+                    Остальные {cleanerStats.filter(c => c.ordersCount === 0).length} сотрудников пока без смен в этом месяце
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
