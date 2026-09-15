@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const nextDay = new Date(targetDate);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    // Получаем все заказы на эту дату, которые не отменены
+    // Получаем все неотмененные заказы на эту дату
     const orders = await prisma.order.findMany({
       where: {
         date: {
@@ -36,8 +36,7 @@ export async function GET(request: Request) {
     });
 
     const [targetH, targetM] = timeParam.split(':').map(Number);
-    const targetStartMins = targetH * 60 + (targetM || 0);
-    // Допустим, стандартная длительность нового заказа около 3-4 часов по умолчанию
+    const targetStartMins = (isNaN(targetH) ? 10 : targetH) * 60 + (isNaN(targetM) ? 0 : targetM);
     const targetEndMins = targetStartMins + 240; 
     const BUFFER_MINUTES = 60; // 1 час буфера на дорогу
 
@@ -49,7 +48,7 @@ export async function GET(request: Request) {
       let isBusy = false;
       const busyOrders: string[] = [];
 
-     for (const ord of cleanerOrders) {
+      for (const ord of cleanerOrders) {
         const slot = ord.timeSlot || '10:00 — 14:00';
         const parts = slot.split(/[-—]/).map((s) => s.trim());
         const [sh, sm] = (parts[0] || '10:00').split(':').map(Number);
@@ -68,8 +67,12 @@ export async function GET(request: Request) {
         }
       }
 
-      const shiftStart = cleaner.shiftStart ?? 9;
-      const shiftEnd = cleaner.shiftEnd ?? 16;
+      // Используем defaultStartTime и defaultEndTime из модели Cleaner
+      const [shH] = (cleaner.defaultStartTime || '08:00').split(':').map(Number);
+      const [ehH] = (cleaner.defaultEndTime || '20:00').split(':').map(Number);
+      
+      const shiftStart = isNaN(shH) ? 8 : shH;
+      const shiftEnd = isNaN(ehH) ? 20 : ehH;
       const workHoursStr = `${String(shiftStart).padStart(2, '0')}:00 — ${String(shiftEnd).padStart(2, '0')}:00`;
 
       return {
