@@ -1,6 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { calculateBrightHouseOrder, ServiceType } from '../lib/calculator';
+import {
+  calculateBrightHouseOrder,
+  ServiceType,
+  DiscountTarget,
+  SubscriptionType,
+} from '../lib/calculator';
 
 export interface OrderDetail {
   id?: string;
@@ -52,8 +57,13 @@ export interface OrderDetail {
   assignedCleaners: { id: number; name: string; phone?: string; tags?: string[]; district?: string }[];
   notes?: string;
 
+  // Акции, Абонементы и Таргет
   discountPercent?: number;
   discountFixed?: number;
+  discountTarget?: DiscountTarget;
+  subscriptionType?: SubscriptionType;
+  isComboGeneralDryClean?: boolean;
+
   paymentMethod?: string;
   paymentNote?: string;
   cashCollectedById?: number | null;
@@ -81,7 +91,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   if (!isOpen) return null;
 
   const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
-  
+
   const getInitialForm = (): OrderDetail => {
     if (order) return order;
     if (typeof window !== 'undefined') {
@@ -134,6 +144,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       notes: '',
       discountPercent: 0,
       discountFixed: 0,
+      discountTarget: 'ALL',
+      subscriptionType: 'NONE',
+      isComboGeneralDryClean: false,
       paymentMethod: 'CASH',
       paymentNote: '',
       cashCollectedById: null,
@@ -160,7 +173,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
   useEffect(() => {
     fetch('/api/settings/addons')
-      .then((res) => res.json())
+      .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
         if (Array.isArray(data)) {
           const rates: Record<string, { price: number; durationMins: number }> = {};
@@ -238,6 +251,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       addonRates,
       discountPercent: form.discountPercent || 0,
       discountFixed: form.discountFixed || 0,
+      discountTarget: form.discountTarget || 'ALL',
+      subscriptionType: form.subscriptionType || 'NONE',
+      isComboGeneralDryClean: form.isComboGeneralDryClean || false,
     });
 
     setForm((prev) => ({
@@ -274,6 +290,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.dryMattressSide,
     form.discountPercent,
     form.discountFixed,
+    form.discountTarget,
+    form.subscriptionType,
+    form.isComboGeneralDryClean,
     form.assignedCleaners.length,
     form.startTime,
     addonRates,
@@ -283,8 +302,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     const tags = cleaner.tags || [];
     if (form.hasPets && tags.includes('аллергия_на_животных')) return false;
     if ((form.serviceType === 'GENERAL' || form.serviceType === 'AFTER_REPAIR') && tags.includes('только_поддерживающая')) return false;
-    const hasDryClean = form.drySofa2 + form.drySofa3 + form.drySofaCorner4 + form.dryArmchair + (form.dryMattressSide || 0) > 0;
-    if (hasDryClean && !tags.includes('химчистка')) return false;
     return true;
   });
 
@@ -414,7 +431,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               )}
             </div>
 
-            {/* Метраж и окна */}
+            {/* Метраж и комнаты */}
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
               {isOffice ? (
                 <div className="grid grid-cols-3 gap-2">
@@ -497,7 +514,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               )}
             </div>
 
-            {/* Секция: Окна, Балконы, Витрины */}
+            {/* Окна и витрины */}
             <div className="bg-sky-50/60 border border-sky-200 rounded-xl p-3 space-y-2">
               <span className="text-[11px] font-bold text-sky-900 uppercase block">🪟 Мойка окон и витрин</span>
               <div className="grid grid-cols-3 gap-2">
@@ -746,7 +763,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     type="text"
                     disabled
                     value={form.endTime}
-                    onChange={(e) => setForm({ ...form, endTime: e.target.value })}
                     className="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg p-1.5 text-xs font-extrabold text-center"
                   />
                 </div>
@@ -770,7 +786,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     Бригада ({form.assignedCleaners.length})
                   </label>
                   <span className="text-[10px] text-slate-400">
-                    {loadingAvailability ? 'Проверка смен...' : `В базе: ${eligibleCleaners.length}`}
+                    {loadingAvailability ? 'Проверка...' : `Доступно: ${eligibleCleaners.length}`}
                   </span>
                 </div>
 
@@ -802,7 +818,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                           {info ? (
                             info.available ? (
                               <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                                ✅ Свободен ({info.workHours})
+                                ✅ {info.workHours}
                               </span>
                             ) : info.isBusy ? (
                               <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
@@ -829,12 +845,55 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 )}
               </div>
 
-              {/* Блок акций и скидок */}
-              <div className="bg-purple-50/60 border border-purple-200 rounded-xl p-3 space-y-2">
-                <span className="text-[11px] font-bold text-purple-900 uppercase block">🎁 Акции и скидки</span>
-                <div className="grid grid-cols-2 gap-2">
+              {/* Акции, Абонементы и Таргетинг скидки */}
+              <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 space-y-2.5">
+                <span className="text-[11px] font-bold text-purple-950 uppercase block">
+                  🎁 Акции, абонементы и скидки
+                </span>
+
+                <div>
+                  <label className="text-[10px] font-bold text-purple-900 uppercase block mb-1">Абонемент</label>
+                  <select
+                    value={form.subscriptionType || 'NONE'}
+                    onChange={(e) => setForm({ ...form, subscriptionType: e.target.value as SubscriptionType })}
+                    className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-bold text-purple-950"
+                  >
+                    <option value="NONE">Без абонемента</option>
+                    <option value="SUB_100_OFF">🎫 Скидка 100 zł на первый месяц абонемента (-100 zł)</option>
+                    <option value="SUB_4_MONTH">📅 Регулярный: 4 раза в месяц (-15% на уборку)</option>
+                    <option value="SUB_2_MONTH">📅 Регулярный: 2 раза в месяц (-10% на уборку)</option>
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer bg-white/80 p-1.5 rounded-lg border border-purple-200">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.isComboGeneralDryClean)}
+                    onChange={(e) => setForm({ ...form, isComboGeneralDryClean: e.target.checked })}
+                    className="w-3.5 h-3.5 rounded text-purple-600"
+                  />
+                  <span className="text-[11px] font-bold text-purple-900">
+                    ✨ Комбо: Генералка + Химчистка (-10% на всю сумму)
+                  </span>
+                </label>
+
+                <div className="grid grid-cols-3 gap-2 pt-1">
                   <div>
-                    <label className="text-[10px] text-purple-800 block">Скидка (%)</label>
+                    <label className="text-[10px] text-purple-900 block font-semibold mb-0.5">Применить к:</label>
+                    <select
+                      value={form.discountTarget || 'ALL'}
+                      onChange={(e) => setForm({ ...form, discountTarget: e.target.value as DiscountTarget })}
+                      className="w-full bg-white border border-purple-200 rounded p-1 text-xs font-semibold"
+                    >
+                      <option value="ALL">На всё</option>
+                      <option value="BASE_ONLY">Только база</option>
+                      <option value="DRY_CLEAN_ONLY">Только химчистка</option>
+                      <option value="ADDONS_ONLY">Только допы</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-purple-900 block font-semibold mb-0.5">Скидка (%)</label>
                     <input
                       type="number"
                       min="0"
@@ -844,8 +903,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                       className="w-full bg-white border border-purple-200 rounded p-1 text-xs font-bold"
                     />
                   </div>
+
                   <div>
-                    <label className="text-[10px] text-purple-800 block">Скидка (zł)</label>
+                    <label className="text-[10px] text-purple-900 block font-semibold mb-0.5">Скидка (zł)</label>
                     <input
                       type="number"
                       min="0"
@@ -953,7 +1013,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                         type="button"
                         onClick={async () => {
                           if (!window.confirm(`Завершить заказ ${form.orderNumber} на сумму ${form.price} zł и отметить оплаченным?`)) return;
-                          
+
                           const payload = {
                             ...form,
                             status: 'COMPLETED',
