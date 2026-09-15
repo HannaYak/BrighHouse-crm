@@ -17,6 +17,9 @@ export interface CalculationInput {
   bathroomsCount: number;
   areaM2: number;
 
+  discountPercent?: number; // Скидка в процентах (например, 10 для 10%)
+  discountFixed?: number;   // Скидка в фиксированной сумме (например, 30 zł)
+
   // Окна и балконы
  windowsCount?: number;          // 35 zł (обычные)
   balconyWindowsCount?: number;   // 45 zł (балконные)
@@ -547,6 +550,16 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   const endH = Math.floor(totalEndMinutes / 60) % 24;
   const endM = totalEndMinutes % 60;
   const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+
+  // Применение акций и скидок
+  let finalPrice = price;
+  if (input.discountPercent && input.discountPercent > 0) {
+    finalPrice = finalPrice * (1 - input.discountPercent / 100);
+  }
+  if (input.discountFixed && input.discountFixed > 0) {
+    finalPrice = Math.max(0, finalPrice - input.discountFixed);
+  }
+  finalPrice = Math.round(finalPrice);
 
   return {
   totalPrice: price,
