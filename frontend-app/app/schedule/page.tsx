@@ -17,24 +17,48 @@ export default function SchedulePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draggedOrderInfo, setDraggedOrderInfo] = useState<{ order: any; fromCleanerId: number } | null>(null);
 
-  const getCleanerHours = (cleaner: any) => {
-    const [startH] = (cleaner.defaultStartTime || '08:00').split(':').map(Number);
-    const [endH] = (cleaner.defaultEndTime || '20:00').split(':').map(Number);
+ const getCleanerHours = (cleaner: any) => {
+    const shift = shiftsMap[cleaner.id];
+    
+    // Если на эту дату задан отгул
+    if (shift && shift.isWorking === false) {
+      return { start: 0, end: 0, isDayOff: true };
+    }
+
+    const startStr = shift?.startTime || cleaner.defaultStartTime || '08:00';
+    const endStr = shift?.endTime || cleaner.defaultEndTime || '20:00';
+
+    const [startH] = startStr.split(':').map(Number);
+    const [endH] = endStr.split(':').map(Number);
+
     return {
       start: isNaN(startH) ? 8 : startH,
       end: isNaN(endH) ? 20 : endH,
+      isDayOff: false,
     };
   };
+  const [shiftsMap, setShiftsMap] = useState<Record<number, any>>({});
 
   const loadData = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const [cleanersRes, ordersRes] = await Promise.all([
+      const [cleanersRes, ordersRes, shiftsRes] = await Promise.all([
         fetch('/api/cleaners'),
         fetch('/api/orders'),
+        fetch(`/api/cleaners/shifts?date=${selectedDate}`),
       ]);
       if (cleanersRes.ok) setAllCleaners(await cleanersRes.json());
       if (ordersRes.ok) setOrders(await ordersRes.json());
+      if (shiftsRes.ok) {
+        const shiftsData = await shiftsRes.json();
+        const map: Record<number, any> = {};
+        if (Array.isArray(shiftsData)) {
+          shiftsData.forEach((s: any) => {
+            map[s.cleanerId] = s;
+          });
+        }
+        setShiftsMap(map);
+      }
     } catch (e) {
       console.error('Ошибка загрузки расписания:', e);
     } finally {
@@ -42,9 +66,10 @@ export default function SchedulePage() {
     }
   };
 
+  // Перезагружаем смены при смене даты
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(true);
+  }, [selectedDate]);
 
   const currentDayOfWeek = (() => {
     const d = new Date(selectedDate).getDay();
@@ -52,6 +77,9 @@ export default function SchedulePage() {
   })();
 
   const visibleCleaners = allCleaners.filter((c) => {
+    const { isDayOff } = getCleanerHours(c);
+    if (onlyWorkingToday && isDayOff) return false;
+
     if (!onlyWorkingToday) return true;
     const days: number[] = c.workDays && c.workDays.length > 0 ? c.workDays : [1, 2, 3, 4, 5];
     return days.includes(currentDayOfWeek);
