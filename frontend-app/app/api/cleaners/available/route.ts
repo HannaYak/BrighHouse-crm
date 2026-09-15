@@ -49,16 +49,15 @@ export async function GET(request: Request) {
       let isBusy = false;
       const busyOrders: string[] = [];
 
-      for (const ord of cleanerOrders) {
-        const slot = ord.timeSlot || `${ord.startTime || '10:00'} — ${ord.endTime || '14:00'}`;
-        const parts = slot.split('—').map((s) => s.trim());
+     for (const ord of cleanerOrders) {
+        const slot = ord.timeSlot || '10:00 — 14:00';
+        const parts = slot.split(/[-—]/).map((s) => s.trim());
         const [sh, sm] = (parts[0] || '10:00').split(':').map(Number);
         const [eh, em] = (parts[1] || '14:00').split(':').map(Number);
 
-        const ordStartMins = sh * 60 + (sm || 0) - BUFFER_MINUTES; // с учетом буфера до
-        const ordEndMins = eh * 60 + (em || 0) + BUFFER_MINUTES;   // с учетом буфера после
+        const ordStartMins = (isNaN(sh) ? 10 : sh) * 60 + (isNaN(sm) ? 0 : sm) - BUFFER_MINUTES;
+        const ordEndMins = (isNaN(eh) ? 14 : eh) * 60 + (isNaN(em) ? 0 : em) + BUFFER_MINUTES;
 
-        // Проверяем пересечение интервалов времени
         if (
           (targetStartMins >= ordStartMins && targetStartMins < ordEndMins) ||
           (targetEndMins > ordStartMins && targetEndMins <= ordEndMins) ||
