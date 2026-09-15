@@ -6,6 +6,9 @@ export type ServiceType =
   | 'OFFICE_REGULAR'  // Офис обычная (4 zł/м²)
   | 'OFFICE_GENERAL'; // Офис генеральная (12 zł/м²)
 
+export type DiscountTarget = 'ALL' | 'BASE_ONLY' | 'DRY_CLEAN_ONLY' | 'ADDONS_ONLY';
+export type SubscriptionType = 'NONE' | 'SUB_100_OFF' | 'SUB_2_MONTH' | 'SUB_4_MONTH';
+
 export interface AddOnRate {
   price: number;
   durationMins: number;
@@ -17,14 +20,18 @@ export interface CalculationInput {
   bathroomsCount: number;
   areaM2: number;
 
-  discountPercent?: number; // Скидка в процентах (например, 10 для 10%)
-  discountFixed?: number;   // Скидка в фиксированной сумме (например, 30 zł)
+  // Акции, таргетинг и абонементы
+  discountPercent?: number;            // Скидка в процентах (например, 10 для 10%)
+  discountFixed?: number;              // Скидка в фиксированной сумме (например, 30 zł)
+  discountTarget?: DiscountTarget;     // Куда применять: на всё, только базу, только химчистку, только допы
+  subscriptionType?: SubscriptionType; // Абонемент
+  isComboGeneralDryClean?: boolean;    // Комбо "Генералка + Химчистка" (-10% на всё)
 
   // Окна и балконы
- windowsCount?: number;          // 35 zł (обычные)
+  windowsCount?: number;          // 35 zł (обычные)
   balconyWindowsCount?: number;   // 45 zł (балконные)
   showcaseWindowsCount?: number;  // 50 zł (витрины в коммерции)
-  mosquitoNetsCount?: number;     // 15 zł    // 15 zł
+  mosquitoNetsCount?: number;     // 15 zł
   hasBalcony?: boolean;           // 35 zł
   hasGlassBalcony?: boolean;      // 55 zł
 
@@ -91,6 +98,10 @@ export interface CalculationInput {
 
 export interface CalculationResult {
   totalPrice: number;
+  basePrice: number;
+  addonsPrice: number;
+  dryCleanPrice: number;
+  discountAmount: number;
   baseDurationMinutes: number;
   actualDurationMinutes: number;
   formattedDuration: string;
@@ -102,6 +113,8 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   let price = 0;
   let durationMins = 0;
   let specialistTotal = 0;
+  let addonsTotal = 0;
+  let dryCleanTotal = 0;
 
   const rawRooms = Math.max(1, Number(input.roomsCount) || 1);
   const baths = Math.max(1, Number(input.bathroomsCount) || 1);
@@ -127,7 +140,6 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   // 2. ЖИЛЫЕ ПОМЕЩЕНИЯ (КВАРТИРЫ И ДОМА)
   // ==========================================
   else {
-    // Определение категории по метражу (до 34м² -> 1к, до 50м² -> 2к, до 80м² -> 3к, до 100м² -> 4к, до 125м² -> 5к)
     let areaTier = 1;
     if (area > 125) {
       areaTier = 5 + Math.ceil((area - 125) / 25);
@@ -143,7 +155,6 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
       areaTier = 1;
     }
 
-    // Берем категорию по максимуму: комнат или фактического метража
     const effectiveTier = Math.max(rawRooms, areaTier);
 
     if (input.serviceType === 'STANDARD') {
@@ -262,14 +273,16 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
     }
   }
 
+  const basePrice = price; // Фиксируем чистую базовую стоимость уборки
+
   // ==========================================
   // 3. ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ (С ПОДДЕРЖКОЙ ДИНАМИЧЕСКИХ ЦЕН)
   // ==========================================
- // Окна и витрины
   if (input.windowsCount) {
     const r = getRate('window', 35, 30);
     const sum = input.windowsCount * r.price;
     price += sum;
+    addonsTotal += sum;
     specialistTotal += sum;
     durationMins += input.windowsCount * r.durationMins;
   }
@@ -277,6 +290,7 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
     const r = getRate('balconyWindow', 45, 40);
     const sum = input.balconyWindowsCount * r.price;
     price += sum;
+    addonsTotal += sum;
     specialistTotal += sum;
     durationMins += input.balconyWindowsCount * r.durationMins;
   }
@@ -284,109 +298,135 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
     const r = getRate('showcaseWindow', 50, 40);
     const sum = input.showcaseWindowsCount * r.price;
     price += sum;
+    addonsTotal += sum;
     specialistTotal += sum;
     durationMins += input.showcaseWindowsCount * r.durationMins;
   }
   if (input.mosquitoNetsCount) {
     const r = getRate('mosquitoNet', 15, 10);
-    price += input.mosquitoNetsCount * r.price;
+    const sum = input.mosquitoNetsCount * r.price;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.mosquitoNetsCount * r.durationMins;
   }
   if (input.hasBalcony) {
     const r = getRate('balcony', 35, 30);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasGlassBalcony) {
     const r = getRate('glassBalcony', 55, 45);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
 
   if (input.hasOven) {
     const r = getRate('oven', 45, 30);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasHood) {
     const r = getRate('hood', 40, 30);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasMicrowave) {
     const r = getRate('microwave', 20, 15);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasFridge) {
     const r = getRate('fridge', 35, 30);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasFridgeFreeze) {
     const r = getRate('fridgeFreeze', 50, 45);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasKitchenClosets) {
     const r = getRate('kitchenClosets', 100, 60);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.closetsCount) {
     const r = getRate('closet', 50, 30);
-    price += input.closetsCount * r.price;
+    const sum = input.closetsCount * r.price;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.closetsCount * r.durationMins;
   }
   if (input.hasDishwasherClean) {
     const r = getRate('dishwasher', 20, 15);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasWashingMachineClean) {
     const r = getRate('washingMachine', 30, 20);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
 
   if (input.hasBlinds) {
     const r = getRate('blinds', 40, 30);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasVentilation) {
     const r = getRate('ventilation', 20, 15);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasMoldRemoval) {
     const r = getRate('mold', 40, 30);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasPetHair) {
     const r = getRate('petHair', 40, 30);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.hasCatLitter) {
     const r = getRate('catLitter', 20, 15);
     price += r.price;
+    addonsTotal += r.price;
     durationMins += r.durationMins;
   }
   if (input.furnitureMoveCount) {
-    price += input.furnitureMoveCount * 15;
+    const sum = input.furnitureMoveCount * 15;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.furnitureMoveCount * 10;
   }
   if (input.hasPipeClog) {
     price += 15;
+    addonsTotal += 15;
     durationMins += 15;
   }
   if (input.hasLadderRental) {
     price += 90;
+    addonsTotal += 90;
   }
   if (input.tileGroutAreaM2) {
-    price += input.tileGroutAreaM2 * 15;
+    const sum = input.tileGroutAreaM2 * 15;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.tileGroutAreaM2 * 15;
   }
 
@@ -394,141 +434,168 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   if (input.hasSteamer || input.steamerZonesCount) {
     const r = getRate('steamer', 75, 45);
     const zones = Math.max(1, input.steamerZonesCount || 1);
-    price += zones * r.price;
+    const sum = zones * r.price;
+    price += sum;
+    addonsTotal += sum;
     durationMins += zones * r.durationMins;
   }
 
   // Текстиль и почасовые
   if (input.curtainsPairsCount) {
-    price += input.curtainsPairsCount * 65;
+    const sum = input.curtainsPairsCount * 65;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.curtainsPairsCount * 45;
   }
   if (input.laundryHours) {
-    price += input.laundryHours * 50;
+    const sum = input.laundryHours * 50;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.laundryHours * 60;
   }
 
   const ironing = input.ironingHours || input.hasIroningHours || 0;
   if (ironing > 0) {
     const r = getRate('ironing', 50, 60);
-    price += ironing * r.price;
+    const sum = ironing * r.price;
+    price += sum;
+    addonsTotal += sum;
     durationMins += ironing * r.durationMins;
   }
 
   const dishes = input.dishesHours || input.hasDishesHours || 0;
   if (dishes > 0) {
     const r = getRate('dishes', 40, 60);
-    price += dishes * r.price;
+    const sum = dishes * r.price;
+    price += sum;
+    addonsTotal += sum;
     durationMins += dishes * r.durationMins;
   }
 
   if (input.organizingHours) {
-    price += input.organizingHours * 50;
+    const sum = input.organizingHours * 50;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.organizingHours * 60;
   }
   if (input.gardenHours) {
-    price += input.gardenHours * 50;
+    const sum = input.gardenHours * 50;
+    price += sum;
+    addonsTotal += sum;
     durationMins += input.gardenHours * 60;
   }
 
   if (input.hasVacuum) {
     const r = getRate('vacuum', 30, 0);
     price += r.price;
+    addonsTotal += r.price;
   }
 
   // ==========================================
-  // 4. ХИМЧИСТКА
-  // ==========================================
-// ==========================================
-  // 4. ХИМЧИСТКА
+  // 4. ХИМЧИСТКА (ПОЛНЫЙ РАЗВЕРНУТЫЙ СПИСОК)
   // ==========================================
   if (input.drySofa2) {
     const sum = input.drySofa2 * 180;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.drySofa2 * 60;
   }
   if (input.drySofa3) {
     const sum = input.drySofa3 * 200;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.drySofa3 * 75;
   }
   if (input.drySofaCorner4) {
     const sum = input.drySofaCorner4 * 220;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.drySofaCorner4 * 90;
   }
   if (input.drySofaCorner5) {
     const sum = input.drySofaCorner5 * 240;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.drySofaCorner5 * 105;
   }
   if (input.drySofaBig) {
     const sum = input.drySofaBig * 260;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.drySofaBig * 120;
   }
   if (input.dryArmchair) {
     const sum = input.dryArmchair * 60;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryArmchair * 30;
   }
   if (input.dryChair) {
     const sum = input.dryChair * 15;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryChair * 15;
   }
   if (input.dryPouf) {
     const sum = input.dryPouf * 30;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryPouf * 20;
   }
   if (input.dryPillowsSmall) {
     const sum = input.dryPillowsSmall * 15;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryPillowsSmall * 10;
   }
   if (input.dryPillowsBig) {
     const sum = input.dryPillowsBig * 25;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryPillowsBig * 15;
   }
   if (input.dryHeadboard) {
     const sum = input.dryHeadboard * 70;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryHeadboard * 45;
   }
   if (input.dryMattressSingle) {
     const sum = input.dryMattressSingle * 90;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryMattressSingle * 45;
   }
   if (input.dryMattressDouble) {
     const sum = input.dryMattressDouble * 140;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryMattressDouble * 60;
   }
   if (input.dryMattressSide) {
     const sum = input.dryMattressSide * 90;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryMattressSide * 45;
   }
   if (input.dryCarpetM2) {
     const sum = input.dryCarpetM2 * 15;
     price += sum;
+    dryCleanTotal += sum;
     specialistTotal += sum;
     durationMins += input.dryCarpetM2 * 15;
   }
@@ -551,22 +618,55 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   const endM = totalEndMinutes % 60;
   const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
 
-  // Применение акций и скидок
-  let finalPrice = price;
-  if (input.discountPercent && input.discountPercent > 0) {
-    finalPrice = finalPrice * (1 - input.discountPercent / 100);
+  // ==========================================
+  // 6. РАСЧЁТ СКИДОК, АКЦИЙ И АБОНЕМЕНТОВ
+  // ==========================================
+  let discountAmount = 0;
+
+  const hasGeneralCleaning = input.serviceType === 'GENERAL' || input.serviceType === 'AFTER_REPAIR';
+  const hasDryCleaning = dryCleanTotal > 0;
+
+  // 1. Авто-комбо: Генералка/После ремонта + Химчистка = 10% на всю сумму
+  if (input.isComboGeneralDryClean || (hasGeneralCleaning && hasDryCleaning)) {
+    discountAmount += price * 0.10;
+  } else {
+    // 2. Абонементы
+    if (input.subscriptionType === 'SUB_100_OFF') {
+      discountAmount += 100;
+    } else if (input.subscriptionType === 'SUB_4_MONTH') {
+      discountAmount += basePrice * 0.15;
+    } else if (input.subscriptionType === 'SUB_2_MONTH') {
+      discountAmount += basePrice * 0.10;
+    }
+
+    // 3. Ручные скидки с таргетом (на что распространяется)
+    const target = input.discountTarget || 'ALL';
+    let targetSum = price;
+    if (target === 'BASE_ONLY') targetSum = basePrice;
+    if (target === 'DRY_CLEAN_ONLY') targetSum = dryCleanTotal;
+    if (target === 'ADDONS_ONLY') targetSum = addonsTotal;
+
+    if (input.discountPercent && input.discountPercent > 0) {
+      discountAmount += targetSum * (input.discountPercent / 100);
+    }
+    if (input.discountFixed && input.discountFixed > 0) {
+      discountAmount += Math.min(targetSum, input.discountFixed);
+    }
   }
-  if (input.discountFixed && input.discountFixed > 0) {
-    finalPrice = Math.max(0, finalPrice - input.discountFixed);
-  }
-  finalPrice = Math.round(finalPrice);
+
+  discountAmount = Math.round(discountAmount);
+  const finalPrice = Math.max(0, price - discountAmount);
 
   return {
-  totalPrice: finalPrice,
-  specialistRevenue: specialistTotal,
-  baseDurationMinutes: durationMins,
-  actualDurationMinutes,
-  formattedDuration,
-  endTime,
-};
+    totalPrice: finalPrice,
+    basePrice,
+    addonsPrice: addonsTotal,
+    dryCleanPrice: dryCleanTotal,
+    discountAmount,
+    specialistRevenue: specialistTotal,
+    baseDurationMinutes: durationMins,
+    actualDurationMinutes,
+    formattedDuration,
+    endTime,
+  };
 }
