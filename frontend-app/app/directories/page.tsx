@@ -1,11 +1,16 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
 export default function DirectoriesPage() {
   const [activeTab, setActiveTab] = useState<'cleaners' | 'clients'>('cleaners');
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Состояние для модалки повторения заказа
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [repeatOrderData, setRepeatOrderData] = useState<OrderDetail | null>(null);
 
   const loadData = async () => {
     try {
@@ -45,6 +50,70 @@ export default function DirectoriesPage() {
     }
   };
 
+  // Функция для повторения заказа на основе данных клиента
+  const handleRepeatOrder = (client: any) => {
+    const template: OrderDetail = {
+      date: new Date().toISOString().split('T')[0],
+      startTime: '10:00',
+      endTime: '13:00',
+      serviceType: 'STANDARD',
+      areaM2: 50,
+      roomsCount: 2,
+      bathroomsCount: 1,
+      windowsCount: 0,
+      showcaseWindowsCount: 0,
+      balconyWindowsCount: 0,
+      hasOven: false,
+      hasFridge: false,
+      hasFridgeFreeze: false,
+      hasMicrowave: false,
+      hasBalcony: false,
+      hasKitchenClosets: false,
+      hasStairs: false,
+      hasSteamer: false,
+      hasDishesHours: 0,
+      hasIroningHours: 0,
+      hasVacuum: false,
+      hasPets: false,
+      hasKeys: false,
+      drySofa2: 0,
+      drySofa3: 0,
+      drySofaCorner4: 0,
+      dryArmchair: 0,
+      dryMattressSide: 0,
+      clientName: client.name || '',
+      clientPhone: client.phone || '',
+      addressLine1: client.address || '',
+      addressLine2: '',
+      price: 200,
+      cleanersCount: 1,
+      assignedCleaners: [],
+      notes: client.notes ? `Повтор заказа. Заметки: ${client.notes}` : 'Повторный заказ',
+      paymentMethod: 'CASH',
+      cashCollectedById: null,
+    };
+    setRepeatOrderData(template);
+    setIsModalOpen(true);
+  };
+
+  const handleSaveOrder = async (savedOrder: OrderDetail) => {
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(savedOrder),
+      });
+      if (res.ok) {
+        setIsModalOpen(false);
+        alert('✅ Повторный заказ успешно создан и отправлен в работу!');
+        loadData();
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка при создании заказа');
+    }
+  };
+
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
@@ -52,7 +121,6 @@ export default function DirectoriesPage() {
           <h1 className="text-xl font-bold text-slate-900">Справочники системы</h1>
           <p className="text-xs text-slate-500">Управление персоналом и клиентской базой</p>
         </div>
-
         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
           <button
             onClick={() => setActiveTab('cleaners')}
@@ -105,10 +173,7 @@ export default function DirectoriesPage() {
                   <td className="p-3.5">
                     <div className="flex flex-wrap gap-1">
                       {c.tags?.map((t: string) => (
-                        <span
-                          key={t}
-                          className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-medium"
-                        >
+                        <span key={t} className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-medium">
                           {t}
                         </span>
                       ))}
@@ -117,14 +182,20 @@ export default function DirectoriesPage() {
                   <td className="p-3.5 font-mono text-slate-700 font-semibold">09:00 — 19:00</td>
                   <td className="p-3.5">
                     {c.telegramChatId ? (
-                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-bold">✅ Подключен</span>
+                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-bold">
+                        ✅ Подключен
+                      </span>
                     ) : (
-                      <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full text-[10px] font-semibold">⏳ Ожидает PIN</span>
+                      <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full text-[10px] font-semibold">
+                        ⏳ Ожидает PIN
+                      </span>
                     )}
                   </td>
                   <td className="p-3.5">
                     {c.authCode ? (
-                      <span className="bg-amber-100 text-amber-900 px-2.5 py-1 rounded font-mono font-bold text-xs">PIN: {c.authCode}</span>
+                      <span className="bg-amber-100 text-amber-900 px-2.5 py-1 rounded font-mono font-bold text-xs">
+                        PIN: {c.authCode}
+                      </span>
                     ) : (
                       <button
                         onClick={() => generatePin(c.id)}
@@ -149,12 +220,13 @@ export default function DirectoriesPage() {
                 <th className="p-3.5">Особенности / ТЗ</th>
                 <th className="p-3.5 text-center">Всего заказов</th>
                 <th className="p-3.5 text-right">LTV (Принес денег)</th>
+                <th className="p-3.5 text-center">Действие</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {clients.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-400">
+                  <td colSpan={6} className="p-8 text-center text-slate-400">
                     База клиентов пока пуста. Они появятся здесь автоматически при сохранении новых заказов.
                   </td>
                 </tr>
@@ -183,12 +255,30 @@ export default function DirectoriesPage() {
                     <td className="p-3.5 text-right font-bold text-emerald-600">
                       {cl.ltv?.toFixed(0)} zł
                     </td>
+                    <td className="p-3.5 text-center">
+                      <button
+                        onClick={() => handleRepeatOrder(cl)}
+                        className="bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold px-3 py-1.5 rounded-xl transition text-[11px] shadow-2xs"
+                      >
+                        🔁 Повторить заказ
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Модалка для создания повторного заказа */}
+      {isModalOpen && (
+        <OrderModal
+          order={repeatOrderData}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleSaveOrder}
+        />
       )}
     </div>
   );
