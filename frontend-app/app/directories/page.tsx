@@ -50,50 +50,58 @@ export default function DirectoriesPage() {
     }
   };
 
-  // Функция для повторения заказа на основе данных клиента
-  const handleRepeatOrder = (client: any) => {
-    const template: OrderDetail = {
-      date: new Date().toISOString().split('T')[0],
-      startTime: '10:00',
-      endTime: '13:00',
-      serviceType: 'STANDARD',
-      areaM2: 50,
-      roomsCount: 2,
-      bathroomsCount: 1,
-      windowsCount: 0,
-      showcaseWindowsCount: 0,
-      balconyWindowsCount: 0,
-      hasOven: false,
-      hasFridge: false,
-      hasFridgeFreeze: false,
-      hasMicrowave: false,
-      hasBalcony: false,
-      hasKitchenClosets: false,
-      hasStairs: false,
-      hasSteamer: false,
-      hasDishesHours: 0,
-      hasIroningHours: 0,
-      hasVacuum: false,
-      hasPets: false,
-      hasKeys: false,
-      drySofa2: 0,
-      drySofa3: 0,
-      drySofaCorner4: 0,
-      dryArmchair: 0,
-      dryMattressSide: 0,
-      clientName: client.name || '',
-      clientPhone: client.phone || '',
-      addressLine1: client.address || '',
-      addressLine2: '',
-      price: 200,
-      cleanersCount: 1,
-      assignedCleaners: [],
-      notes: client.notes ? `Повтор заказа. Заметки: ${client.notes}` : 'Повторный заказ',
-      paymentMethod: 'CASH',
-      cashCollectedById: null,
-    };
-    setRepeatOrderData(template);
-    setIsModalOpen(true);
+  // Функция вызова повтора заказа
+  const handleRepeatOrder = async (client: any) => {
+    try {
+      const res = await fetch(`/api/clients/last-order?clientId=${client.id}&phone=${encodeURIComponent(client.phone || '')}`);
+      
+      if (res.ok) {
+        const lastOrder = await res.json();
+        
+        // Создаем чистый дубликат заказа на сегодняшнюю дату
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const duplicatedOrder: any = {
+          ...lastOrder,
+          id: undefined, // Сбрасываем ID, чтобы создался НОВЫЙ заказ
+          orderNumber: undefined,
+          date: todayStr,
+          status: 'NEW',
+          urgency: 'NORMAL',
+          clientName: client.name || lastOrder.clientName,
+          clientPhone: client.phone || lastOrder.clientPhone,
+          addressLine1: client.address || lastOrder.addressLine1,
+          assignedCleaners: (lastOrder.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+        };
+
+        setRepeatOrderData(duplicatedOrder);
+        setIsModalOpen(true);
+      } else {
+        // Если прошлых заказов нет — создаем базовый шаблон с данными клиента
+        const todayStr = new Date().toISOString().slice(0, 10);
+        setRepeatOrderData({
+          date: todayStr,
+          startTime: '10:00',
+          endTime: '13:30',
+          timeSlot: '10:00 — 13:30',
+          serviceType: 'STANDARD',
+          areaM2: 45,
+          roomsCount: 1,
+          bathroomsCount: 1,
+          price: 170,
+          cleanersCount: 1,
+          clientName: client.name,
+          clientPhone: client.phone,
+          addressLine1: client.address || '',
+          clientId: client.id,
+          assignedCleaners: [],
+          status: 'NEW',
+        });
+        setIsModalOpen(true);
+      }
+    } catch (e) {
+      console.error('Ошибка при повторе заказа:', e);
+      alert('Не удалось загрузить данные предыдущего заказа');
+    }
   };
 
   const handleSaveOrder = async (savedOrder: OrderDetail) => {
@@ -105,6 +113,7 @@ export default function DirectoriesPage() {
       });
       if (res.ok) {
         setIsModalOpen(false);
+        setRepeatOrderData(null);
         alert('✅ Повторный заказ успешно создан и отправлен в работу!');
         loadData();
       }
@@ -115,7 +124,7 @@ export default function DirectoriesPage() {
   };
 
   return (
-    <div className="space-y-4 max-w-7xl mx-auto">
+    <div className="space-y-4 max-w-7xl mx-auto pb-12 px-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Справочники системы</h1>
@@ -126,7 +135,7 @@ export default function DirectoriesPage() {
             onClick={() => setActiveTab('cleaners')}
             className={`px-4 py-1.5 text-xs font-bold rounded-lg transition ${
               activeTab === 'cleaners'
-                ? 'bg-white text-brand-600 shadow-sm'
+                ? 'bg-white text-blue-600 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -136,7 +145,7 @@ export default function DirectoriesPage() {
             onClick={() => setActiveTab('clients')}
             className={`px-4 py-1.5 text-xs font-bold rounded-lg transition ${
               activeTab === 'clients'
-                ? 'bg-white text-brand-600 shadow-sm'
+                ? 'bg-white text-blue-600 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -148,7 +157,7 @@ export default function DirectoriesPage() {
       {loading ? (
         <div className="text-center py-12 text-slate-400 text-xs font-semibold">Загрузка данных...</div>
       ) : activeTab === 'cleaners' ? (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
               <tr>
@@ -167,7 +176,7 @@ export default function DirectoriesPage() {
                   <td className="p-3.5 font-bold text-slate-900">{c.name}</td>
                   <td className="p-3.5">
                     <div>{c.phone}</div>
-                    <div className="text-brand-600 font-semibold">{c.telegramHandle || '—'}</div>
+                    <div className="text-blue-600 font-semibold">{c.telegramHandle || '—'}</div>
                   </td>
                   <td className="p-3.5 font-medium text-slate-600">📍 {c.district}</td>
                   <td className="p-3.5">
@@ -179,7 +188,7 @@ export default function DirectoriesPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="p-3.5 font-mono text-slate-700 font-semibold">09:00 — 19:00</td>
+                  <td className="p-3.5 font-mono text-slate-700 font-semibold">08:00 — 20:00</td>
                   <td className="p-3.5">
                     {c.telegramChatId ? (
                       <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-bold">
@@ -211,7 +220,7 @@ export default function DirectoriesPage() {
           </table>
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
               <tr>
@@ -258,7 +267,7 @@ export default function DirectoriesPage() {
                     <td className="p-3.5 text-center">
                       <button
                         onClick={() => handleRepeatOrder(cl)}
-                        className="bg-brand-50 hover:bg-brand-100 text-brand-700 font-bold px-3 py-1.5 rounded-xl transition text-[11px] shadow-2xs"
+                        className="bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-xl transition text-[11px] shadow-2xs"
                       >
                         🔁 Повторить заказ
                       </button>
@@ -276,7 +285,10 @@ export default function DirectoriesPage() {
         <OrderModal
           order={repeatOrderData}
           isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          onClose={() => {
+            setIsModalOpen(false);
+            setRepeatOrderData(null);
+          }}
           onSave={handleSaveOrder}
         />
       )}
