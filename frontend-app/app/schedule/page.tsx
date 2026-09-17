@@ -67,9 +67,9 @@ export default function SchedulePage() {
   };
 
   // Перезагружаем клинеров, заказы и смены при смене даты
-  useEffect(() => {
-    loadData(false);
-  }, [selectedDate]);
+useEffect(() => {
+  loadData(false); // Полная перезагрузка клинеров и смен при переходе на любую дату
+}, [selectedDate]);
 
   const currentDayOfWeek = (() => {
     const d = new Date(selectedDate).getDay();
