@@ -46,23 +46,58 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { id, action } = body;
+    const { 
+      id, 
+      action, 
+      name, 
+      phone, 
+      telegramHandle, 
+      district, 
+      defaultStartTime, 
+      defaultEndTime, 
+      startTime, 
+      endTime, 
+      workDays, 
+      status, 
+      tags, 
+      incompatibleWith 
+    } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'ID обязателен' }, { status: 400 });
     }
 
-    // Перегенерация PIN-кода
+    const cleanerId = parseInt(String(id), 10);
+
+    // 1. Перегенерация PIN-кода
     if (action === 'generate_pin') {
       const pin = Math.floor(100000 + Math.random() * 900000).toString();
       const updated = await prisma.cleaner.update({
-        where: { id: parseInt(id, 10) },
+        where: { id: cleanerId },
         data: { authCode: pin },
       });
       return NextResponse.json(updated);
     }
 
-    return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 });
+    // 2. Обновление графика и профиля клинера
+    const updated = await prisma.cleaner.update({
+      where: { id: cleanerId },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(phone !== undefined && { phone }),
+        ...(telegramHandle !== undefined && { telegramHandle }),
+        ...(district !== undefined && { district }),
+        ...(status !== undefined && { status }),
+        ...(tags !== undefined && { tags }),
+        ...(incompatibleWith !== undefined && { incompatibleWith }),
+        ...(workDays !== undefined && { workDays }),
+        // Синхронизируем график работы клинера
+        defaultStartTime: defaultStartTime || startTime || undefined,
+        defaultEndTime: defaultEndTime || endTime || undefined,
+      },
+    });
+
+    return NextResponse.json(updated);
   } catch (error) {
     console.error('Ошибка обновления клинера:', error);
     return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
