@@ -58,7 +58,6 @@ export interface OrderDetail {
   assignedCleaners: { id: number; name: string; phone?: string; tags?: string[]; district?: string }[];
   notes?: string;
 
-  // Акции, Абонементы и Таргет
   discountPercent?: number;
   discountFixed?: number;
   discountTarget?: DiscountTarget;
@@ -148,8 +147,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       const savedDraft = localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
         try {
-          const parsed = JSON.parse(savedDraft);
-          return parsed;
+          return JSON.parse(savedDraft);
         } catch (e) {
           console.error('Ошибка парсинга черновика:', e);
         }
@@ -160,7 +158,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
   const [form, setForm] = useState<OrderDetail>(getInitialForm);
 
-  // Синхронизируем состояние при открытии модалки
   useEffect(() => {
     if (order) {
       setForm(order);
@@ -182,7 +179,6 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     }
   }, [order, isOpen]);
 
-  // Автосохранение черновика (только если заказ новый, без id)
   useEffect(() => {
     if (!form.id && typeof window !== 'undefined') {
       localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
