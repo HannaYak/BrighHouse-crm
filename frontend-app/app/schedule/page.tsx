@@ -21,13 +21,13 @@ export default function SchedulePage() {
   const getCleanerHours = (cleaner: any) => {
     const shift = shiftsMap[cleaner.id];
 
-    // Если на эту дату задан отгул
+    // Если на эту дату задан отгул / выходной
     if (shift && shift.isWorking === false) {
       return { start: 0, end: 0, isDayOff: true };
     }
 
-    const startStr = shift?.startTime || cleaner.defaultStartTime || '08:00';
-    const endStr = shift?.endTime || cleaner.defaultEndTime || '20:00';
+    const startStr = shift?.startTime || cleaner.defaultStartTime || cleaner.startTime || '08:00';
+    const endStr = shift?.endTime || cleaner.defaultEndTime || cleaner.endTime || '20:00';
 
     const [startH] = startStr.split(':').map(Number);
     const [endH] = endStr.split(':').map(Number);
@@ -66,9 +66,9 @@ export default function SchedulePage() {
     }
   };
 
-  // Перезагружаем смены при смене даты
+  // Перезагружаем клинеров, заказы и смены при смене даты
   useEffect(() => {
-    loadData(true);
+    loadData(false);
   }, [selectedDate]);
 
   const currentDayOfWeek = (() => {
@@ -118,9 +118,13 @@ export default function SchedulePage() {
   };
 
   const handleCellClick = (hour: number, cleaner: any) => {
-    const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
+    const { start: shiftStart, end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
     if (isDayOff) {
       alert(`Клинер ${cleaner.name} сегодня на выходном/отгуле.`);
+      return;
+    }
+    if (hour < shiftStart) {
+      alert(`Смена клинера ${cleaner.name} начинается только в ${shiftStart}:00.`);
       return;
     }
     if (hour >= shiftEnd) {
@@ -208,14 +212,21 @@ export default function SchedulePage() {
     const { order, fromCleanerId } = draggedOrderInfo;
 
     const targetCleaner = allCleaners.find((c) => c.id === targetCleanerId);
-    const { end: shiftEnd, isDayOff } = getCleanerHours(targetCleaner);
+    const { start: shiftStart, end: shiftEnd, isDayOff } = getCleanerHours(targetCleaner);
+
     if (isDayOff) {
       alert(`Невозможно перенести: ${targetCleaner.name} сегодня на выходном`);
       setDraggedOrderInfo(null);
       return;
     }
-    if (targetHour >= shiftEnd) {
-      alert(`Невозможно перенести заказ: смена заканчивается в ${shiftEnd}:00`);
+
+    const parts = (order.timeSlot || order.startTime || '10:00 — 13:00').split('—').map((s: string) => s.trim());
+    const [origStartH] = (parts[0] || '10:00').split(':').map(Number);
+    const [origEndH] = (parts[1] || '13:00').split(':').map(Number);
+    const duration = Math.max(1, (origEndH || origStartH + 3) - origStartH);
+
+    if (targetHour < shiftStart || (targetHour + duration) > shiftEnd) {
+      alert(`Невозможно перенести заказ: рабочий график сотрудника ${targetCleaner.name} с ${shiftStart}:00 до ${shiftEnd}:00`);
       setDraggedOrderInfo(null);
       return;
     }
@@ -231,11 +242,6 @@ export default function SchedulePage() {
     } else {
       updatedCleanerIds = [targetCleanerId];
     }
-
-    const parts = (order.timeSlot || order.startTime || '10:00 — 13:00').split('—').map((s: string) => s.trim());
-    const [origStartH] = (parts[0] || '10:00').split(':').map(Number);
-    const [origEndH] = (parts[1] || '13:00').split(':').map(Number);
-    const duration = Math.max(1, (origEndH || origStartH + 3) - origStartH);
 
     const newStartStr = `${targetHour < 10 ? '0' + targetHour : targetHour}:00`;
     const newEndH = Math.min(shiftEnd, targetHour + duration);
@@ -363,12 +369,12 @@ export default function SchedulePage() {
               Время
             </div>
             {visibleCleaners.map((cleaner) => {
-              const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
+              const { start: shiftStart, end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
               return (
                 <div key={cleaner.id} className="p-3 text-center border-r border-slate-200 last:border-r-0">
                   <div className="font-bold text-xs text-slate-900 truncate">{cleaner.name}</div>
                   <span className="text-[10px] text-slate-400 block truncate">
-                    📍 {cleaner.district || 'Центр'} • {isDayOff ? 'Выходной' : `до ${shiftEnd}:00`}
+                    📍 {cleaner.district || 'Центр'} • {isDayOff ? 'Выходной' : `${shiftStart}:00 — ${shiftEnd}:00`}
                   </span>
                 </div>
               );
@@ -378,7 +384,7 @@ export default function SchedulePage() {
             )}
           </div>
 
-          {/* Строки часов и слоты */}
+          {/* Строки часов и интерактивные слоты */}
           <div className="relative">
             <div className="divide-y divide-slate-100">
               {HOURS.map((hour) => {
@@ -389,80 +395,52 @@ export default function SchedulePage() {
                       {hourStr}
                     </div>
                     {visibleCleaners.map((cleaner) => {
-                      const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
-                      const isOffDuty = isDayOff || hour >= shiftEnd;
+                      const { start: shiftStart, end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
+                      const isOffDuty = isDayOff || hour < shiftStart || hour >= shiftEnd;
 
+                      // Если нерабочий час — защищенная заштрихованная ячейка
+                      if (isOffDuty) {
+                        return (
+                          <div
+                            key={cleaner.id}
+                            className="border-r border-slate-100 last:border-r-0 bg-slate-100/75 select-none pointer-events-none relative flex items-center justify-center overflow-hidden"
+                            style={{
+                              backgroundImage:
+                                'repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px, #f1f5f9 8px, #f1f5f9 16px)',
+                            }}
+                          >
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider opacity-60">
+                              {isDayOff ? 'Выходной' : hour < shiftStart ? 'До смены' : 'Конец смены'}
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      // Обычный рабочий слот
                       return (
                         <div
                           key={cleaner.id}
-                          onClick={() => !isOffDuty && handleCellClick(hour, cleaner)}
+                          onClick={() => handleCellClick(hour, cleaner)}
                           onDragOver={(e) => {
-                            if (!isOffDuty) {
-                              e.preventDefault();
-                              e.currentTarget.classList.add('bg-blue-50/60');
-                            }
+                            e.preventDefault();
+                            e.currentTarget.classList.add('bg-blue-50/60');
                           }}
                           onDragLeave={(e) => {
                             e.currentTarget.classList.remove('bg-blue-50/60');
                           }}
                           onDrop={(e) => {
-                            if (!isOffDuty) {
-                              e.preventDefault();
-                              e.currentTarget.classList.remove('bg-blue-50/60');
-                              handleDropOnCell(cleaner.id, hour);
-                            }
+                            e.preventDefault();
+                            e.currentTarget.classList.remove('bg-blue-50/60');
+                            handleDropOnCell(cleaner.id, hour);
                           }}
-                          className={`border-r border-slate-100 last:border-r-0 transition relative ${
-                            isOffDuty
-                              ? 'bg-slate-100/80 cursor-not-allowed'
-                              : 'bg-white hover:bg-slate-50/50 cursor-pointer'
-                          }`}
-                        />
+                          className="border-r border-slate-100 last:border-r-0 bg-white hover:bg-slate-50/60 cursor-pointer transition relative group"
+                        >
+                          <span className="hidden group-hover:flex absolute inset-0 items-center justify-center text-[10px] text-blue-600 font-bold">
+                            + Заказ
+                          </span>
+                        </div>
                       );
                     })}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Слой затемнения нерабочих часов */}
-            <div className="absolute inset-0 grid pointer-events-none z-10" style={gridStyle}>
-              <div></div>
-              {visibleCleaners.map((cleaner) => {
-                const { end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
-                if (isDayOff) {
-                  return (
-                    <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0">
-                      <div className="absolute inset-0 bg-slate-200/80 backdrop-blur-[1px] flex items-center justify-center select-none">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 bg-white/90 px-2 py-1 rounded shadow-xs">
-                          Выходной / Отгул
-                        </span>
-                      </div>
-                    </div>
-                  );
-                }
-
-                const offDutyStartMinutes = Math.max(0, (shiftEnd - START_HOUR) * 60);
-                const totalMinutesInGrid = (END_HOUR - START_HOUR + 1) * 60;
-                const offDutyDurationMinutes = Math.max(0, totalMinutesInGrid - offDutyStartMinutes);
-
-                const topPx = (offDutyStartMinutes / 60) * ROW_HEIGHT;
-                const heightPx = (offDutyDurationMinutes / 60) * ROW_HEIGHT;
-
-                if (offDutyDurationMinutes <= 0) {
-                  return <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0" />;
-                }
-
-                return (
-                  <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0">
-                    <div
-                      style={{ top: `${topPx}px`, height: `${heightPx}px` }}
-                      className="absolute inset-x-0 bg-slate-200/60 backdrop-blur-[1px] border-t-2 border-dashed border-slate-300 flex items-start justify-center pt-3 select-none"
-                    >
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 bg-white/80 px-2 py-0.5 rounded shadow-xs">
-                        Конец смены ({shiftEnd}:00)
-                      </span>
-                    </div>
                   </div>
                 );
               })}
