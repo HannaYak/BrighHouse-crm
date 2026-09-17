@@ -25,15 +25,38 @@ export interface OrderDetail {
   balconyWindowsCount?: number;
 
   hasOven: boolean;
+  hasHood?: boolean;
   hasFridge: boolean;
   hasFridgeFreeze: boolean;
   hasMicrowave: boolean;
   hasBalcony: boolean;
+  hasGlassBalcony?: boolean;
   hasKitchenClosets: boolean;
+  closetsCount?: number;
+  hasDishwasherClean?: boolean;
+  hasWashingMachineClean?: boolean;
   hasStairs: boolean;
   hasSteamer: boolean;
+  steamerZonesCount?: number;
+  hasBlinds?: boolean;
+  hasVentilation?: boolean;
+  hasMoldRemoval?: boolean;
+  hasPetHair?: boolean;
+  hasCatLitter?: boolean;
+  furnitureMoveCount?: number;
+  hasPipeClog?: boolean;
+  hasLadderRental?: boolean;
+  tileGroutAreaM2?: number;
+
+  curtainsPairsCount?: number;
+  laundryHours?: number;
+  ironingHours?: number;
+  dishesHours?: number;
   hasDishesHours: number;
   hasIroningHours: number;
+  organizingHours?: number;
+  gardenHours?: number;
+
   hasVacuum: boolean;
   hasPets: boolean;
   hasKeys: boolean;
@@ -41,12 +64,18 @@ export interface OrderDetail {
   drySofa2: number;
   drySofa3: number;
   drySofaCorner4: number;
+  drySofaCorner5?: number;
+  drySofaBig?: number;
   drySofaU?: number;
   dryArmchair: number;
   dryChair?: number;
-  dryMattressSide?: number;
+  dryPouf?: number;
+  dryPillowsSmall?: number;
+  dryPillowsBig?: number;
+  dryHeadboard?: number;
   dryMattressSingle?: number;
   dryMattressDouble?: number;
+  dryMattressSide?: number;
   dryCarpetM2?: number;
 
   clientName: string;
@@ -136,33 +165,20 @@ const getDefaultForm = (): OrderDetail => ({
 });
 
 export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
-  if (!isOpen) return null;
-
   const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
-
-  const getInitialForm = (): OrderDetail => {
-    if (order) return order;
-    if (typeof window !== 'undefined') {
-      const savedDraft = localStorage.getItem(DRAFT_KEY);
-      if (savedDraft) {
-        try {
-          return JSON.parse(savedDraft);
-        } catch (e) {
-          console.error('Ошибка парсинга черновика:', e);
-        }
-      }
-    }
-    return getDefaultForm();
-  };
-
-  const [form, setForm] = useState<OrderDetail>(getInitialForm);
+  const [form, setForm] = useState<OrderDetail>(getDefaultForm);
+  const [allCleaners, setAllCleaners] = useState<any[]>([]);
+  const [durationText, setDurationText] = useState('3 ч');
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
+  const [availabilityMap, setAvailabilityMap] = useState<Record<number, any>>({});
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
 
   useEffect(() => {
     if (order) {
       setForm(order);
       setHasRestoredDraft(false);
-    } else if (typeof window !== 'undefined') {
+    } else if (isOpen && typeof window !== 'undefined') {
       const savedDraft = localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
         try {
@@ -180,10 +196,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   }, [order, isOpen]);
 
   useEffect(() => {
-    if (!form.id && typeof window !== 'undefined') {
+    if (isOpen && !form.id && typeof window !== 'undefined') {
       localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
     }
-  }, [form]);
+  }, [form, isOpen]);
 
   const clearDraft = () => {
     if (typeof window !== 'undefined') {
@@ -193,16 +209,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     setHasRestoredDraft(false);
   };
 
-  const [allCleaners, setAllCleaners] = useState<any[]>([]);
-  const [durationText, setDurationText] = useState('3 ч');
-  const [warningMessage, setWarningMessage] = useState<string | null>(null);
-
-  const [availabilityMap, setAvailabilityMap] = useState<Record<number, any>>({});
-  const [loadingAvailability, setLoadingAvailability] = useState(false);
-
-  const isOffice = form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL';
-
   useEffect(() => {
+    if (!isOpen) return;
     fetch('/api/settings/addons')
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
@@ -215,17 +223,15 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
         }
       })
       .catch(console.error);
-  }, []);
 
-  useEffect(() => {
     fetch('/api/cleaners')
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setAllCleaners(data))
       .catch((err) => console.error('Ошибка загрузки клинеров:', err));
-  }, []);
+  }, [isOpen]);
 
   useEffect(() => {
-    if (!form.date) return;
+    if (!isOpen || !form.date) return;
     const checkAvailability = async () => {
       try {
         setLoadingAvailability(true);
@@ -247,11 +253,11 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
         setLoadingAvailability(false);
       }
     };
-
     checkAvailability();
-  }, [form.date, form.startTime]);
+  }, [form.date, form.startTime, isOpen]);
 
   useEffect(() => {
+    if (!isOpen) return;
     const res = calculateBrightHouseOrder({
       serviceType: form.serviceType,
       roomsCount: form.roomsCount,
@@ -261,22 +267,53 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       showcaseWindowsCount: form.showcaseWindowsCount || 0,
       balconyWindowsCount: form.balconyWindowsCount || 0,
       hasOven: form.hasOven,
+      hasHood: form.hasHood,
       hasFridge: form.hasFridge,
       hasFridgeFreeze: form.hasFridgeFreeze,
       hasMicrowave: form.hasMicrowave,
       hasBalcony: form.hasBalcony,
+      hasGlassBalcony: form.hasGlassBalcony,
       hasKitchenClosets: form.hasKitchenClosets,
+      closetsCount: form.closetsCount,
+      hasDishwasherClean: form.hasDishwasherClean,
+      hasWashingMachineClean: form.hasWashingMachineClean,
       hasStairs: form.hasStairs,
       hasSteamer: form.hasSteamer,
-      hasDishesHours: form.hasDishesHours,
-      hasIroningHours: form.hasIroningHours,
+      steamerZonesCount: form.steamerZonesCount,
+      hasBlinds: form.hasBlinds,
+      hasVentilation: form.hasVentilation,
+      hasMoldRemoval: form.hasMoldRemoval,
+      hasPetHair: form.hasPetHair,
+      hasCatLitter: form.hasCatLitter,
+      furnitureMoveCount: form.furnitureMoveCount,
+      hasPipeClog: form.hasPipeClog,
+      hasLadderRental: form.hasLadderRental,
+      tileGroutAreaM2: form.tileGroutAreaM2,
+      curtainsPairsCount: form.curtainsPairsCount,
+      laundryHours: form.laundryHours,
+      ironingHours: form.ironingHours || form.hasIroningHours,
+      dishesHours: form.dishesHours || form.hasDishesHours,
+      organizingHours: form.organizingHours,
+      gardenHours: form.gardenHours,
       hasVacuum: form.hasVacuum,
       hasPets: form.hasPets,
+      hasKeys: form.hasKeys,
       drySofa2: form.drySofa2,
       drySofa3: form.drySofa3,
       drySofaCorner4: form.drySofaCorner4,
+      drySofaCorner5: form.drySofaCorner5,
+      drySofaBig: form.drySofaBig,
+      drySofaU: form.drySofaU,
       dryArmchair: form.dryArmchair,
+      dryChair: form.dryChair,
+      dryPouf: form.dryPouf,
+      dryPillowsSmall: form.dryPillowsSmall,
+      dryPillowsBig: form.dryPillowsBig,
+      dryHeadboard: form.dryHeadboard,
+      dryMattressSingle: form.dryMattressSingle,
+      dryMattressDouble: form.dryMattressDouble,
       dryMattressSide: form.dryMattressSide,
+      dryCarpetM2: form.dryCarpetM2,
       cleanersCount: Math.max(1, form.assignedCleaners.length),
       startTime: form.startTime || '10:00',
       addonRates,
@@ -303,22 +340,55 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.showcaseWindowsCount,
     form.balconyWindowsCount,
     form.hasOven,
+    form.hasHood,
     form.hasFridge,
     form.hasFridgeFreeze,
     form.hasMicrowave,
     form.hasBalcony,
+    form.hasGlassBalcony,
     form.hasKitchenClosets,
+    form.closetsCount,
+    form.hasDishwasherClean,
+    form.hasWashingMachineClean,
     form.hasStairs,
     form.hasSteamer,
-    form.hasDishesHours,
+    form.steamerZonesCount,
+    form.hasBlinds,
+    form.hasVentilation,
+    form.hasMoldRemoval,
+    form.hasPetHair,
+    form.hasCatLitter,
+    form.furnitureMoveCount,
+    form.hasPipeClog,
+    form.hasLadderRental,
+    form.tileGroutAreaM2,
+    form.curtainsPairsCount,
+    form.laundryHours,
+    form.ironingHours,
     form.hasIroningHours,
+    form.dishesHours,
+    form.hasDishesHours,
+    form.organizingHours,
+    form.gardenHours,
     form.hasVacuum,
     form.hasPets,
+    form.hasKeys,
     form.drySofa2,
     form.drySofa3,
     form.drySofaCorner4,
+    form.drySofaCorner5,
+    form.drySofaBig,
+    form.drySofaU,
     form.dryArmchair,
+    form.dryChair,
+    form.dryPouf,
+    form.dryPillowsSmall,
+    form.dryPillowsBig,
+    form.dryHeadboard,
+    form.dryMattressSingle,
+    form.dryMattressDouble,
     form.dryMattressSide,
+    form.dryCarpetM2,
     form.discountPercent,
     form.discountFixed,
     form.discountTarget,
@@ -327,7 +397,12 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.assignedCleaners.length,
     form.startTime,
     addonRates,
+    isOpen,
   ]);
+
+  if (!isOpen) return null;
+
+  const isOffice = form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL';
 
   const eligibleCleaners = allCleaners.filter((cleaner) => {
     const tags = cleaner.tags || [];
@@ -682,8 +757,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       min="0"
-                      value={(form as any).drySofaU || 0}
-                      onChange={(e) => setForm({ ...form, drySofaU: Math.max(0, Number(e.target.value)) } as any)}
+                      value={form.drySofaU || 0}
+                      onChange={(e) => setForm({ ...form, drySofaU: Math.max(0, Number(e.target.value)) })}
                       className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
                     />
                   </div>
@@ -708,8 +783,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       min="0"
-                      value={(form as any).dryChair || 0}
-                      onChange={(e) => setForm({ ...form, dryChair: Math.max(0, Number(e.target.value)) } as any)}
+                      value={form.dryChair || 0}
+                      onChange={(e) => setForm({ ...form, dryChair: Math.max(0, Number(e.target.value)) })}
                       className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
                     />
                   </div>
@@ -718,8 +793,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       min="0"
-                      value={(form as any).dryMattressDouble || 0}
-                      onChange={(e) => setForm({ ...form, dryMattressDouble: Math.max(0, Number(e.target.value)) } as any)}
+                      value={form.dryMattressDouble || 0}
+                      onChange={(e) => setForm({ ...form, dryMattressDouble: Math.max(0, Number(e.target.value)) })}
                       className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
                     />
                   </div>
@@ -728,8 +803,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       min="0"
-                      value={(form as any).dryCarpetM2 || 0}
-                      onChange={(e) => setForm({ ...form, dryCarpetM2: Math.max(0, Number(e.target.value)) } as any)}
+                      value={form.dryCarpetM2 || 0}
+                      onChange={(e) => setForm({ ...form, dryCarpetM2: Math.max(0, Number(e.target.value)) })}
                       className="w-full bg-white border border-amber-200 rounded p-1 text-xs font-bold"
                     />
                   </div>
