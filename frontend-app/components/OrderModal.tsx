@@ -88,10 +88,59 @@ const serviceTitles: Record<ServiceType, string> = {
 
 const DRAFT_KEY = 'brighthouse_order_draft';
 
+const getDefaultForm = (): OrderDetail => ({
+  date: new Date().toISOString().split('T')[0],
+  startTime: '10:00',
+  endTime: '13:00',
+  status: 'CONFIRMED',
+  serviceType: 'STANDARD',
+  areaM2: 45,
+  roomsCount: 2,
+  bathroomsCount: 1,
+  windowsCount: 0,
+  showcaseWindowsCount: 0,
+  balconyWindowsCount: 0,
+  hasOven: false,
+  hasFridge: false,
+  hasFridgeFreeze: false,
+  hasMicrowave: false,
+  hasBalcony: false,
+  hasKitchenClosets: false,
+  hasStairs: false,
+  hasSteamer: false,
+  hasDishesHours: 0,
+  hasIroningHours: 0,
+  hasVacuum: false,
+  hasPets: false,
+  hasKeys: false,
+  drySofa2: 0,
+  drySofa3: 0,
+  drySofaCorner4: 0,
+  dryArmchair: 0,
+  dryMattressSide: 0,
+  clientName: '',
+  clientPhone: '',
+  addressLine1: '',
+  addressLine2: '',
+  price: 200,
+  cleanersCount: 1,
+  assignedCleaners: [],
+  notes: '',
+  discountPercent: 0,
+  discountFixed: 0,
+  discountTarget: 'ALL',
+  subscriptionType: 'NONE',
+  isComboGeneralDryClean: false,
+  paymentMethod: 'CASH',
+  paymentNote: '',
+  cashCollectedById: null,
+});
+
 export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
   if (!isOpen) return null;
 
   const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
 
   const getInitialForm = (): OrderDetail => {
     if (order) return order;
@@ -99,69 +148,54 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       const savedDraft = localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
         try {
-          return JSON.parse(savedDraft);
+          const parsed = JSON.parse(savedDraft);
+          return parsed;
         } catch (e) {
-          console.error(e);
+          console.error('Ошибка парсинга черновика:', e);
         }
       }
     }
-    return {
-      date: new Date().toISOString().split('T')[0],
-      startTime: '10:00',
-      endTime: '13:00',
-      status: 'CONFIRMED',
-      serviceType: 'STANDARD',
-      areaM2: 45,
-      roomsCount: 2,
-      bathroomsCount: 1,
-      windowsCount: 0,
-      showcaseWindowsCount: 0,
-      balconyWindowsCount: 0,
-      hasOven: false,
-      hasFridge: false,
-      hasFridgeFreeze: false,
-      hasMicrowave: false,
-      hasBalcony: false,
-      hasKitchenClosets: false,
-      hasStairs: false,
-      hasSteamer: false,
-      hasDishesHours: 0,
-      hasIroningHours: 0,
-      hasVacuum: false,
-      hasPets: false,
-      hasKeys: false,
-      drySofa2: 0,
-      drySofa3: 0,
-      drySofaCorner4: 0,
-      dryArmchair: 0,
-      dryMattressSide: 0,
-      clientName: '',
-      clientPhone: '',
-      addressLine1: '',
-      addressLine2: '',
-      price: 200,
-      cleanersCount: 1,
-      assignedCleaners: [],
-      notes: '',
-      discountPercent: 0,
-      discountFixed: 0,
-      discountTarget: 'ALL',
-      subscriptionType: 'NONE',
-      isComboGeneralDryClean: false,
-      paymentMethod: 'CASH',
-      paymentNote: '',
-      cashCollectedById: null,
-    };
+    return getDefaultForm();
   };
 
   const [form, setForm] = useState<OrderDetail>(getInitialForm);
 
-  // Автосохранение черновика
+  // Синхронизируем состояние при открытии модалки
   useEffect(() => {
-    if (!order && typeof window !== 'undefined') {
+    if (order) {
+      setForm(order);
+      setHasRestoredDraft(false);
+    } else if (typeof window !== 'undefined') {
+      const savedDraft = localStorage.getItem(DRAFT_KEY);
+      if (savedDraft) {
+        try {
+          setForm(JSON.parse(savedDraft));
+          setHasRestoredDraft(true);
+        } catch {
+          setForm(getDefaultForm());
+          setHasRestoredDraft(false);
+        }
+      } else {
+        setForm(getDefaultForm());
+        setHasRestoredDraft(false);
+      }
+    }
+  }, [order, isOpen]);
+
+  // Автосохранение черновика (только если заказ новый, без id)
+  useEffect(() => {
+    if (!form.id && typeof window !== 'undefined') {
       localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
     }
-  }, [form, order]);
+  }, [form]);
+
+  const clearDraft = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(DRAFT_KEY);
+    }
+    setForm(getDefaultForm());
+    setHasRestoredDraft(false);
+  };
 
   const [allCleaners, setAllCleaners] = useState<any[]>([]);
   const [durationText, setDurationText] = useState('3 ч');
@@ -345,13 +379,30 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             <h2 className="text-base font-bold text-slate-800">
               {form.clientName ? `Заказ: ${form.clientName}` : 'Новая заявка BrightHouse'}
             </h2>
+            {!form.id && hasRestoredDraft && (
+              <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                Восстановлен черновик
+              </span>
+            )}
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 flex items-center justify-center font-bold"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {!form.id && hasRestoredDraft && (
+              <button
+                type="button"
+                onClick={clearDraft}
+                className="text-xs font-bold text-rose-600 hover:text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg transition"
+                title="Очистить черновик и сбросить форму"
+              >
+                Очистить черновик
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 flex items-center justify-center font-bold"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Контент */}
@@ -480,7 +531,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.areaM2}
-                      onChange={(e) => setForm({ ...form, areaM2: Number(e.target.value) })}
+                      onChange={(e) => setForm({ ...form, areaM2: Number(e.target.value)) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
@@ -489,7 +540,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.roomsCount}
-                      onChange={(e) => setForm({ ...form, roomsCount: Number(e.target.value) })}
+                      onChange={(e) => setForm({ ...form, roomsCount: Number(e.target.value)) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
@@ -498,7 +549,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.bathroomsCount}
-                      onChange={(e) => setForm({ ...form, bathroomsCount: Number(e.target.value) })}
+                      onChange={(e) => setForm({ ...form, bathroomsCount: Number(e.target.value)) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
@@ -507,7 +558,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.windowsCount}
-                      onChange={(e) => setForm({ ...form, windowsCount: Number(e.target.value) })}
+                      onChange={(e) => setForm({ ...form, windowsCount: Number(e.target.value)) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
