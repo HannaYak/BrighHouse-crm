@@ -400,6 +400,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     isOpen,
   ]);
 
+  // Ранний выход из компонента — СТРОГО ПОСЛЕ ВСЕХ ХУКОВ
   if (!isOpen) return null;
 
   const isOffice = form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL';
@@ -1236,10 +1237,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     if (typeof window !== 'undefined') {
                       localStorage.removeItem(DRAFT_KEY);
                     }
-                    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
+                    const cleanerPayload = form.assignedCleaners.assignedCleaners.map((c: any) => ({
                       id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
                       name: c.name,
-                    }));
+                    })).catch(() => {});
 
                     onSave({
                       ...form,
