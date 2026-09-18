@@ -111,7 +111,7 @@ const serviceTitles: Record<ServiceType, string> = {
   GENERAL: 'Генеральная',
   AFTER_REPAIR: 'После ремонта',
   OFFICE_REGULAR: 'Офис: Обычная (4 zł/м²)',
-  OFFICE_GENERAL: 'Офис: Генеральная (12 zł/м²)',
+  OFFICE_GENERAL: 'Офис: Генеральная (12 zł/м²)'
 };
 
 const DRAFT_KEY = 'brighthouse_order_draft';
@@ -161,13 +161,13 @@ const getDefaultForm = (): OrderDetail => ({
   isComboGeneralDryClean: false,
   paymentMethod: 'CASH',
   paymentNote: '',
-  cashCollectedById: null,
+  cashCollectedById: null
 });
 
 export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
   const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
-  const [form, setForm] = useState<OrderDetail>(getDefaultForm);
+  const [form, setForm] = useState<OrderDetail>(getDefaultForm());
   const [allCleaners, setAllCleaners] = useState<any[]>([]);
   const [durationText, setDurationText] = useState('3 ч');
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
@@ -227,7 +227,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     fetch('/api/cleaners')
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setAllCleaners(data))
-      .catch((err) => console.error('Ошибка загрузки клинеров:', err));
+      .catch(console.error);
   }, [isOpen]);
 
   useEffect(() => {
@@ -248,7 +248,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
           setAvailabilityMap(map);
         }
       } catch (err) {
-        console.error('Ошибка загрузки доступности клинеров:', err);
+        console.error(err);
       } finally {
         setLoadingAvailability(false);
       }
@@ -397,10 +397,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     form.assignedCleaners.length,
     form.startTime,
     addonRates,
-    isOpen,
+    isOpen
   ]);
 
-  // Ранний выход из компонента — СТРОГО ПОСЛЕ ВСЕХ ХУКОВ
   if (!isOpen) return null;
 
   const isOffice = form.serviceType === 'OFFICE_REGULAR' || form.serviceType === 'OFFICE_GENERAL';
@@ -603,7 +602,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.areaM2}
-                      onChange={(e) => setForm({ ...form, areaM2: Number(e.target.value)) })}
+                      onChange={(e) => setForm({ ...form, areaM2: Number(e.target.value) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
@@ -612,7 +611,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.roomsCount}
-                      onChange={(e) => setForm({ ...form, roomsCount: Number(e.target.value)) })}
+                      onChange={(e) => setForm({ ...form, roomsCount: Number(e.target.value) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
@@ -621,7 +620,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.bathroomsCount}
-                      onChange={(e) => setForm({ ...form, bathroomsCount: Number(e.target.value)) })}
+                      onChange={(e) => setForm({ ...form, bathroomsCount: Number(e.target.value) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
@@ -630,7 +629,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     <input
                       type="number"
                       value={form.windowsCount}
-                      onChange={(e) => setForm({ ...form, windowsCount: Number(e.target.value)) })}
+                      onChange={(e) => setForm({ ...form, windowsCount: Number(e.target.value) })}
                       className="w-full bg-white border border-slate-200 rounded-md p-1.5 text-xs font-bold text-slate-800"
                     />
                   </div>
@@ -1237,10 +1236,10 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                     if (typeof window !== 'undefined') {
                       localStorage.removeItem(DRAFT_KEY);
                     }
-                    const cleanerPayload = form.assignedCleaners.assignedCleaners.map((c: any) => ({
+                    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
                       id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
                       name: c.name,
-                    })).catch(() => {});
+                    }));
 
                     onSave({
                       ...form,
