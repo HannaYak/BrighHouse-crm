@@ -1,13 +1,6 @@
-export type ServiceType =
-  | 'STANDARD'
-  | 'STANDARD_PLUS'
-  | 'GENERAL'
-  | 'AFTER_REPAIR'
-  | 'OFFICE_REGULAR'  // Офис обычная (4 zł/м²)
-  | 'OFFICE_GENERAL'; // Офис генеральная (12 zł/м²)
-
+export type ServiceType = 'STANDARD' | 'STANDARD_PLUS' | 'GENERAL' | 'AFTER_REPAIR' | 'OFFICE_REGULAR' | 'OFFICE_GENERAL';
 export type DiscountTarget = 'ALL' | 'BASE_ONLY' | 'DRY_CLEAN_ONLY' | 'ADDONS_ONLY';
-export type SubscriptionType = 'NONE' | 'SUB_100_OFF' | 'SUB_2_MONTH' | 'SUB_4_MONTH';
+export type SubscriptionType = 'NONE' | 'SUB_100_OFF' | 'SUB_4_MONTH' | 'SUB_2_MONTH';
 
 export interface AddOnRate {
   price: number;
@@ -16,84 +9,82 @@ export interface AddOnRate {
 
 export interface CalculationInput {
   serviceType: ServiceType;
+  areaM2: number;
   roomsCount: number;
   bathroomsCount: number;
-  areaM2: number;
-
-  // Акции, таргетинг и абонементы
-  discountPercent?: number;            // Скидка в процентах (например, 10 для 10%)
-  discountFixed?: number;              // Скидка в фиксированной сумме (например, 30 zł)
-  discountTarget?: DiscountTarget;     // Куда применять: на всё, только базу, только химчистку, только допы
-  subscriptionType?: SubscriptionType; // Абонемент
-  isComboGeneralDryClean?: boolean;    // Комбо "Генералка + Химчистка" (-10% на всё)
-
-  // Окна и балконы
-  windowsCount?: number;          // 35 zł (обычные)
-  balconyWindowsCount?: number;   // 45 zł (балконные)
-  showcaseWindowsCount?: number;  // 50 zł (витрины в коммерции)
-  mosquitoNetsCount?: number;     // 15 zł
-  hasBalcony?: boolean;           // 35 zł
-  hasGlassBalcony?: boolean;      // 55 zł
+  windowsCount: number;
+  showcaseWindowsCount?: number;
+  balconyWindowsCount?: number;
 
   // Кухня и техника
-  hasOven?: boolean;              // 45 zł
-  hasHood?: boolean;              // 40 zł
-  hasMicrowave?: boolean;         // 20 zł
-  hasFridge?: boolean;            // 35 zł
-  hasFridgeFreeze?: boolean;      // 50 zł
-  hasKitchenClosets?: boolean;    // 100 zł
-  closetsCount?: number;          // 50 zł/шкаф
-  hasDishwasherClean?: boolean;   // 20 zł
-  hasWashingMachineClean?: boolean;// 30 zł
+  hasOven?: boolean;
+  hasHood?: boolean;
+  hasFridge?: boolean;
+  hasFridgeFreeze?: boolean;
+  hasMicrowave?: boolean;
+  hasDishwasherClean?: boolean;
+  hasWashingMachineClean?: boolean;
+  hasKitchenClosets?: boolean;
+  closetsCount?: number;
 
-  // Дополнительно по дому/офису
-  hasStairs?: boolean;            // 25 / 35 / 35 / 40 zł
-  hasSteamer?: boolean;           // 75 zł
-  hasBlinds?: boolean;            // 40 zł
-  hasVentilation?: boolean;       // 20 zł
-  hasMoldRemoval?: boolean;       // 40 zł
-  hasPetHair?: boolean;           // 40 zł
-  hasCatLitter?: boolean;         // 20 zł
-  furnitureMoveCount?: number;    // 15 zł/шт
-  hasPipeClog?: boolean;          // 15 zł
-  hasLadderRental?: boolean;      // 90 zł
-  tileGroutAreaM2?: number;       // 15 zł/м²
-  steamerZonesCount?: number;     // 75 zł/зону
+  // Специфические допы
+  hasBalcony?: boolean;
+  hasGlassBalcony?: boolean;
+  hasStairs?: boolean;
+  hasSteamer?: boolean;
+  steamerZonesCount?: number;
+  hasBlinds?: boolean;
+  hasVentilation?: boolean;
+  hasMoldRemoval?: boolean;
+  hasPetHair?: boolean;
+  hasCatLitter?: boolean;
+  furnitureMoveCount?: number;
+  hasPipeClog?: boolean;
+  hasLadderRental?: boolean;
+  tileGroutAreaM2?: number;
 
-  // Почасовые и текстиль
-  curtainsPairsCount?: number;    // 65 zł/пара
-  laundryHours?: number;          // 50 zł/ч
-  ironingHours?: number;          // 50 zł/ч
-  dishesHours?: number;           // 40 zł/ч
-  hasDishesHours?: number;        // для совместимости с OrderModal
-  hasIroningHours?: number;       // для совместимости с OrderModal
-  organizingHours?: number;       // 50 zł/ч
-  gardenHours?: number;           // 50 zł/ч
+  // Часовые допы
+  curtainsPairsCount?: number;
+  laundryHours?: number;
+  ironingHours?: number;
+  hasIroningHours?: number;
+  dishesHours?: number;
+  hasDishesHours?: number;
+  organizingHours?: number;
+  gardenHours?: number;
 
-  hasVacuum?: boolean;            // 30 zł
+  // Общие опции
+  hasVacuum?: boolean;
   hasPets?: boolean;
   hasKeys?: boolean;
 
   // Химчистка
-  drySofa2?: number;              // 180 zł
-  drySofa3?: number;              // 200 zł
-  drySofaCorner4?: number;        // 220 zł
-  drySofaCorner5?: number;        // 240 zł
-  drySofaBig?: number;            // 260 zł
-  dryArmchair?: number;           // 60 zł
-  dryChair?: number;              // 15 zł
-  dryPouf?: number;               // 30 zł
-  dryPillowsSmall?: number;       // 15 zł
-  dryPillowsBig?: number;         // 25 zł
-  dryHeadboard?: number;          // 70 zł
-  dryMattressSingle?: number;     // 90 zł
-  dryMattressDouble?: number;     // 140 zł
-  dryMattressSide?: number;       // 90 zł (обратная совместимость)
-  dryCarpetM2?: number;           // 15 zł/м²
+  drySofa2?: number;
+  drySofa3?: number;
+  drySofaCorner4?: number;
+  drySofaCorner5?: number;
+  drySofaBig?: number;
+  drySofaU?: number;
+  dryArmchair?: number;
+  dryChair?: number;
+  dryPouf?: number;
+  dryPillowsSmall?: number;
+  dryPillowsBig?: number;
+  dryHeadboard?: number;
+  dryMattressSingle?: number;
+  dryMattressDouble?: number;
+  dryMattressSide?: number;
+  dryCarpetM2?: number;
 
+  // Технические поля
   cleanersCount: number;
   startTime: string;
-  addonRates?: Record<string, AddOnRate>; // Динамические цены из базы
+  addonRates: Record<string, { price: number; durationMins: number }>;
+  discountPercent?: number;
+  discountFixed?: number;
+  discountTarget?: DiscountTarget;
+  subscriptionType?: SubscriptionType;
+  isComboGeneralDryClean?: boolean;
 }
 
 export interface CalculationResult {
