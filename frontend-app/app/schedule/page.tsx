@@ -21,7 +21,6 @@ export default function SchedulePage() {
   const getCleanerHours = (cleaner: any) => {
     const shift = shiftsMap[cleaner.id];
 
-    // Если на эту дату задан отгул / выходной
     if (shift && shift.isWorking === false) {
       return { start: 0, end: 0, isDayOff: true };
     }
@@ -66,10 +65,9 @@ export default function SchedulePage() {
     }
   };
 
-  // Перезагружаем клинеров, заказы и смены при смене даты
-useEffect(() => {
-  loadData(false); // Полная перезагрузка клинеров и смен при переходе на любую дату
-}, [selectedDate]);
+  useEffect(() => {
+    loadData(false);
+  }, [selectedDate]);
 
   const currentDayOfWeek = (() => {
     const d = new Date(selectedDate).getDay();
@@ -231,6 +229,41 @@ useEffect(() => {
       return;
     }
 
+    // Жесткая проверка накладок и времени на переезд
+    const targetCleanerOrders = dayOrders.filter((o: any) =>
+      o.id !== order.id && 
+      o.assignedCleaners?.some((ac: any) => Number(ac.cleanerId || ac.cleaner?.id || ac.id) === targetCleanerId)
+    );
+
+    let hasConflict = false;
+    for (const to of targetCleanerOrders) {
+      const slot = to.timeSlot || `${to.startTime || '10:00'} — ${to.endTime || '14:00'}`;
+      const p = slot.split('—').map((s: string) => s.trim());
+      const [sH] = (p[0] || '10:00').split(':').map(Number);
+      const [eH, eM] = (p[1] || '14:00').split(':').map(Number);
+      const existingStart = isNaN(sH) ? 10 : sH;
+      const existingEnd = isNaN(eH) ? 14 : (eM > 0 ? eH + 1 : eH);
+
+      const newStart = targetHour;
+      const newEnd = targetHour + duration;
+
+      if (!(newEnd <= existingStart || newStart >= existingEnd)) {
+        hasConflict = true;
+        alert(`❌ Ошибка: В это время (${newStart}:00 - ${newEnd}:00) клинер ${targetCleaner.name} уже занят на другом объекте!`);
+        break;
+      }
+      if (newEnd === existingStart || newStart === existingEnd) {
+        hasConflict = true;
+        alert(`🚗 Ошибка логистики: Нужен минимум 1 час перерыва на дорогу между заказами для ${targetCleaner.name}!`);
+        break;
+      }
+    }
+
+    if (hasConflict) {
+      setDraggedOrderInfo(null);
+      return;
+    }
+
     const currentCleanerIds: number[] = (order.assignedCleaners || [])
       .map((ac: any) => Number(ac.cleanerId || ac.cleaner?.id || ac.id || ac))
       .filter(Boolean);
@@ -302,6 +335,17 @@ useEffect(() => {
   if (loading) {
     return <div className="p-10 text-center text-xs text-slate-500">Загрузка расписания...</div>;
   }
+
+  // Предрасчет заказов для каждого клинера, чтобы быстро отрисовать сетку дороги
+  const cleanerOrdersMap = visibleCleaners.reduce((acc, cleaner) => {
+    acc[cleaner.id] = dayOrders.filter((o) =>
+      o.assignedCleaners?.some((ac: any) => {
+        const cId = ac.cleanerId || ac.cleaner?.id || ac.id;
+        return Number(cId) === Number(cleaner.id);
+      })
+    );
+    return acc;
+  }, {} as Record<number, any[]>);
 
   return (
     <div className="space-y-6 max-w-full mx-auto pb-12 px-4">
@@ -397,8 +441,39 @@ useEffect(() => {
                     {visibleCleaners.map((cleaner) => {
                       const { start: shiftStart, end: shiftEnd, isDayOff } = getCleanerHours(cleaner);
                       const isOffDuty = isDayOff || hour < shiftStart || hour >= shiftEnd;
+                      
+                      const cOrders = cleanerOrdersMap[cleaner.id] || [];
+                      let isOccupied = false;
+                      let isTravel = false;
 
-                      // Если нерабочий час — защищенная заштрихованная ячейка
+                      // Проверяем, свободен ли час, или попадает под дорогу
+                      cOrders.forEach(order => {
+                        const slot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
+                        const parts = slot.split('—').map(s => s.trim());
+                        const [startH] = (parts[0] || '10:00').split(':').map(Number);
+                        const [endH, endM] = (parts[1] || '14:00').split(':').map(Number);
+                        const effectiveEndH = endM > 0 ? endH + 1 : endH;
+
+                        if (hour >= startH && hour < effectiveEndH) {
+                          isOccupied = true;
+                        }
+                      });
+
+                      if (!isOccupied && !isOffDuty) {
+                        cOrders.forEach(order => {
+                          const slot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
+                          const parts = slot.split('—').map(s => s.trim());
+                          const [startH] = (parts[0] || '10:00').split(':').map(Number);
+                          const [endH, endM] = (parts[1] || '14:00').split(':').map(Number);
+                          const effectiveEndH = endM > 0 ? endH + 1 : endH;
+
+                          if (hour === startH - 1 || hour === effectiveEndH) {
+                            isTravel = true;
+                          }
+                        });
+                      }
+
+                      // Если нерабочий час — защищенная заштрихованная серая ячейка
                       if (isOffDuty) {
                         return (
                           <div
@@ -416,7 +491,25 @@ useEffect(() => {
                         );
                       }
 
-                      // Обычный рабочий слот
+                      // Если это время на дорогу — оранжевая ячейка (кликать нельзя)
+                      if (isTravel) {
+                        return (
+                          <div
+                            key={cleaner.id}
+                            className="border-r border-slate-100 last:border-r-0 bg-amber-50/40 select-none pointer-events-none relative flex items-center justify-center overflow-hidden"
+                            style={{
+                              backgroundImage:
+                                'repeating-linear-gradient(45deg, #fffbeb, #fffbeb 8px, #fef3c7 8px, #fef3c7 16px)',
+                            }}
+                          >
+                            <span className="text-[10px] font-extrabold text-amber-500/80 uppercase tracking-wider flex items-center gap-1">
+                              🚗 Дорога
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      // Обычный свободный рабочий слот
                       return (
                         <div
                           key={cleaner.id}
