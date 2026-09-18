@@ -6,7 +6,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const dateParam = searchParams.get('date');
     const startTimeParam = searchParams.get('startTime') || '10:00';
-    // Если endTime не передали, по умолчанию закладываем 4 часа
     const endTimeParam = searchParams.get('endTime') || '14:00'; 
 
     if (!dateParam) {
@@ -82,7 +81,8 @@ export async function GET(request: Request) {
       // Проверяем накладки по времени
       if (isWorkingToday) {
         for (const ord of cleanerOrders) {
-          const slot = ord.timeSlot || `${ord.startTime || '10:00'} — ${ord.endTime || '14:00'}`;
+          // ИСПРАВЛЕНИЕ: берем строку только из поля timeSlot
+          const slot = ord.timeSlot || '10:00 — 14:00';
           const parts = slot.split(/[-—]/).map((s) => s.trim());
           const [sh, sm] = (parts[0] || '10:00').split(':').map(Number);
           const [eh, em] = (parts[1] || '14:00').split(':').map(Number);
