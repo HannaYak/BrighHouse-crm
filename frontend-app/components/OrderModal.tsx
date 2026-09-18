@@ -231,14 +231,18 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !form.date) return;
+    if (!isOpen || !form.date || !form.startTime || !form.endTime) return;
+    
+    // Передаем полную длительность заказа для проверки накладок
     const checkAvailability = async () => {
       try {
         setLoadingAvailability(true);
         const dateStr = new Date(form.date).toISOString().slice(0, 10);
-        const timeStr = (form.startTime || '10:00').slice(0, 5);
+        const startStr = (form.startTime || '10:00').slice(0, 5);
+        const endStr = (form.endTime || '13:00').slice(0, 5);
 
-        const res = await fetch(`/api/cleaners/available?date=${dateStr}&time=${timeStr}`);
+        // Передаем startTime и endTime на бекэнд, чтобы он учел весь слот, а не только точку старта
+        const res = await fetch(`/api/cleaners/available?date=${dateStr}&startTime=${startStr}&endTime=${endStr}`);
         if (res.ok) {
           const data = await res.json();
           const map: Record<number, any> = {};
@@ -254,7 +258,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       }
     };
     checkAvailability();
-  }, [form.date, form.startTime, isOpen]);
+  }, [form.date, form.startTime, form.endTime, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -420,6 +424,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       });
       setWarningMessage(null);
     } else {
+      // 1. Проверка на несовместимость (личные конфликты)
       if (cleaner.incompatibleWith && cleaner.incompatibleWith.length > 0) {
         const conflict = form.assignedCleaners.find((c) => cleaner.incompatibleWith.includes(c.name));
         if (conflict) {
@@ -427,6 +432,18 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
           return;
         }
       }
+
+      // 2. Жесткая проверка на занятость с учетом времени на дорогу
+      const info = availabilityMap[cleaner.id];
+      if (info && !info.available && !info.isWorking) {
+        setWarningMessage(`🛑 Ошибка: У клинера ${cleaner.name} сегодня выходной!`);
+        return;
+      }
+      if (info && info.isBusy) {
+        setWarningMessage(`🚗 Накладка: ${cleaner.name} занят(а) в это время (с учетом дороги на объект). Конфликт: ${info.busyOrders?.join(', ')}`);
+        return;
+      }
+
       setWarningMessage(null);
       setForm({
         ...form,
@@ -1233,6 +1250,13 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 <button
                   type="button"
                   onClick={() => {
+                    // Финальная проверка перед сохранением, если игнорируют предупреждение
+                    if (warningMessage?.includes('Занят') || warningMessage?.includes('выходной')) {
+                      if(!window.confirm("Один из клинеров занят или на выходном. Вы уверены, что хотите сохранить заказ с накладкой?")) {
+                        return;
+                      }
+                    }
+
                     if (typeof window !== 'undefined') {
                       localStorage.removeItem(DRAFT_KEY);
                     }
