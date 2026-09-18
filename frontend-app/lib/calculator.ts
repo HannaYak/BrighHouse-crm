@@ -77,9 +77,10 @@ export interface CalculationInput {
   dryCarpetM2?: number;
 
   // Технические поля
+  // Технические поля
   cleanersCount: number;
   startTime: string;
-  addonRates: Record<string, { price: number; durationMins: number }>;
+  addonRates?: Record<string, { price: number; durationMins: number }>; // <-- добавили вопросительный знак
   discountPercent?: number;
   discountFixed?: number;
   discountTarget?: DiscountTarget;
