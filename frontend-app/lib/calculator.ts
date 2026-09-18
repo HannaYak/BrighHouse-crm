@@ -15,6 +15,7 @@ export interface CalculationInput {
   windowsCount: number;
   showcaseWindowsCount?: number;
   balconyWindowsCount?: number;
+  mosquitoNetsCount?: number; // <--- ВОТ ЭТО ПОЛЕ МЫ ДОБАВИЛИ
 
   // Кухня и техника
   hasOven?: boolean;
@@ -77,10 +78,9 @@ export interface CalculationInput {
   dryCarpetM2?: number;
 
   // Технические поля
-  // Технические поля
   cleanersCount: number;
   startTime: string;
-  addonRates?: Record<string, { price: number; durationMins: number }>; // <-- добавили вопросительный знак
+  addonRates?: Record<string, { price: number; durationMins: number }>;
   discountPercent?: number;
   discountFixed?: number;
   discountTarget?: DiscountTarget;
