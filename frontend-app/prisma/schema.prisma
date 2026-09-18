@@ -274,3 +274,16 @@ model Expense {
   @@index([date])
   @@index([category])
 }
+
+model FinanceTransaction {
+  id          String   @id @default(cuid())
+  type        String   // "INCOME" (Доход), "EXPENSE" (Расход), "TRANSFER" (Перевод)
+  amount      Float
+  category    String   // "Маркетинг", "Химия", "Зарплата", "Резерв", "Владельцам"
+  description String?
+  sourceFund  String?  // Откуда списали: "MAIN", "MARKETING", "RESERVE", "CASH"
+  targetFund  String?  // Куда зачислили (если TRANSFER)
+  date        DateTime @default(now())
+  cleanerId   Int?     
+  createdAt   DateTime @default(now())
+}
