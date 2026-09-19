@@ -75,10 +75,13 @@ export async function GET(
     if (order.hasKitchenClosets) items.push({ name: 'Czyszczenie szafek kuchennych wewnątrz', qty: '1 usł.', total: 'W cenie' });
 
     // 4. Химчистка
-    if (order.drySofa2) items.push({ name: 'Pranie kanapy 2-osobowej', qty: `${order.drySofa2} szt.`, total: 'W cenie' });
-    if (order.drySofa3) items.push({ name: 'Pranie kanapy 3-osobowej', qty: `${order.drySofa3} szt.`, total: 'W cenie' });
-    if (order.drySofaCorner4) items.push({ name: 'Pranie narożnika', qty: `${order.drySofaCorner4} szt.`, total: 'W cenie' });
-    if (order.dryArmchair) items.push({ name: 'Pranie fotela', qty: `${order.dryArmchair} szt.`, total: 'W cenie' });
+    // 4. Химчистка мебели
+    const o = order as any;
+    if (o.drySofa2) items.push({ name: 'Pranie kanapy 2-osobowej', qty: `${o.drySofa2} szt.`, total: 'W cenie' });
+    if (o.drySofa3) items.push({ name: 'Pranie kanapy 3-osobowej', qty: `${o.drySofa3} szt.`, total: 'W cenie' });
+    if (o.drySofaCorner4) items.push({ name: 'Pranie narożnika', qty: `${o.drySofaCorner4} szt.`, total: 'W cenie' });
+    if (o.dryArmchair) items.push({ name: 'Pranie fotela', qty: `${o.dryArmchair} szt.`, total: 'W cenie' });
+    if (o.dryMattressSide) items.push({ name: 'Pranie materaca', qty: `${o.dryMattressSide} szt.`, total: 'W cenie' });;
 
     const isPaid = order.status === 'COMPLETED';
 
