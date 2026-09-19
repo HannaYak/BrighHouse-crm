@@ -103,7 +103,6 @@ export default function ClientsPage() {
     }
   };
 
-  // Нормализация заказа для модалки
   const normalizeOrderForModal = (rawOrder: any, isClone = false): OrderDetail => {
     const slot = rawOrder.timeSlot || `${rawOrder.startTime || '10:00'} — ${rawOrder.endTime || '13:00'}`;
     const parts = slot.split('—').map((s: string) => s.trim());
@@ -166,8 +165,8 @@ export default function ClientsPage() {
     setIsOrderModalOpen(true);
   };
 
-  const handleRepeatOrder = (pastOrder: any, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRepeatOrder = (pastOrder: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     const cloned = normalizeOrderForModal(pastOrder, true);
     setEditingOrder(cloned);
     setIsOrderModalOpen(true);
@@ -200,6 +199,17 @@ export default function ClientsPage() {
       console.error(e);
       alert('Ошибка соединения');
     }
+  };
+
+  const getOrderAddonsBadge = (order: any) => {
+    const list: string[] = [];
+    if (order.hasOven) list.push('Духовка');
+    if (order.hasFridge || order.hasFridgeFreeze) list.push('Холодильник');
+    if (order.windowsCount > 0) list.push(`${order.windowsCount} окон`);
+    if (order.drySofa2 > 0 || order.drySofa3 > 0 || order.drySofaCorner4 > 0) list.push('Химчистка');
+    if (order.hasSteamer) list.push('Пароочиститель');
+    if (list.length === 0) return null;
+    return list.slice(0, 3).join(', ') + (list.length > 3 ? '...' : '');
   };
 
   const filteredClients = clients.filter(
@@ -286,11 +296,22 @@ export default function ClientsPage() {
                     📞 {selectedClient.phone} • 📍 {selectedClient.address || 'Адрес не указан'}
                   </p>
                 </div>
-                <div className="text-right bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
-                  <span className="text-[10px] uppercase font-bold text-blue-700 block">LTV Клиента</span>
-                  <span className="text-base font-extrabold text-blue-600">
-                    {selectedClient.totalSpent || 0} zł
-                  </span>
+                <div className="flex items-center gap-3">
+                  {selectedClient.orders && selectedClient.orders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRepeatOrder(selectedClient.orders[0])}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition shadow-xs flex items-center gap-1.5"
+                    >
+                      🔁 Повторить последний
+                    </button>
+                  )}
+                  <div className="text-right bg-blue-50 border border-blue-100 p-2.5 rounded-xl">
+                    <span className="text-[10px] uppercase font-bold text-blue-700 block">LTV Клиента</span>
+                    <span className="text-base font-extrabold text-blue-600">
+                      {selectedClient.totalSpent || 0} zł
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -429,6 +450,7 @@ export default function ClientsPage() {
                         'Бригада не указана';
 
                       const isCompleted = order.status === 'COMPLETED';
+                      const addonsText = getOrderAddonsBadge(order);
 
                       return (
                         <div
@@ -462,6 +484,9 @@ export default function ClientsPage() {
                             </div>
                             <div className="text-[11px] text-slate-500">
                               👥 Клинеры: <span className="font-medium text-slate-700">{team}</span>
+                              {addonsText && (
+                                <span className="ml-2 text-slate-400">({addonsText})</span>
+                              )}
                             </div>
                           </div>
 
