@@ -4,8 +4,6 @@ import {
   calculateBrightHouseOrder,
   CalculationInput,
   ServiceType,
-  DiscountTarget,
-  SubscriptionType,
 } from '../../lib/calculator';
 
 const CALC_DRAFT_KEY = 'brighthouse_calculator_page_draft';
@@ -41,11 +39,19 @@ export default function CalculatorPage() {
       windowsCount: 0,
       balconyWindowsCount: 0,
       showcaseWindowsCount: 0,
-      discountTarget: 'ALL',
-      subscriptionType: 'NONE',
-      isComboGeneralDryClean: false,
-      discountPercent: 0,
-      discountFixed: 0,
+      hasOven: false,
+      hasFridge: false,
+      hasFridgeFreeze: false,
+      hasMicrowave: false,
+      hasBalcony: false,
+      hasKitchenClosets: false,
+      hasStairs: false,
+      hasSteamer: false,
+      hasVacuum: false,
+      drySofa2: 0,
+      drySofa3: 0,
+      drySofaCorner4: 0,
+      dryArmchair: 0,
     };
   };
 
@@ -54,7 +60,6 @@ export default function CalculatorPage() {
   const [lang, setLang] = useState<'RU' | 'PL' | 'EN'>('PL');
   const [copied, setCopied] = useState(false);
 
-  // Загрузка тарифов из базы
   useEffect(() => {
     fetch('/api/settings/addons')
       .then((res) => (res.ok ? res.json() : []))
@@ -70,22 +75,21 @@ export default function CalculatorPage() {
       .catch(console.error);
   }, []);
 
-  // Автосохранение черновика при смене вкладок
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem(CALC_DRAFT_KEY, JSON.stringify(input));
     }
   }, [input]);
 
-  // Расчет через единое ядро
   const calcResult = calculateBrightHouseOrder({
     ...input,
     addonRates,
   });
 
   const isOffice = input.serviceType === 'OFFICE_REGULAR' || input.serviceType === 'OFFICE_GENERAL';
+  const specialistPart = calcResult.specialistRevenue;
+  const basePart = Math.max(0, calcResult.totalPrice - specialistPart);
 
-  // Генератор текста КП для клиента на 3 языках
   const generateProposalText = () => {
     const sName = SERVICE_NAMES[input.serviceType][lang.toLowerCase() as 'ru' | 'pl' | 'en'];
 
@@ -115,10 +119,6 @@ export default function CalculatorPage() {
         text += `➕ Usługi dodatkowe:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
       }
 
-      if (calcResult.discountAmount > 0) {
-        text += `🎁 Zastosowany rabat/promocja: -${calcResult.discountAmount} zł\n`;
-      }
-
       text += `💰 Całkowity koszt: ${calcResult.totalPrice} zł\n\n`;
       text += `Przyjeżdżamy z własnym profesjonalnym sprzętem i chemią.\n`;
       text += `Czy proponowany termin Państwu odpowiada?`;
@@ -146,10 +146,6 @@ export default function CalculatorPage() {
 
       if (addonsList.length > 0) {
         text += `➕ Add-ons included:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
-      }
-
-      if (calcResult.discountAmount > 0) {
-        text += `🎁 Applied discount: -${calcResult.discountAmount} zł\n`;
       }
 
       text += `💰 Total price: ${calcResult.totalPrice} zł\n\n`;
@@ -182,10 +178,6 @@ export default function CalculatorPage() {
       text += `➕ Дополнительные услуги:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
     }
 
-    if (calcResult.discountAmount > 0) {
-      text += `🎁 Скидка / акция: -${calcResult.discountAmount} zł\n`;
-    }
-
     text += `💰 Итоговая стоимость: ${calcResult.totalPrice} zł\n\n`;
     text += `Всё профессиональное оборудование и химию привозим с собой.\n`;
     text += `Подходит ли вам такая стоимость и дата?`;
@@ -205,7 +197,7 @@ export default function CalculatorPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">🧮 Калькулятор заказов и Генератор КП</h1>
           <p className="text-xs text-slate-500">
-            Единый точный расчет для менеджеров с сохранением черновика и экспортом сообщения для клиента
+            Единый точный расчет для менеджеров с автосохранением черновика и экспортом сообщения для клиента
           </p>
         </div>
 
@@ -419,86 +411,10 @@ export default function CalculatorPage() {
               </div>
             </div>
           </div>
-
-          {/* Акции, Абонементы и Таргет скидки */}
-          <div className="bg-purple-50/70 border border-purple-200 rounded-2xl p-4 space-y-3">
-            <span className="text-xs font-bold text-purple-950 uppercase block">
-              🎁 Акции, абонементы и выбор таргета скидки
-            </span>
-
-            {/* Абонементы */}
-            <div>
-              <label className="text-[10px] font-bold text-purple-900 uppercase block mb-1">Абонемент</label>
-              <select
-                value={input.subscriptionType || 'NONE'}
-                onChange={(e) => setInput({ ...input, subscriptionType: e.target.value as SubscriptionType })}
-                className="w-full bg-white border border-purple-200 rounded-lg p-2 text-xs font-bold text-purple-950"
-              >
-                <option value="NONE">Без абонемента</option>
-                <option value="SUB_100_OFF">🎫 Скидка 100 zł на первый месяц абонемента (-100 zł)</option>
-                <option value="SUB_4_MONTH">📅 Регулярный: 4 раза в месяц (-15% на базу)</option>
-                <option value="SUB_2_MONTH">📅 Регулярный: 2 раза в месяц (-10% на базу)</option>
-              </select>
-            </div>
-
-            {/* Комбо */}
-            <label className="flex items-center gap-2 cursor-pointer bg-white/80 p-2 rounded-xl border border-purple-200">
-              <input
-                type="checkbox"
-                checked={Boolean(input.isComboGeneralDryClean)}
-                onChange={(e) => setInput({ ...input, isComboGeneralDryClean: e.target.checked })}
-                className="w-4 h-4 rounded text-purple-600"
-              />
-              <span className="text-xs font-bold text-purple-900">
-                ✨ Комбо: Генеральная уборка + Химчистка (-10% на ВСЮ сумму)
-              </span>
-            </label>
-
-            {/* Ручная скидка и на что распространяется */}
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              <div>
-                <label className="text-[10px] text-purple-900 block font-semibold mb-1">Применить скидку к:</label>
-                <select
-                  value={input.discountTarget || 'ALL'}
-                  onChange={(e) => setInput({ ...input, discountTarget: e.target.value as DiscountTarget })}
-                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-semibold"
-                >
-                  <option value="ALL">На всё (итог)</option>
-                  <option value="BASE_ONLY">Только уборка (база)</option>
-                  <option value="DRY_CLEAN_ONLY">Только химчистка</option>
-                  <option value="ADDONS_ONLY">Только доп. услуги</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[10px] text-purple-900 block font-semibold mb-1">Скидка (%)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={input.discountPercent || 0}
-                  onChange={(e) => setInput({ ...input, discountPercent: Number(e.target.value), discountFixed: 0 })}
-                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] text-purple-900 block font-semibold mb-1">Скидка (zł)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={input.discountFixed || 0}
-                  onChange={(e) => setInput({ ...input, discountFixed: Number(e.target.value), discountPercent: 0 })}
-                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-bold"
-                />
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Правая колонка: Итог и Текст предложения для клиента */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Плашка итоговой стоимости */}
           <div className="bg-slate-900 text-white p-5 rounded-2xl shadow-lg space-y-3">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Итоговая стоимость</span>
@@ -510,24 +426,12 @@ export default function CalculatorPage() {
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-300">
                 <span>Базовая уборка:</span>
-                <span className="font-mono">{calcResult.basePrice} zł</span>
+                <span className="font-mono">{basePart} zł</span>
               </div>
-              {calcResult.addonsPrice > 0 && (
-                <div className="flex justify-between text-slate-300">
-                  <span>Дополнительные опции:</span>
-                  <span className="font-mono">+{calcResult.addonsPrice} zł</span>
-                </div>
-              )}
-              {calcResult.dryCleanPrice > 0 && (
+              {specialistPart > 0 && (
                 <div className="flex justify-between text-amber-300 font-semibold">
-                  <span>Химчистка мебели:</span>
-                  <span className="font-mono">+{calcResult.dryCleanPrice} zł</span>
-                </div>
-              )}
-              {calcResult.discountAmount > 0 && (
-                <div className="flex justify-between text-purple-300 font-bold">
-                  <span>Скидка / Абонемент:</span>
-                  <span className="font-mono">-{calcResult.discountAmount} zł</span>
+                  <span>Окна и химчистка:</span>
+                  <span className="font-mono">+{specialistPart} zł</span>
                 </div>
               )}
               <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800">
@@ -537,7 +441,6 @@ export default function CalculatorPage() {
             </div>
           </div>
 
-          {/* Готовое коммерческое предложение для мессенджера */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
