@@ -40,14 +40,15 @@ export default function SchedulePage() {
     }
 
     const startStr = shift?.startTime || cleaner.defaultStartTime || cleaner.startTime || '08:00';
-    const endStr = shift?.endTime || cleaner.defaultEndTime || cleaner.endTime || '20:00';
+    // ДЕФОЛТНЫЙ КОНЕЦ СМЕНЫ 16:00
+    const endStr = shift?.endTime || cleaner.defaultEndTime || cleaner.endTime || '16:00';
 
     const [startH] = startStr.split(':').map(Number);
     const [endH] = endStr.split(':').map(Number);
 
     return {
       start: isNaN(startH) ? 8 : startH,
-      end: isNaN(endH) ? 20 : endH,
+      end: isNaN(endH) ? 16 : endH,
       isDayOff: false,
     };
   };
@@ -147,7 +148,7 @@ export default function SchedulePage() {
       status: 'CONFIRMED',
       serviceType: 'STANDARD',
       areaM2: 45,
-      roomsCount: 1,
+      roomsCount: 2,
       bathroomsCount: 1,
       windowsCount: 0,
       showcaseWindowsCount: 0,
@@ -168,12 +169,14 @@ export default function SchedulePage() {
       drySofa2: 0,
       drySofa3: 0,
       drySofaCorner4: 0,
+      drySofaBig: 0,
+      drySofaU: 0,
       dryArmchair: 0,
       dryMattressSide: 0,
       clientName: '',
       clientPhone: '',
       addressLine1: '',
-      price: 170,
+      price: 200,
       cleanersCount: 1,
       assignedCleaners: [{ id: cleaner.id, name: cleaner.name, district: cleaner.district }],
       notes: '',
@@ -191,6 +194,7 @@ export default function SchedulePage() {
         date: saved.date || selectedDate,
         assignedCleaners: (saved.assignedCleaners || []).map((c: any) => ({
           id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+          name: c.name,
         })),
       };
       const res = await fetch('/api/orders', {
