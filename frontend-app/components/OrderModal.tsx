@@ -242,7 +242,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
         const endStr = (form.endTime || '13:00').slice(0, 5);
 
         // Передаем startTime и endTime на бекэнд, чтобы он учел весь слот, а не только точку старта
-        const res = await fetch(`/api/cleaners/available?date=${dateStr}&startTime=${startStr}&endTime=${endStr}`);
+        const res = await fetch(`/api/cleaners/available?date=${dateStr}&startTime=${form.startTime}&endTime=${form.endTime}${form.id ? `&excludeOrderId=${form.id}` : ''}`);
         if (res.ok) {
           const data = await res.json();
           const map: Record<number, any> = {};
