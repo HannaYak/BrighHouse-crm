@@ -51,7 +51,12 @@ export default function CalculatorPage() {
       drySofa2: 0,
       drySofa3: 0,
       drySofaCorner4: 0,
+      drySofaBig: 0,
+      dryChair: 0,
       dryArmchair: 0,
+      dryCarpetM2: 0,
+      discountPercent: 0,
+      discountFixed: 0,
     };
   };
 
@@ -113,10 +118,19 @@ export default function CalculatorPage() {
       if (input.hasKitchenClosets) addonsList.push(`Szafki kuchenne wewnątrz`);
       if (input.hasBalcony) addonsList.push(`Sprzątanie balkonu`);
       if (input.hasSteamer) addonsList.push(`Czyszczenie parowe`);
-      if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4) addonsList.push(`Pranie tapicerki meblowej`);
+      if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4 || input.drySofaBig || input.dryArmchair) {
+        addonsList.push(`Pranie tapicerki meblowej`);
+      }
+      if (input.dryCarpetM2) addonsList.push(`Czyszczenie dywanu/wykładziny (${input.dryCarpetM2} m²)`);
 
       if (addonsList.length > 0) {
         text += `➕ Usługi dodatkowe:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
+      }
+
+      if (input.discountPercent && input.discountPercent > 0) {
+        text += `🎁 Rabat promocyjny: ${input.discountPercent}%\n`;
+      } else if (input.discountFixed && input.discountFixed > 0) {
+        text += `🎁 Rabat promocyjny: -${input.discountFixed} zł\n`;
       }
 
       text += `💰 Całkowity koszt: ${calcResult.totalPrice} zł\n\n`;
@@ -142,10 +156,19 @@ export default function CalculatorPage() {
       if (input.hasOven) addonsList.push(`Oven cleaning`);
       if (input.hasFridge) addonsList.push(`Fridge cleaning`);
       if (input.hasKitchenClosets) addonsList.push(`Inside kitchen cabinets`);
-      if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4) addonsList.push(`Upholstery dry cleaning`);
+      if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4 || input.drySofaBig || input.dryArmchair) {
+        addonsList.push(`Upholstery dry cleaning`);
+      }
+      if (input.dryCarpetM2) addonsList.push(`Carpet dry cleaning (${input.dryCarpetM2} m²)`);
 
       if (addonsList.length > 0) {
         text += `➕ Add-ons included:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
+      }
+
+      if (input.discountPercent && input.discountPercent > 0) {
+        text += `🎁 Special discount: ${input.discountPercent}%\n`;
+      } else if (input.discountFixed && input.discountFixed > 0) {
+        text += `🎁 Special discount: -${input.discountFixed} zł\n`;
       }
 
       text += `💰 Total price: ${calcResult.totalPrice} zł\n\n`;
@@ -172,10 +195,19 @@ export default function CalculatorPage() {
     if (input.hasFridge) addonsList.push(`Холодильник`);
     if (input.hasKitchenClosets) addonsList.push(`Кухонные шкафы внутри`);
     if (input.hasSteamer) addonsList.push(`Обработка пароочистителем`);
-    if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4) addonsList.push(`Химчистка дивана / мебели`);
+    if (input.drySofa2 || input.drySofa3 || input.drySofaCorner4 || input.drySofaBig || input.dryArmchair) {
+      addonsList.push(`Химчистка дивана / мебели`);
+    }
+    if (input.dryCarpetM2) addonsList.push(`Химчистка ковра (${input.dryCarpetM2} м²)`);
 
     if (addonsList.length > 0) {
       text += `➕ Дополнительные услуги:\n${addonsList.map((a) => `  - ${a}`).join('\n')}\n\n`;
+    }
+
+    if (input.discountPercent && input.discountPercent > 0) {
+      text += `🎁 Скидка по акции: ${input.discountPercent}%\n`;
+    } else if (input.discountFixed && input.discountFixed > 0) {
+      text += `🎁 Скидка по акции: -${input.discountFixed} zł\n`;
     }
 
     text += `💰 Итоговая стоимость: ${calcResult.totalPrice} zł\n\n`;
@@ -367,8 +399,8 @@ export default function CalculatorPage() {
 
           {/* Химчистка */}
           <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 space-y-2">
-            <span className="text-xs font-bold text-amber-950 uppercase block">🛋️ Химчистка мебели</span>
-            <div className="grid grid-cols-4 gap-2">
+            <span className="text-xs font-bold text-amber-950 uppercase block">🛋️ Химчистка мебели и ковров</span>
+            <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="text-[10px] text-slate-600 block mb-0.5">Диван 2-м (180 zł)</label>
                 <input
@@ -390,12 +422,22 @@ export default function CalculatorPage() {
                 />
               </div>
               <div>
-                <label className="text-[10px] text-slate-600 block mb-0.5">Угловой (220 zł)</label>
+                <label className="text-[10px] text-slate-600 block mb-0.5">Угловой 4-м (220 zł)</label>
                 <input
                   type="number"
                   min="0"
                   value={input.drySofaCorner4 || 0}
                   onChange={(e) => setInput({ ...input, drySofaCorner4: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-600 block mb-0.5">П-образный / Большой (260 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.drySofaBig || 0}
+                  onChange={(e) => setInput({ ...input, drySofaBig: Math.max(0, Number(e.target.value)) })}
                   className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
                 />
               </div>
@@ -407,6 +449,44 @@ export default function CalculatorPage() {
                   value={input.dryArmchair || 0}
                   onChange={(e) => setInput({ ...input, dryArmchair: Math.max(0, Number(e.target.value)) })}
                   className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-600 block mb-0.5">Ковер (м²) (15 zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.dryCarpetM2 || 0}
+                  onChange={(e) => setInput({ ...input, dryCarpetM2: Math.max(0, Number(e.target.value)) })}
+                  className="w-full bg-white border border-amber-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Скидки и промо */}
+          <div className="bg-purple-50/70 border border-purple-200 rounded-2xl p-4 space-y-2">
+            <span className="text-xs font-bold text-purple-950 uppercase block">🎁 Акции и скидки</span>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-semibold text-purple-900 block mb-1">Скидка в процентах (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={input.discountPercent || 0}
+                  onChange={(e) => setInput({ ...input, discountPercent: Math.max(0, Number(e.target.value)), discountFixed: 0 })}
+                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-purple-900 block mb-1">Фиксированная скидка (zł)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={input.discountFixed || 0}
+                  onChange={(e) => setInput({ ...input, discountFixed: Math.max(0, Number(e.target.value)), discountPercent: 0 })}
+                  className="w-full bg-white border border-purple-200 rounded-lg p-1.5 text-xs font-bold"
                 />
               </div>
             </div>
@@ -432,6 +512,14 @@ export default function CalculatorPage() {
                 <div className="flex justify-between text-amber-300 font-semibold">
                   <span>Окна и химчистка:</span>
                   <span className="font-mono">+{specialistPart} zł</span>
+                </div>
+              )}
+              {((input.discountPercent ?? 0) > 0 || (input.discountFixed ?? 0) > 0) && (
+                <div className="flex justify-between text-purple-300 font-semibold">
+                  <span>Применена скидка:</span>
+                  <span className="font-mono">
+                    {(input.discountPercent ?? 0) > 0 ? `-${input.discountPercent}%` : `-${input.discountFixed} zł`}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between text-slate-300 pt-1 border-t border-slate-800">
