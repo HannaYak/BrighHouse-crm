@@ -1,16 +1,20 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
-interface Contact {
-  id: number;
+export type PlatformType = 'TELEGRAM' | 'WHATSAPP' | 'INSTAGRAM' | 'FACEBOOK';
+
+interface ChatContact {
+  id: string; // ID диалога из БД Conversation или внешний ID
   name: string;
   phone?: string;
-  telegramChatId?: string;
+  platform: PlatformType;
   role: 'client' | 'cleaner';
   district?: string;
   lastMessage?: string;
   lastTime?: string;
+  unreadCount?: number;
 }
 
 interface Message {
@@ -20,115 +24,143 @@ interface Message {
   time: string;
 }
 
+const PLATFORM_CONFIG: Record<PlatformType, { label: string; icon: string; badgeClass: string }> = {
+  TELEGRAM: { label: 'Telegram', icon: '✈️', badgeClass: 'bg-sky-50 text-sky-700 border-sky-200' },
+  WHATSAPP: { label: 'WhatsApp', icon: '💬', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  INSTAGRAM: { label: 'Instagram', icon: '📸', badgeClass: 'bg-pink-50 text-pink-700 border-pink-200' },
+  FACEBOOK: { label: 'Facebook', icon: '📘', badgeClass: 'bg-blue-50 text-blue-700 border-blue-200' },
+};
+
 export default function ChatPage() {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [activeTab, setActiveTab] = useState<'all' | 'cleaners' | 'clients'>('all');
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [contacts, setContacts] = useState<ChatContact[]>([]);
+  const [activePlatformFilter, setActivePlatformFilter] = useState<'ALL' | PlatformType>('ALL');
+  const [activeRoleFilter, setActiveRoleFilter] = useState<'ALL' | 'cleaners' | 'clients'>('ALL');
+  const [selectedContact, setSelectedContact] = useState<ChatContact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
-  // Загрузка контактов (клинеров и клиентов)
-  useEffect(() => {
-    const loadContacts = async () => {
-      try {
-        setLoading(true);
-        const [cleanersRes, ordersRes] = await Promise.all([
-          fetch('/api/cleaners'),
-          fetch('/api/orders'),
-        ]);
+  // Для создания заказа сразу из чата
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [orderFromChat, setOrderFromChat] = useState<OrderDetail | null>(null);
 
-        const list: Contact[] = [];
+  // Загрузка диалогов со всех платформ
+  const loadConversations = async () => {
+    try {
+      setLoading(true);
+      const [convRes, cleanersRes] = await Promise.all([
+        fetch('/api/chat/conversations'),
+        fetch('/api/cleaners'),
+      ]);
 
-        // Клинеры
-        if (cleanersRes.ok) {
-          const cleanersData = await cleanersRes.json();
-          cleanersData.forEach((c: any) => {
+      const list: ChatContact[] = [];
+
+      // 1. Диалоги клиентов из базы Conversation (Telegram, WhatsApp, Instagram, Facebook)
+      if (convRes.ok) {
+        const convData = await convRes.json();
+        if (Array.isArray(convData)) {
+          convData.forEach((c: any) => {
+            const platformKey = (c.channel || 'TELEGRAM').toUpperCase() as PlatformType;
+            const lastMsg = c.messages && c.messages.length > 0 ? c.messages[c.messages.length - 1] : null;
             list.push({
               id: c.id,
-              name: `🙋‍♀️ ${c.name}`,
-              phone: c.phone,
-              telegramChatId: c.telegramChatId,
-              role: 'cleaner',
-              district: c.district || 'Центр',
-              lastMessage: c.telegramChatId ? 'Telegram подключен' : 'Нет привязки бота',
-              lastTime: 'Активен',
-            });
-          });
-        }
-
-        // Клиенты из последних заказов
-        if (ordersRes.ok) {
-          const ordersData = await ordersRes.json();
-          const uniqueClients = new Map<string, any>();
-          if (Array.isArray(ordersData)) {
-            ordersData.forEach((o: any) => {
-              if (o.clientPhone && !uniqueClients.has(o.clientPhone)) {
-                uniqueClients.set(o.clientPhone, o);
-              }
-            });
-          }
-
-          uniqueClients.forEach((o: any, phone: string) => {
-            list.push({
-              id: o.clientId || Math.floor(Math.random() * 10000) + 500,
-              name: `👤 ${o.clientName || 'Клиент'}`,
-              phone: phone,
+              name: c.clientName || 'Клиент',
+              phone: c.phone || '',
+              platform: PLATFORM_CONFIG[platformKey] ? platformKey : 'TELEGRAM',
               role: 'client',
-              district: o.addressLine1 || '',
-              lastMessage: `Заказ #${o.orderNumber || ''}: ${o.serviceType || 'Уборка'}`,
-              lastTime: new Date(o.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }),
+              district: c.address || 'Варшава',
+              lastMessage: lastMsg ? lastMsg.text : 'Новый диалог',
+              lastTime: lastMsg ? new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Сейчас',
             });
           });
         }
-
-        setContacts(list);
-        if (list.length > 0 && !selectedContact) {
-          setSelectedContact(list[0]);
-          initMockConversation(list[0]);
-        }
-      } catch (err) {
-        console.error('Ошибка загрузки чатов:', err);
-      } finally {
-        setLoading(false);
       }
-    };
 
-    loadContacts();
+      // 2. Внутренние чаты с нашими клинерами через Telegram-бот бригады
+      if (cleanersRes.ok) {
+        const cleanersData = await cleanersRes.json();
+        if (Array.isArray(cleanersData)) {
+          cleanersData.forEach((cl: any) => {
+            list.push({
+              id: `cleaner_${cl.id}`,
+              name: `🙋‍♀️ ${cl.name}`,
+              phone: cl.phone,
+              platform: 'TELEGRAM',
+              role: 'cleaner',
+              district: cl.district || 'Центр',
+              lastMessage: cl.telegramChatId ? 'Telegram подключен' : 'Ожидает PIN',
+              lastTime: 'Смена',
+            });
+          });
+        }
+      }
+
+      setContacts(list);
+      if (list.length > 0 && !selectedContact) {
+        setSelectedContact(list[0]);
+        loadMessages(list[0]);
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки сообщений:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConversations();
   }, []);
 
-  const initMockConversation = (contact: Contact) => {
+  const loadMessages = async (contact: ChatContact) => {
     if (contact.role === 'cleaner') {
       setMessages([
         {
           id: '1',
           sender: 'them',
-          text: `Здравствуйте! График на неделю актуален, готова к выездам.`,
+          text: `Здравствуйте! График актуален, готова к выездам.`,
           time: '09:15',
         },
       ]);
-    } else {
-      setMessages([
-        {
-          id: '1',
-          sender: 'them',
-          text: `Здравствуйте! Подскажите, клинеры приедут со своим пылесосом и химией?`,
-          time: '11:20',
-        },
-        {
-          id: '2',
-          sender: 'me',
-          text: `Добрый день! Да, конечно. Все профессиональные средства, инвентарь и пылесос мы привозим с собой.`,
-          time: '11:24',
-        },
-      ]);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/chat/messages?conversationId=${contact.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        const formatted: Message[] = (data || []).map((m: any) => ({
+          id: m.id,
+          sender: m.senderType === 'CLIENT' ? 'them' : 'me',
+          text: m.text,
+          time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }));
+        setMessages(formatted.length > 0 ? formatted : [
+          {
+            id: 'init_1',
+            sender: 'them',
+            text: 'Здравствуйте! Подскажите стоимость уборки квартиры 50 м² в Варшаве?',
+            time: '12:00',
+          }
+        ]);
+      } else {
+        setMessages([
+          {
+            id: 'init_1',
+            sender: 'them',
+            text: 'Dzień dobry! Chciałbym zamówić sprzątanie mieszkania.',
+            time: '11:40',
+          },
+        ]);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const handleSelectContact = (contact: Contact) => {
+  const handleSelectContact = (contact: ChatContact) => {
     setSelectedContact(contact);
-    initMockConversation(contact);
+    loadMessages(contact);
   };
 
   const handleSendMessage = async (customText?: string) => {
@@ -145,43 +177,90 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, newMsg]);
     if (!customText) setInputText('');
 
-    // Если есть telegramChatId — шлем реальное сообщение через бота
-    if (selectedContact.telegramChatId) {
-      try {
-        setSending(true);
-        await fetch('/api/telegram/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chatId: selectedContact.telegramChatId,
-            text: textToSend,
-          }),
-        });
-      } catch (e) {
-        console.error('Ошибка отправки в Telegram:', e);
-      } finally {
-        setSending(false);
-      }
+    try {
+      setSending(true);
+      await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: selectedContact.id,
+          platform: selectedContact.platform,
+          phone: selectedContact.phone,
+          text: textToSend,
+        }),
+      });
+    } catch (e) {
+      console.error('Ошибка отправки ответа:', e);
+    } finally {
+      setSending(false);
     }
   };
 
+  // Открытие модалки создания заказа с предзаполненными данными из чата
+  const handleCreateOrderFromChat = () => {
+    if (!selectedContact) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    setOrderFromChat({
+      date: todayStr,
+      startTime: '10:00',
+      endTime: '13:30',
+      timeSlot: '10:00 — 13:30',
+      serviceType: 'STANDARD',
+      areaM2: 45,
+      roomsCount: 2,
+      bathroomsCount: 1,
+      windowsCount: 0,
+      balconyWindowsCount: 0,
+      showcaseWindowsCount: 0,
+      hasOven: false,
+      hasFridge: false,
+      hasFridgeFreeze: false,
+      hasMicrowave: false,
+      hasBalcony: false,
+      hasKitchenClosets: false,
+      hasStairs: false,
+      hasSteamer: false,
+      hasDishesHours: 0,
+      hasIroningHours: 0,
+      hasVacuum: false,
+      hasPets: false,
+      hasKeys: false,
+      drySofa2: 0,
+      drySofa3: 0,
+      drySofaCorner4: 0,
+      dryArmchair: 0,
+      dryMattressSide: 0,
+      price: 200,
+      cleanersCount: 1,
+      clientName: selectedContact.name.replace('👤 ', '').replace('🙋‍♀️ ', ''),
+      clientPhone: selectedContact.phone || '',
+      addressLine1: selectedContact.district !== 'Варшава' ? selectedContact.district || '' : '',
+      assignedCleaners: [],
+      status: 'NEW',
+      notes: `Заявка получена из канала: ${selectedContact.platform}`,
+      paymentMethod: 'CASH',
+    });
+    setIsOrderModalOpen(true);
+  };
+
   const filteredContacts = contacts.filter((c) => {
-    if (activeTab === 'cleaners') return c.role === 'cleaner';
-    if (activeTab === 'clients') return c.role === 'client';
+    if (activePlatformFilter !== 'ALL' && c.platform !== activePlatformFilter) return false;
+    if (activeRoleFilter === 'cleaners' && c.role !== 'cleaner') return false;
+    if (activeRoleFilter === 'clients' && c.role !== 'client') return false;
     return true;
   });
 
-  // Быстрые шаблоны
   const quickTemplates = selectedContact?.role === 'cleaner'
     ? [
         'Назначен новый наряд на завтра. Подтверди выезд, пожалуйста!',
         'Уточни статус заказа: клининг завершен? Оплата получена наличными?',
-        'Напоминаем: смена начинается в 10:00. Адрес и код домофона в наряде.',
+        'Напоминаем: смена начинается в 10:00. Код домофона в наряде.',
       ]
     : [
         'Dzień dobry! Zespół BrightHouse potwierdza termin sprzątania na jutro 🏠✨',
-        'Клинеры закончили уборку объекта! Всё ли вам понравилось по качеству?',
-        '💳 Отправляем реквизиты для оплаты: BLIK или банковский перевод на счет Sp. z o.o.',
+        'Клинеры закончили уборку! Всё ли вам понравилось по качеству?',
+        '💳 Реквизиты для оплаты: счет Sp. z o.o. или перевод BLIK на номер фирмы.',
+        'Прайс: 1-комн. (до 34м²) — 170 zł, 2-комн. (до 50м²) — 200 zł. Приезжаем со своей химией и инвентарем!',
       ];
 
   return (
@@ -190,65 +269,110 @@ export default function ChatPage() {
       <div className="w-80 sm:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50">
         <div className="p-4 border-b border-slate-200 bg-white space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-800">Центр сообщений</h2>
-            <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-bold">
-              Telegram / Чат
+            <h2 className="text-base font-bold text-slate-800">Омниканальные чаты</h2>
+            <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full font-bold">
+              Все каналы
             </span>
           </div>
 
-          {/* Фильтр табов */}
-          <div className="flex bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+          {/* Фильтр по платформам: Все, TG, WA, IG, FB */}
+          <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold gap-1 overflow-x-auto">
             <button
               type="button"
-              onClick={() => setActiveTab('all')}
-              className={`flex-1 py-1 rounded-lg transition ${
-                activeTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+              onClick={() => setActivePlatformFilter('ALL')}
+              className={`px-2.5 py-1 rounded-lg transition shrink-0 ${
+                activePlatformFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               Все ({contacts.length})
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('cleaners')}
-              className={`flex-1 py-1 rounded-lg transition ${
-                activeTab === 'cleaners' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+              onClick={() => setActivePlatformFilter('TELEGRAM')}
+              className={`px-2 py-1 rounded-lg transition shrink-0 flex items-center gap-1 ${
+                activePlatformFilter === 'TELEGRAM' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-600 hover:text-sky-600'
               }`}
             >
-              Клинеры
+              ✈️ TG
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('clients')}
-              className={`flex-1 py-1 rounded-lg transition ${
-                activeTab === 'clients' ? 'bg-white text-emerald-600 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+              onClick={() => setActivePlatformFilter('WHATSAPP')}
+              className={`px-2 py-1 rounded-lg transition shrink-0 flex items-center gap-1 ${
+                activePlatformFilter === 'WHATSAPP' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-emerald-600'
               }`}
             >
+              💬 WA
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePlatformFilter('INSTAGRAM')}
+              className={`px-2 py-1 rounded-lg transition shrink-0 flex items-center gap-1 ${
+                activePlatformFilter === 'INSTAGRAM' ? 'bg-pink-600 text-white shadow-xs' : 'text-slate-600 hover:text-pink-600'
+              }`}
+            >
+              📸 IG
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePlatformFilter('FACEBOOK')}
+              className={`px-2 py-1 rounded-lg transition shrink-0 flex items-center gap-1 ${
+                activePlatformFilter === 'FACEBOOK' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-blue-600'
+              }`}
+            >
+              📘 FB
+            </button>
+          </div>
+
+          {/* Фильтр роли: Клиенты / Клинеры */}
+          <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-[10px] font-bold">
+            <button
+              type="button"
+              onClick={() => setActiveRoleFilter('ALL')}
+              className={`flex-1 py-1 rounded-md transition ${activeRoleFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'}`}
+            >
+              Все
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRoleFilter('clients')}
+              className={`flex-1 py-1 rounded-md transition ${activeRoleFilter === 'clients' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500'}`}
+            >
               Клиенты
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRoleFilter('cleaners')}
+              className={`flex-1 py-1 rounded-md transition ${activeRoleFilter === 'cleaners' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500'}`}
+            >
+              Бригада
             </button>
           </div>
         </div>
 
-        {/* Список контактов */}
+        {/* Список диалогов */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {loading ? (
-            <div className="p-8 text-center text-xs text-slate-400">Загрузка контактов...</div>
+            <div className="p-8 text-center text-xs text-slate-400">Загрузка диалогов...</div>
           ) : filteredContacts.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400">Диалогов пока нет</div>
           ) : (
             filteredContacts.map((contact) => {
-              const isSelected = selectedContact?.id === contact.id && selectedContact?.role === contact.role;
+              const isSelected = selectedContact?.id === contact.id;
+              const platformCfg = PLATFORM_CONFIG[contact.platform];
+
               return (
                 <div
-                  key={`${contact.role}_${contact.id}`}
+                  key={contact.id}
                   onClick={() => handleSelectContact(contact)}
                   className={`p-3.5 cursor-pointer transition flex items-start gap-3 ${
                     isSelected ? 'bg-blue-50/80 border-r-4 border-blue-600' : 'hover:bg-slate-100/70'
                   }`}
                 >
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
                     contact.role === 'cleaner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
                   }`}>
-                    {contact.name.slice(2, 4).toUpperCase()}
+                    {contact.name.slice(0, 2).toUpperCase()}
                   </div>
 
                   <div className="flex-1 min-w-0">
@@ -260,14 +384,21 @@ export default function ChatPage() {
                         {contact.lastTime}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 truncate">
+
+                    <p className="text-[11px] text-slate-500 truncate mb-1">
                       {contact.lastMessage}
                     </p>
-                    {contact.phone && (
-                      <span className="text-[10px] text-slate-400 block mt-0.5">
-                        📞 {contact.phone}
+
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${platformCfg.badgeClass}`}>
+                        {platformCfg.icon} {platformCfg.label}
                       </span>
-                    )}
+                      {contact.phone && (
+                        <span className="text-[10px] text-slate-400 font-mono truncate">
+                          {contact.phone}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -276,7 +407,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Правая колонка: Окно переписки */}
+      {/* Правая колонка: Окно активного чата */}
       <div className="flex-1 flex flex-col bg-slate-50/40">
         {selectedContact ? (
           <>
@@ -286,38 +417,43 @@ export default function ChatPage() {
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
                   selectedContact.role === 'cleaner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
                 }`}>
-                  {selectedContact.name.slice(2, 4).toUpperCase()}
+                  {selectedContact.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                     {selectedContact.name}
-                    {selectedContact.telegramChatId ? (
-                      <span className="bg-sky-100 text-sky-800 text-[10px] px-2 py-0.5 rounded-full font-semibold">
-                        TG Bot On
-                      </span>
-                    ) : (
-                      <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-medium">
-                        Direct / Phone
-                      </span>
-                    )}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${PLATFORM_CONFIG[selectedContact.platform].badgeClass}`}>
+                      {PLATFORM_CONFIG[selectedContact.platform].icon} {PLATFORM_CONFIG[selectedContact.platform].label}
+                    </span>
                   </h3>
                   <div className="text-[11px] text-slate-400">
-                    {selectedContact.phone || 'Телефон не указан'} • {selectedContact.district || 'Варшава'}
+                    {selectedContact.phone || 'Без телефона'} • {selectedContact.district || 'Варшава'}
                   </div>
                 </div>
               </div>
 
-              {selectedContact.phone && (
-                <a
-                  href={`tel:${selectedContact.phone}`}
-                  className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-xl transition"
-                >
-                  📞 Позвонить
-                </a>
-              )}
+              <div className="flex items-center gap-2">
+                {selectedContact.role === 'client' && (
+                  <button
+                    type="button"
+                    onClick={handleCreateOrderFromChat}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition shadow-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    📝 Оформить заказ
+                  </button>
+                )}
+                {selectedContact.phone && (
+                  <a
+                    href={`tel:${selectedContact.phone}`}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-xl transition"
+                  >
+                    📞 Позвонить
+                  </a>
+                )}
+              </div>
             </div>
 
-            {/* Сообщения */}
+            {/* Лента сообщений */}
             <div className="flex-1 p-5 overflow-y-auto space-y-3">
               {messages.map((msg) => (
                 <div
@@ -354,7 +490,7 @@ export default function ChatPage() {
                   onClick={() => handleSendMessage(tmpl)}
                   className="bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-[11px] font-medium px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 border border-slate-200"
                 >
-                  {tmpl.slice(0, 32)}...
+                  {tmpl.slice(0, 35)}...
                 </button>
               ))}
             </div>
@@ -363,7 +499,7 @@ export default function ChatPage() {
             <div className="p-3 bg-white border-t border-slate-200 flex gap-2">
               <input
                 type="text"
-                placeholder={`Написать ${selectedContact.role === 'cleaner' ? 'клинеру' : 'клиенту'}...`}
+                placeholder={`Ответить в ${PLATFORM_CONFIG[selectedContact.platform].label}...`}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => {
@@ -378,9 +514,9 @@ export default function ChatPage() {
                 type="button"
                 onClick={() => handleSendMessage()}
                 disabled={sending || !inputText.trim()}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
               >
-                {sending ? '...' : 'Отправить ✈️'}
+                {sending ? '...' : `Отправить в ${PLATFORM_CONFIG[selectedContact.platform].label}`}
               </button>
             </div>
           </>
@@ -390,6 +526,28 @@ export default function ChatPage() {
           </div>
         )}
       </div>
+
+      {/* Модалка оформления заказа прямо из чата */}
+      {isOrderModalOpen && (
+        <OrderModal
+          order={orderFromChat}
+          isOpen={isOrderModalOpen}
+          onClose={() => {
+            setIsOrderModalOpen(false);
+            setOrderFromChat(null);
+          }}
+          onSave={async (saved) => {
+            await fetch('/api/orders', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(saved),
+            });
+            setIsOrderModalOpen(false);
+            setOrderFromChat(null);
+            alert('✅ Заказ из переписки успешно создан и отправлен на Канбан!');
+          }}
+        />
+      )}
     </div>
   );
 }
