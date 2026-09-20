@@ -43,7 +43,7 @@ export default function AnalyticsPage() {
   // Общая выручка
   const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
-  // Расчет по каждому клинеру
+  // Расчет по каждому клинеру с учетом бригады, спецвыплат и наличных на руках
   const cleanerStats = cleaners.map(cleaner => {
     const cleanerOrders = filteredOrders.filter(o => 
       o.assignedCleaners?.some((ac: any) => {
@@ -55,11 +55,18 @@ export default function AnalyticsPage() {
     let earnedForCompany = 0;
     let standardHours = 0;
     let heavyHours = 0;
-    let specialistBonus = 0; // Окна / химчистка, если выделены
+    let specialistPayout = 0;
+    let cashInHand = 0;
 
     cleanerOrders.forEach(o => {
       const brigadeSize = Math.max(1, o.assignedCleaners?.length || 1);
-      earnedForCompany += (Number(o.price) || 0) / brigadeSize;
+      const orderPrice = Number(o.price) || 0;
+      earnedForCompany += orderPrice / brigadeSize;
+
+      // Если клинер лично забрал наличные у клиента
+      if (o.paymentMethod === 'CASH' && Number(o.cashCollectedById) === Number(cleaner.id)) {
+        cashInHand += orderPrice;
+      }
 
       // Парсинг времени заказа
       let duration = 3.5;
@@ -71,6 +78,28 @@ export default function AnalyticsPage() {
         if (diff > 0) duration = diff;
       }
 
+      // Спецвыплаты за окна и витрины (делятся между участниками бригады или мастеру)
+      const windowsCount = Number(o.windowsCount) || 0;
+      const balconyWindowsCount = Number(o.balconyWindowsCount) || 0;
+      const showcaseWindowsCount = Number(o.showcaseWindowsCount) || 0;
+      const windowsRevenue = (windowsCount * 35) + (balconyWindowsCount * 45) + (showcaseWindowsCount * 50);
+
+      // Химчистка мебели
+      const dryCleanRevenue =
+        (Number(o.drySofa2) || 0) * 180 +
+        (Number(o.drySofa3) || 0) * 200 +
+        (Number(o.drySofaCorner4) || 0) * 220 +
+        (Number(o.drySofaBig) || 0) * 260 +
+        (Number(o.drySofaU) || 0) * 260 +
+        (Number(o.dryArmchair) || 0) * 60 +
+        (Number(o.dryChair) || 0) * 15 +
+        (Number(o.dryCarpetM2) || 0) * 15;
+
+      if (windowsRevenue > 0 || dryCleanRevenue > 0) {
+        // Выплата мастеру: 40% от химчистки и окон
+        specialistPayout += ((windowsRevenue + dryCleanRevenue) * 0.40) / brigadeSize;
+      }
+
       const isHeavy = o.serviceType === 'GENERAL' || o.serviceType === 'AFTER_REPAIR' || o.serviceType === 'OFFICE_GENERAL';
       if (isHeavy) {
         heavyHours += duration;
@@ -79,10 +108,11 @@ export default function AnalyticsPage() {
       }
     });
 
-    // 30 zł/ч за стандарт, 35 zł/ч за генералку/послестрой
+    // 30 zł/ч за стандарт, 35 zł/ч за генералку/после ремонта + спецвыплаты
     const salaryStandard = standardHours * 30;
     const salaryHeavy = heavyHours * 35;
-    const totalSalary = salaryStandard + salaryHeavy + specialistBonus;
+    const totalEarnedSalary = salaryStandard + salaryHeavy + specialistPayout;
+    const netPayout = totalEarnedSalary - cashInHand;
 
     return {
       ...cleaner,
@@ -90,26 +120,33 @@ export default function AnalyticsPage() {
       standardHours,
       heavyHours,
       totalHours: standardHours + heavyHours,
+      specialistPayout,
+      cashInHand,
       earnedForCompany,
-      totalSalary,
+      totalSalary: totalEarnedSalary,
+      netPayout,
     };
   }).sort((a, b) => b.earnedForCompany - a.earnedForCompany);
 
   const totalSalaryFund = cleanerStats.reduce((sum, c) => sum + c.totalSalary, 0);
-  const materialsCost = totalRevenue * 0.10; // 10% на химию и расходники
+  const totalCashCollected = cleanerStats.reduce((sum, c) => sum + c.cashInHand, 0);
+  const materialsCost = totalRevenue * 0.10; // 10% на химию и инвентарь
   const netProfit = totalRevenue - totalSalaryFund - materialsCost;
 
-  // Экспорт в CSV / Excel
+  // Экспорт в CSV / Excel с корректной кодировкой UTF-8 BOM
   const exportToCSV = () => {
     const headers = [
       'Сотрудник',
       'Район',
-      'Заказов',
+      'Заказов выполнено',
       'Стандарт (часы)',
-      'Генеральная/Послестрой (часы)',
+      'Генералка/Ремонт (часы)',
       'Всего часов',
-      'Выручка компании (zł)',
-      'Зарплата к выплате (zł)'
+      'Окна и химчистка (zł)',
+      'Начислено ЗП (zł)',
+      'Забрал наличных (zł)',
+      'К выплате на карту (zł)',
+      'Принес выручки компании (zł)'
     ];
 
     const rows = cleanerStats
@@ -121,19 +158,25 @@ export default function AnalyticsPage() {
         c.standardHours.toFixed(1),
         c.heavyHours.toFixed(1),
         c.totalHours.toFixed(1),
-        c.earnedForCompany.toFixed(2),
-        c.totalSalary.toFixed(2)
+        c.specialistPayout.toFixed(2),
+        c.totalSalary.toFixed(2),
+        c.cashInHand.toFixed(2),
+        c.netPayout.toFixed(2),
+        c.earnedForCompany.toFixed(2)
       ]);
 
     const summaryRow = [
-      '"ИТОГО"',
+      '"ИТОГО ПО ФИРМЕ"',
       '""',
       filteredOrders.length,
       '""',
       '""',
       '""',
-      totalRevenue.toFixed(2),
-      totalSalaryFund.toFixed(2)
+      '""',
+      totalSalaryFund.toFixed(2),
+      totalCashCollected.toFixed(2),
+      (totalSalaryFund - totalCashCollected).toFixed(2),
+      totalRevenue.toFixed(2)
     ];
 
     const csvContent = [
@@ -146,7 +189,7 @@ export default function AnalyticsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Отчет_BrightHouse_${MONTHS[selectedMonth]}_${selectedYear}.csv`);
+    link.setAttribute('download', `BrightHouse_Отчет_${MONTHS[selectedMonth]}_${selectedYear}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -166,7 +209,7 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">📈 Финансовая аналитика и Расчет зарплат</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Ставки: Стандарт — 30 zł/ч, Генеральная/После ремонта — 35 zł/ч
+            Учет бригад, смен, спецвыплат за окна/химчистку и перерасчета наличных
           </p>
         </div>
 
@@ -194,7 +237,7 @@ export default function AnalyticsPage() {
           <button
             type="button"
             onClick={exportToCSV}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
           >
             <span>📥</span>
             <span>Скачать отчет (CSV)</span>
@@ -216,7 +259,7 @@ export default function AnalyticsPage() {
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Зарплатный фонд</div>
           <div className="text-2xl font-extrabold text-indigo-600">{totalSalaryFund.toFixed(0)} zł</div>
           <div className="text-[11px] font-semibold text-slate-400 mt-2">
-            Почасовая выплата клинерам
+            Наличные у клинеров: {totalCashCollected.toFixed(0)} zł
           </div>
         </div>
 
@@ -228,16 +271,16 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        <div className="bg-brand-600 p-5 rounded-2xl border border-brand-700 shadow-xs text-white">
-          <div className="text-xs font-bold text-brand-100 uppercase tracking-wider mb-1">Чистая прибыль</div>
+        <div className="bg-blue-600 p-5 rounded-2xl border border-blue-700 shadow-xs text-white">
+          <div className="text-xs font-bold text-blue-100 uppercase tracking-wider mb-1">Чистая прибыль</div>
           <div className="text-2xl font-extrabold">{netProfit.toFixed(0)} zł</div>
-          <div className="text-[11px] font-semibold text-brand-200 mt-2">
-            Чистый доход BrightHouse
+          <div className="text-[11px] font-semibold text-blue-200 mt-2">
+            Чистый доход фирмы
           </div>
         </div>
       </div>
 
-      {/* Детальная таблица зарплат клинеров */}
+      {/* Детальная таблица выплат клинерам */}
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex justify-between items-center">
           <h2 className="text-sm font-bold text-slate-800">
@@ -254,11 +297,12 @@ export default function AnalyticsPage() {
               <tr>
                 <th className="p-3.5 pl-5">Клинер</th>
                 <th className="p-3.5 text-center">Заказов</th>
-                <th className="p-3.5 text-center">Стандарт (30 zł/ч)</th>
-                <th className="p-3.5 text-center">Генеральная (35 zł/ч)</th>
-                <th className="p-3.5 text-center">Всего часов</th>
-                <th className="p-3.5 text-right">Выручка (zł)</th>
-                <th className="p-3.5 text-right pr-5 font-black text-slate-900">ЗП к выплате (zł)</th>
+                <th className="p-3.5 text-center">Стандарт (30 zł)</th>
+                <th className="p-3.5 text-center">Генералка (35 zł)</th>
+                <th className="p-3.5 text-center">Спецвыплаты</th>
+                <th className="p-3.5 text-right">Начислено ЗП</th>
+                <th className="p-3.5 text-right text-amber-800">На руках наличными</th>
+                <th className="p-3.5 text-right pr-5 font-black text-slate-900">К переводу (zł)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -274,18 +318,23 @@ export default function AnalyticsPage() {
                   <td className="p-3.5 text-center font-bold text-slate-700">{c.ordersCount}</td>
                   <td className="p-3.5 text-center font-mono text-slate-600">{c.standardHours.toFixed(1)} ч</td>
                   <td className="p-3.5 text-center font-mono text-indigo-600 font-semibold">{c.heavyHours.toFixed(1)} ч</td>
-                  <td className="p-3.5 text-center font-bold font-mono text-slate-900">{c.totalHours.toFixed(1)} ч</td>
-                  <td className="p-3.5 text-right font-mono font-bold text-slate-700">{c.earnedForCompany.toFixed(0)} zł</td>
-                  <td className="p-3.5 text-right pr-5 font-mono font-extrabold text-emerald-600 text-sm">
-                    {c.totalSalary.toFixed(0)} zł
+                  <td className="p-3.5 text-center font-mono text-amber-700 font-medium">
+                    {c.specialistPayout > 0 ? `+${c.specialistPayout.toFixed(0)} zł` : '—'}
+                  </td>
+                  <td className="p-3.5 text-right font-mono font-bold text-slate-700">{c.totalSalary.toFixed(0)} zł</td>
+                  <td className="p-3.5 text-right font-mono font-bold text-amber-700">
+                    {c.cashInHand > 0 ? `-${c.cashInHand.toFixed(0)} zł` : '0 zł'}
+                  </td>
+                  <td className={`p-3.5 text-right pr-5 font-mono font-extrabold text-sm ${c.netPayout >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {c.netPayout.toFixed(0)} zł
                   </td>
                 </tr>
               ))}
 
               {cleanerStats.filter(c => c.ordersCount === 0).length > 0 && (
                 <tr>
-                  <td colSpan={7} className="p-4 text-center text-slate-400 text-[11px] bg-slate-50/40">
-                    Остальные {cleanerStats.filter(c => c.ordersCount === 0).length} сотрудников пока без смен в этом месяце
+                  <td colSpan={8} className="p-4 text-center text-slate-400 text-[11px] bg-slate-50/40">
+                    Остальные {cleanerStats.filter(c => c.ordersCount === 0).length} сотрудников пока без заказов в выбранном месяце
                   </td>
                 </tr>
               )}
