@@ -54,41 +54,66 @@ export default function DirectoriesPage() {
   const handleRepeatOrder = async (client: any) => {
     try {
       const res = await fetch(`/api/clients/last-order?clientId=${client.id}&phone=${encodeURIComponent(client.phone || '')}`);
-      
+      const todayStr = new Date().toISOString().slice(0, 10);
+
       if (res.ok) {
         const lastOrder = await res.json();
-        
-        // Создаем чистый дубликат заказа на сегодняшнюю дату
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const duplicatedOrder: any = {
+        const duplicatedOrder: OrderDetail = {
           ...lastOrder,
-          id: undefined, // Сбрасываем ID, чтобы создался НОВЫЙ заказ
+          id: undefined, // Сбрасываем ID для создания нового заказа
           orderNumber: undefined,
           date: todayStr,
-          status: 'NEW',
-          urgency: 'NORMAL',
-          clientName: client.name || lastOrder.clientName,
-          clientPhone: client.phone || lastOrder.clientPhone,
-          addressLine1: client.address || lastOrder.addressLine1,
+          status: 'CONFIRMED',
+          clientName: client.name || lastOrder.clientName || '',
+          clientPhone: client.phone || lastOrder.clientPhone || '',
+          addressLine1: client.address || lastOrder.addressLine1 || '',
+          addressLine2: lastOrder.addressLine2 || '',
+          windowsCount: Number(lastOrder.windowsCount) || 0,
+          balconyWindowsCount: Number(lastOrder.balconyWindowsCount) || 0,
+          showcaseWindowsCount: Number(lastOrder.showcaseWindowsCount) || 0,
+          hasOven: Boolean(lastOrder.hasOven),
+          hasFridge: Boolean(lastOrder.hasFridge),
+          hasFridgeFreeze: Boolean(lastOrder.hasFridgeFreeze),
+          hasMicrowave: Boolean(lastOrder.hasMicrowave),
+          hasBalcony: Boolean(lastOrder.hasBalcony),
+          hasKitchenClosets: Boolean(lastOrder.hasKitchenClosets),
+          hasStairs: Boolean(lastOrder.hasStairs),
+          hasSteamer: Boolean(lastOrder.hasSteamer),
+          hasVacuum: Boolean(lastOrder.hasVacuum),
+          hasPets: Boolean(lastOrder.hasPets),
+          hasKeys: Boolean(lastOrder.hasKeys),
+          hasDishesHours: Number(lastOrder.hasDishesHours) || 0,
+          hasIroningHours: Number(lastOrder.hasIroningHours) || 0,
+          drySofa2: Number(lastOrder.drySofa2) || 0,
+          drySofa3: Number(lastOrder.drySofa3) || 0,
+          drySofaCorner4: Number(lastOrder.drySofaCorner4) || 0,
+          drySofaCorner5: Number(lastOrder.drySofaCorner5) || 0,
+          drySofaBig: Number(lastOrder.drySofaBig) || 0,
+          drySofaU: Number(lastOrder.drySofaU) || 0,
+          dryArmchair: Number(lastOrder.dryArmchair) || 0,
+          dryMattressSide: Number(lastOrder.dryMattressSide) || 0,
           assignedCleaners: (lastOrder.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
+          cleanersCount: Math.max(1, (lastOrder.assignedCleaners || []).length),
+          notes: lastOrder.notes || '',
+          paymentMethod: lastOrder.paymentMethod || 'CASH',
         };
 
         setRepeatOrderData(duplicatedOrder);
         setIsModalOpen(true);
       } else {
         // Если прошлых заказов нет — создаем базовый шаблон с данными клиента
-        // Если прошлых заказов нет — создаем базовый шаблон с данными клиента
-        const todayStr = new Date().toISOString().slice(0, 10);
         setRepeatOrderData({
           date: todayStr,
           startTime: '10:00',
-          endTime: '13:30',
-          timeSlot: '10:00 — 13:30',
+          endTime: '13:00',
+          timeSlot: '10:00 — 13:00',
           serviceType: 'STANDARD',
           areaM2: 45,
-          roomsCount: 1,
+          roomsCount: 2,
           bathroomsCount: 1,
           windowsCount: 0,
+          balconyWindowsCount: 0,
+          showcaseWindowsCount: 0,
           hasOven: false,
           hasFridge: false,
           hasFridgeFreeze: false,
@@ -107,15 +132,16 @@ export default function DirectoriesPage() {
           drySofaCorner4: 0,
           dryArmchair: 0,
           dryMattressSide: 0,
-          price: 170,
+          price: 200,
           cleanersCount: 1,
-          clientName: client.name,
-          clientPhone: client.phone,
+          clientName: client.name || '',
+          clientPhone: client.phone || '',
           addressLine1: client.address || '',
           assignedCleaners: [],
-          status: 'NEW',
-        } as any);
-        setIsModalOpen(true);
+          status: 'CONFIRMED',
+          notes: client.notes || '',
+          paymentMethod: 'CASH',
+        });
         setIsModalOpen(true);
       }
     } catch (e) {
@@ -134,12 +160,14 @@ export default function DirectoriesPage() {
       if (res.ok) {
         setIsModalOpen(false);
         setRepeatOrderData(null);
-        alert('✅ Повторный заказ успешно создан и отправлен в работу!');
+        alert('✅ Повторный заказ успешно создан и сохранен в расписание!');
         loadData();
+      } else {
+        alert('Ошибка при сохранении заказа на сервере');
       }
     } catch (e) {
       console.error(e);
-      alert('Ошибка при создании заказа');
+      alert('Ошибка соединения с сервером');
     }
   };
 
@@ -198,7 +226,7 @@ export default function DirectoriesPage() {
                     <div>{c.phone}</div>
                     <div className="text-blue-600 font-semibold">{c.telegramHandle || '—'}</div>
                   </td>
-                  <td className="p-3.5 font-medium text-slate-600">📍 {c.district}</td>
+                  <td className="p-3.5 font-medium text-slate-600">📍 {c.district || 'Центр'}</td>
                   <td className="p-3.5">
                     <div className="flex flex-wrap gap-1">
                       {c.tags?.map((t: string) => (
@@ -208,7 +236,9 @@ export default function DirectoriesPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="p-3.5 font-mono text-slate-700 font-semibold">08:00 — 20:00</td>
+                  <td className="p-3.5 font-mono text-slate-700 font-semibold">
+                    {c.defaultStartTime || '08:00'} — {c.defaultEndTime || '16:00'}
+                  </td>
                   <td className="p-3.5">
                     {c.telegramChatId ? (
                       <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-bold">
@@ -279,10 +309,10 @@ export default function DirectoriesPage() {
                       )}
                     </td>
                     <td className="p-3.5 text-center font-extrabold text-slate-700">
-                      {cl.ordersCount}
+                      {cl.ordersCount || cl.orders?.length || 0}
                     </td>
                     <td className="p-3.5 text-right font-bold text-emerald-600">
-                      {cl.ltv?.toFixed(0)} zł
+                      {(cl.ltv || cl.totalSpent || 0).toFixed(0)} zł
                     </td>
                     <td className="p-3.5 text-center">
                       <button
