@@ -3,6 +3,15 @@ import { prisma } from '../../../../../lib/prisma';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
+const SERVICE_TITLES: Record<string, string> = {
+  STANDARD: 'Стандартная уборка',
+  STANDARD_PLUS: 'Стандарт +',
+  GENERAL: 'Генеральная уборка',
+  AFTER_REPAIR: 'Уборка после ремонта',
+  OFFICE_REGULAR: 'Офис: Регулярная',
+  OFFICE_GENERAL: 'Офис: Генеральная',
+};
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -41,7 +50,7 @@ export async function POST(
     if (o.hasBalcony) addOns.push('🌿 Балкон');
     if (o.hasStairs) addOns.push('🪜 Межэтажная лестница');
     if (o.hasSteamer) addOns.push('💨 Пароочиститель');
-    if (o.hasVacuum) addOns.push('🧹 Наш пылесос');
+    if (o.hasVacuum) addOns.push('🧹 Пылесос компании');
     if (o.hasPets) addOns.push('🐾 Домашние животные (Аллергия!)');
     if (o.hasKeys) addOns.push('🔑 Забрать/отдать ключи');
 
@@ -53,11 +62,11 @@ export async function POST(
 
     // Окна и витрины
     if (o.windowsCount && o.windowsCount > 0) addOns.push(`🪟 Обычные окна: ${o.windowsCount} шт.`);
-    if (o.showcaseWindowsCount && o.showcaseWindowsCount > 0) {
-      addOns.push(`🏢 Витрины: ${o.showcaseWindowsCount} шт.`);
-    }
     if (o.balconyWindowsCount && o.balconyWindowsCount > 0) {
       addOns.push(`🪟 Балконные окна: ${o.balconyWindowsCount} шт.`);
+    }
+    if (o.showcaseWindowsCount && o.showcaseWindowsCount > 0) {
+      addOns.push(`🏢 Витрины: ${o.showcaseWindowsCount} шт.`);
     }
 
     // Химчистка
@@ -74,11 +83,14 @@ export async function POST(
       ? `\n✨ *Дополнительные услуги:*\n${addOns.map((item) => `• ${item}`).join('\n')}\n`
       : '';
 
-    // Расчет выплаты клинеру (40% на команду)
-    const cleanersCount = order.assignedCleaners.length;
-    const payoutPerCleaner = Math.round((order.price * 0.4) / cleanersCount);
-
     const timeSlotDisplay = o.timeSlot || (o.startTime && o.endTime ? `${o.startTime} — ${o.endTime}` : '10:00 — 14:00');
+    const serviceTitle = SERVICE_TITLES[order.serviceType] || order.serviceType || 'Стандартная уборка';
+
+    // Инструкция по оплате для сотрудника
+    const isCash = o.paymentMethod === 'CASH';
+    const paymentInstruction = isCash
+      ? `💵 *Оплата на месте НАЛИЧНЫМИ:* *${order.price} zł*\n⚠️ _Пожалуйста, обязательно заберите точную сумму у клиента!_`
+      : `💳 *Оплата:* Безналичный расчет (${order.price} zł уже оплачено / на счет компании).\n_Деньги у клиента брать НЕ нужно._`;
 
     const results = [];
 
@@ -86,11 +98,7 @@ export async function POST(
       const cleaner = item.cleaner as any;
       const chatId = cleaner?.telegramChatId || cleaner?.telegramId;
 
-      const cleanerTags = Array.isArray(cleaner?.tags) && cleaner.tags.length > 0
-        ? cleaner.tags.map((t: string) => `\`${t.replace(/_/g, ' ')}\``).join(', ')
-        : null;
-
-     const messageText = `🧹 *НОВЫЙ НАРЯД НА УБОРКУ!*
+      const messageText = `🧹 *НОВЫЙ НАРЯД НА УБОРКУ!*
 
 📋 *Заказ:* \`${order.orderNumber}\`
 📅 *Дата:* ${dateFormatted}
@@ -99,29 +107,47 @@ export async function POST(
 👤 *Клиент:* ${order.clientName || 'Клиент'} (${order.clientPhone || 'номер уточняйте у менеджера'})
 
 🏠 *Параметры объекта:*
-• Тариф: ${order.serviceType || 'Стандарт'}
+• Тариф: *${serviceTitle}*
 • Площадь: ${order.areaM2 || 45} м²
 • Комнат: ${order.roomsCount || 1} | Санузлов: ${order.bathroomsCount || 1}
 ${addOnsFormatted}
 👥 *Состав бригады:* ${teamList}
-💵 *Стоимость заказа:* *${order.price} zł*
 
-📝 *Особенности / ТЗ:*
-${order.notes || 'Без особых указаний'}
+${paymentInstruction}
 
-Пожалуйста, подтвердите получение наряда! ✨`;
+📝 *Особенности / ТЗ от клиента:*
+${order.notes ? order.notes : 'Без особых указаний'}
+
+Пожалуйста, подтвердите получение наряда нажатием кнопки ниже! ✨`;
+
       if (chatId && TELEGRAM_BOT_TOKEN) {
         try {
-          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               chat_id: chatId,
               text: messageText,
               parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: '✅ Принял(а) наряд в работу',
+                      callback_data: `confirm_order_${order.id}`,
+                    },
+                  ],
+                ],
+              },
             }),
           });
-          results.push({ cleaner: cleaner.name, status: 'SENT' });
+
+          const tgData = await tgRes.json();
+          if (tgRes.ok && tgData.ok) {
+            results.push({ cleaner: cleaner.name, status: 'SENT' });
+          } else {
+            results.push({ cleaner: cleaner.name, status: 'ERROR', error: tgData.description });
+          }
         } catch (err) {
           results.push({ cleaner: cleaner.name, status: 'ERROR', error: String(err) });
         }
