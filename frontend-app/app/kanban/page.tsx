@@ -10,6 +10,15 @@ const COLUMNS = [
   { id: 'COMPLETED', title: '🏆 Завершены', color: 'bg-purple-50', borderColor: 'border-purple-200' },
 ];
 
+const SERVICE_LABELS: Record<string, string> = {
+  STANDARD: 'Стандарт',
+  STANDARD_PLUS: 'Стандарт +',
+  GENERAL: 'Генеральная',
+  AFTER_REPAIR: 'После ремонта',
+  OFFICE_REGULAR: 'Офис рег.',
+  OFFICE_GENERAL: 'Офис ген.',
+};
+
 // Шаблоны для быстрых ответов
 const QUICK_RESPONSES = [
   {
@@ -114,6 +123,22 @@ export default function KanbanPage() {
     }
   };
 
+  // --- БЫСТРАЯ СМЕНА СТАТУСА КЛИКОМ ---
+  const handleQuickStatusChange = async (orderId: string, newStatus: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    try {
+      await fetch('/api/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: orderId, status: newStatus }),
+      });
+    } catch (err) {
+      console.error(err);
+      loadOrders();
+    }
+  };
+
   // --- ЛОГИКА СОХРАНЕНИЯ (ЕДИНОЕ ОКНО) ---
   const handleSaveOrder = async (savedOrder: OrderDetail) => {
     try {
@@ -136,6 +161,21 @@ export default function KanbanPage() {
     setTimeout(() => setCopyFeedback(null), 2000);
   };
 
+  const getOrderBadges = (order: any) => {
+    const badges: { text: string; color: string }[] = [];
+    const win = (order.windowsCount || 0) + (order.balconyWindowsCount || 0) + (order.showcaseWindowsCount || 0);
+    if (win > 0) badges.push({ text: `🪟 ${win} окон`, color: 'bg-sky-50 text-sky-700 border-sky-200' });
+
+    const dry = (order.drySofa2 || 0) + (order.drySofa3 || 0) + (order.drySofaCorner4 || 0) + (order.drySofaBig || 0) + (order.dryArmchair || 0);
+    if (dry > 0) badges.push({ text: `🛋️ Химчистка`, color: 'bg-amber-50 text-amber-700 border-amber-200' });
+
+    if (order.hasSteamer) badges.push({ text: `💨 Пар`, color: 'bg-indigo-50 text-indigo-700 border-indigo-200' });
+    if (order.hasPets) badges.push({ text: `🐾 Животные`, color: 'bg-rose-50 text-rose-700 border-rose-200' });
+    if (order.discountPercent > 0 || order.discountFixed > 0) badges.push({ text: `🎁 Акция`, color: 'bg-purple-50 text-purple-700 border-purple-200' });
+
+    return badges;
+  };
+
   if (loading) return <div className="p-10 text-center text-slate-500">Загрузка доски...</div>;
 
   return (
@@ -149,7 +189,7 @@ export default function KanbanPage() {
         <div className="flex gap-2">
           <button
             onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
-            className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1"
+            className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1 cursor-pointer"
           >
             ⚡ Шаблоны ответов
           </button>
@@ -158,7 +198,7 @@ export default function KanbanPage() {
               setEditingOrder(null);
               setIsModalOpen(true);
             }}
-            className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs"
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
           >
             + Создать заказ
           </button>
@@ -185,71 +225,117 @@ export default function KanbanPage() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                  {columnOrders.map(order => (
-                    <div
-                      key={order.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, order.id)}
-                      onClick={() => {
-                        setEditingOrder(order);
-                        setIsModalOpen(true);
-                      }}
-                      className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs cursor-grab active:cursor-grabbing hover:border-brand-300 hover:shadow-md transition"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">
-                          {order.orderNumber}
-                        </span>
-                        
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-extrabold text-emerald-600">
-                            {order.price} zł
-                          </span>
-                          {/* Кнопка быстрого открытия счета */}
-                          <a
-                            href={`/api/orders/${order.id}/invoice`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold transition"
-                            title="Открыть счет / PDF"
-                          >
-                            📄
-                          </a>
-                        </div>
-                      </div>
+                  {columnOrders.map(order => {
+                    const badges = getOrderBadges(order);
+                    const sName = SERVICE_LABELS[order.serviceType] || order.serviceType;
+                    const isCash = order.paymentMethod === 'CASH';
 
-                      <div className="font-bold text-sm text-slate-900 mb-0.5">
-                        {order.clientName || 'Без имени'}
-                      </div>
-                      <div className="text-[11px] text-slate-500 mb-2 truncate">
-                        📍 {order.addressLine1 || 'Адрес не указан'}
-                      </div>
-
-                      <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-                        <div className="text-[10px] font-medium text-slate-500">
-                          {new Date(order.date).toLocaleDateString('ru-RU')} • {order.timeSlot?.split('—')[0]?.trim() || order.startTime}
+                    return (
+                      <div
+                        key={order.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, order.id)}
+                        onClick={() => {
+                          setEditingOrder(order);
+                          setIsModalOpen(true);
+                        }}
+                        className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs cursor-grab active:cursor-grabbing hover:border-blue-400 hover:shadow-md transition space-y-2"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {order.orderNumber || `#${String(order.id).slice(0, 5)}`}
+                            </span>
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                              {sName}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-extrabold text-emerald-600 font-mono">
+                              {order.price} zł
+                            </span>
+                            <a
+                              href={`/api/orders/${order.id}/invoice`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold transition"
+                              title="Открыть счет / PDF"
+                            >
+                              📄
+                            </a>
+                          </div>
                         </div>
-                        {order.assignedCleaners?.length > 0 && (
-                          <div className="flex -space-x-1.5">
-                            {order.assignedCleaners.map((ac: any, i: number) => (
-                              <div key={i} className="w-5 h-5 rounded-full bg-brand-100 border border-white flex items-center justify-center text-[8px] font-bold text-brand-700" title={ac.cleaner?.name}>
-                                {ac.cleaner?.name?.charAt(0)}
-                              </div>
+
+                        <div>
+                          <div className="font-bold text-xs text-slate-900 leading-snug">
+                            {order.clientName || 'Клиент без имени'}
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                            📍 {order.addressLine1 || 'Адрес не указан'}
+                          </div>
+                        </div>
+
+                        {badges.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {badges.map((b, i) => (
+                              <span key={i} className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${b.color}`}>
+                                {b.text}
+                              </span>
                             ))}
                           </div>
                         )}
-                      </div>
 
-                      {/* Кнопка быстрой отправки наряда */}
-                      <button
-                        onClick={(e) => sendToCleaner(order.id, e)}
-                        className="w-full mt-2.5 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-[11px] font-bold py-1.5 px-2 rounded-lg transition border border-slate-200 flex items-center justify-center gap-1.5"
-                      >
-                        ✈️ Отправить наряд клинерам
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-slate-100">
+                          <span className="text-slate-400 font-medium">
+                            🗓️ {new Date(order.date).toLocaleDateString('ru-RU')} • {order.timeSlot?.split('—')[0]?.trim() || order.startTime || '10:00'}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] ${isCash ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                            {isCash ? '💵 Наличные' : '💳 Карта / Банк'}
+                          </span>
+                        </div>
+
+                        {order.assignedCleaners?.length > 0 && (
+                          <div className="bg-slate-50 p-1.5 rounded-lg flex items-center justify-between text-[10px]">
+                            <span className="text-slate-500 font-medium">Бригада:</span>
+                            <span className="font-bold text-slate-800 truncate max-w-[170px]">
+                              {order.assignedCleaners.map((ac: any) => ac.cleaner?.name || ac.name).join(', ')}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-1.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={(e) => sendToCleaner(order.id, e)}
+                            className="bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-[10px] font-bold py-1 px-1.5 rounded-lg transition border border-slate-200 flex items-center justify-center gap-1"
+                          >
+                            ✈️ Наряд
+                          </button>
+
+                          {col.id !== 'COMPLETED' ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleQuickStatusChange(order.id, col.id === 'NEW' ? 'PROCESSING' : col.id === 'PROCESSING' ? 'ASSIGNED' : 'COMPLETED', e)}
+                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold py-1 px-1.5 rounded-lg transition border border-blue-200 text-center"
+                            >
+                              ➡️ {col.id === 'NEW' ? 'В работу' : col.id === 'PROCESSING' ? 'Назначить' : 'Завершить'}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => handleQuickStatusChange(order.id, 'ASSIGNED', e)}
+                              className="bg-purple-100 text-purple-800 text-[10px] font-bold py-1 px-1.5 rounded-lg transition text-center"
+                            >
+                              ✓ Закрыт
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
                   {columnOrders.length === 0 && (
                     <div className="text-center text-slate-400 text-xs py-10 border-2 border-dashed border-slate-200 rounded-xl">
                       Перетащите сюда
@@ -263,7 +349,7 @@ export default function KanbanPage() {
 
         {/* Боковая панель: Шаблоны быстрых ответов */}
         {isTemplatesOpen && (
-          <div className="w-80 flex-shrink-0 bg-white border border-slate-200 rounded-2xl shadow-lg flex flex-col h-full overflow-hidden animate-fade-in">
+          <div className="w-80 flex-shrink-0 bg-white border border-slate-200 rounded-2xl shadow-lg flex flex-col h-full overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center bg-amber-50">
               <h3 className="font-bold text-sm text-amber-900">⚡ Быстрые ответы</h3>
               <button onClick={() => setIsTemplatesOpen(false)} className="text-amber-700 hover:bg-amber-100 p-1 rounded">✕</button>
@@ -282,7 +368,7 @@ export default function KanbanPage() {
                   <div className="text-[10px] text-slate-500 line-clamp-2">{tmpl.text}</div>
                   <button
                     onClick={() => copyToClipboard(tmpl.text, tmpl.title)}
-                    className="absolute inset-0 w-full h-full bg-white/90 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-bold text-amber-600 rounded-xl backdrop-blur-xs"
+                    className="absolute inset-0 w-full h-full bg-white/90 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-bold text-amber-600 rounded-xl backdrop-blur-xs cursor-pointer"
                   >
                     Скопировать текст
                   </button>
