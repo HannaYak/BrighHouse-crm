@@ -287,3 +287,34 @@ model FinanceTransaction {
   cleanerId   Int?     
   createdAt   DateTime @default(now())
 }
+
+enum ChatChannel {
+  INSTAGRAM
+  WHATSAPP
+  TELEGRAM
+  FACEBOOK
+}
+
+model Conversation {
+  id           Int           @id @default(autoincrement())
+  channel      ChatChannel   @default(INSTAGRAM)
+  externalId   String        @unique // ID пользователя в Instagram Direct или номер WhatsApp
+  senderName   String?       // Имя / ник клиента
+  lastMessage  String?
+  lastActivity DateTime      @default(now())
+  unreadCount  Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  messages     ChatMessage[]
+}
+
+model ChatMessage {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  senderName     String?
+  text           String
+  isIncoming     Boolean      @default(true) // true = от клиента, false = ответ менеджера
+  timestamp      DateTime     @default(now())
+}
