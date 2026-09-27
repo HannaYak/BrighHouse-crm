@@ -288,11 +288,10 @@ model Message {
   id             String       @id @default(uuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  senderId       String
+  senderId       String       @default("")
   senderName     String?
   senderType     String       @default("CLIENT")
   text           String
   isIncoming     Boolean      @default(true)
   timestamp      DateTime     @default(now())
 }
-
