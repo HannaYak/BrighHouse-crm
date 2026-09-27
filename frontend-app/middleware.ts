@@ -6,17 +6,17 @@ export function middleware(request: NextRequest) {
 
   // Открытые публичные маршруты, доступные без авторизации
   if (
-    pathname.startsWith('/api/webhooks') || // <-- ОБЯЗАТЕЛЬНО ДЛЯ META И TELEGRAM
-    pathname.startsWith('/book') ||
-    pathname.startsWith('/login') ||
-    pathname.startsWith('/api/book') ||
-    pathname.startsWith('/api/health') ||
-    pathname.startsWith('/api/auth/login') ||
-    pathname.startsWith('/_next') ||
-    (pathname.includes('/api/orders/') && pathname.endsWith('/invoice')) // открытый доступ к PDF счету по ссылке
-  ) {
-    return NextResponse.next();
-  }
+  pathname.startsWith('/api/webhook') || // <-- без буквы "s" на конце
+  pathname.startsWith('/book') ||
+  pathname.startsWith('/login') ||
+  pathname.startsWith('/api/book') ||
+  pathname.startsWith('/api/health') ||
+  pathname.startsWith('/api/auth/login') ||
+  pathname.startsWith('/_next') ||
+  (pathname.includes('/api/orders/') && pathname.endsWith('/invoice'))
+) {
+  return NextResponse.next();
+}
 
   const authToken = request.cookies.get('bh_auth_token')?.value;
 
