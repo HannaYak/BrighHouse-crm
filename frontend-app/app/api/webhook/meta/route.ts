@@ -62,14 +62,15 @@ export async function POST(request: Request) {
             });
 
             // Сохраняем входящее сообщение
-            await prisma.chatMessage.create({
-              data: {
-                conversationId: conversation.id,
-                senderId: String(senderId),
-                text: messageText,
-                isIncoming: true,
-              },
-            });
+            await prisma.message.create({
+  data: {
+    conversationId: conversation.id,
+    senderId: String(senderId),
+    senderType: 'CLIENT',
+    text: messageText,
+    isIncoming: true,
+  },
+});
 
             console.log(`📩 Новое сообщение из Instagram от ${senderId}: ${messageText}`);
           }
