@@ -6,13 +6,14 @@ export function middleware(request: NextRequest) {
 
   // Открытые публичные маршруты, доступные без авторизации
   if (
+    pathname.startsWith('/api/webhooks') || // <-- ОБЯЗАТЕЛЬНО ДЛЯ META И TELEGRAM
     pathname.startsWith('/book') ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/book') ||
     pathname.startsWith('/api/health') ||
     pathname.startsWith('/api/auth/login') ||
     pathname.startsWith('/_next') ||
-    pathname.includes('/api/orders/') && pathname.endsWith('/invoice') // открытый доступ к PDF счету по ссылке
+    (pathname.includes('/api/orders/') && pathname.endsWith('/invoice')) // открытый доступ к PDF счету по ссылке
   ) {
     return NextResponse.next();
   }
@@ -29,5 +30,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!api/webhooks|_next/static|_next/image|favicon.ico|login).*)'],
 };
