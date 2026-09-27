@@ -152,18 +152,6 @@ model OrderCleaner {
   @@id([orderId, cleanerId])
 }
 
-
-// Модель отдельного сообщения
-model Message {
-    id             String       @id @default(uuid())
-    conversationId String
-    conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-    senderType     String       // 'CLIENT' или 'MANAGER'
-    text           String       // Текст сообщения
-    createdAt      DateTime     @default(now())
-}
-
-
 model PromoCode {
   id          Int       @id @default(autoincrement())
   code        String    @unique
@@ -284,16 +272,28 @@ enum ChatChannel {
 }
 
 model Conversation {
-  id           Int           @id @default(autoincrement())
-  channel      ChatChannel   @default(INSTAGRAM)
-  externalId   String        @unique // ID пользователя в Instagram Direct или номер WhatsApp
-  senderName   String?       // Имя / ник клиента
+  id           String      @id @default(uuid())
+  channel      ChatChannel @default(INSTAGRAM)
+  externalId   String      @unique // ID пользователя в Instagram Direct / WhatsApp
+  senderName   String?
   lastMessage  String?
-  lastActivity DateTime      @default(now())
-  unreadCount  Int           @default(0)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  messages     ChatMessage[]
+  lastActivity DateTime    @default(now())
+  unreadCount  Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  messages     Message[]
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  senderName     String?
+  senderType     String       @default("CLIENT") // 'CLIENT' или 'MANAGER'
+  text           String
+  isIncoming     Boolean      @default(true)
+  timestamp      DateTime     @default(now())
 }
 
 model ChatMessage {
