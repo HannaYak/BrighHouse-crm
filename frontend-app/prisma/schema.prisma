@@ -276,13 +276,17 @@ model Conversation {
   channel      ChatChannel @default(INSTAGRAM)
   externalId   String      @unique
   senderName   String?
-  clientName   String?     // <--- добавь эту строчку
+  clientName   String?
+  phone        String?
   lastMessage  String?
   lastActivity DateTime    @default(now())
   unreadCount  Int         @default(0)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   messages     Message[]
+
+  @@index([phone])
+  @@index([externalId])
 }
 
 model Message {
