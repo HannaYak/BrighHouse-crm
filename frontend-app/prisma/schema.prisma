@@ -276,6 +276,7 @@ model Conversation {
   channel      ChatChannel @default(INSTAGRAM)
   externalId   String      @unique
   senderName   String?
+  clientName   String?     // <--- добавь эту строчку
   lastMessage  String?
   lastActivity DateTime    @default(now())
   unreadCount  Int         @default(0)
