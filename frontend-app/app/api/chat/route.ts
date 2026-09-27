@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const META_PAGE_ACCESS_TOKEN = process.env.META_PAGE_ACCESS_TOKEN;
 
 // Получение списка диалогов и сообщений
 export async function GET() {
@@ -9,7 +10,7 @@ export async function GET() {
     const conversations = await prisma.conversation.findMany({
       include: {
         messages: {
-          orderBy: { createdAt: 'asc' },
+          orderBy: { timestamp: 'asc' }, // сортируем по реальному полю timestamp
         },
       },
       orderBy: { updatedAt: 'desc' },
@@ -22,7 +23,7 @@ export async function GET() {
   }
 }
 
-// Отправка ответа клиенту из CRM в Telegram
+// Отправка ответа клиенту из CRM (в Telegram или Instagram)
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -40,16 +41,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 });
     }
 
-    // Сохраняем сообщение в базу со статусом MANAGER
+    // Сохраняем сообщение в базу
     const savedMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
+        senderId: 'manager',
         senderType: 'MANAGER',
+        senderName: 'Диспетчер',
         text: text,
+        isIncoming: false,
+        timestamp: new Date(),
       },
     });
 
-    // Отправляем сообщение клиенту в Telegram
+    // Обновляем последнее сообщение в диалоге
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastMessage: text,
+        lastActivity: new Date(),
+      },
+    });
+
+    // 1. Отправка клиенту в Telegram
     if (conversation.channel === 'TELEGRAM' && conversation.externalId && TELEGRAM_BOT_TOKEN) {
       await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
@@ -57,6 +71,18 @@ export async function POST(request: Request) {
         body: JSON.stringify({
           chat_id: conversation.externalId,
           text: text,
+        }),
+      });
+    }
+
+    // 2. Отправка клиенту в Instagram Direct
+    if (conversation.channel === 'INSTAGRAM' && conversation.externalId && META_PAGE_ACCESS_TOKEN) {
+      await fetch(`https://graph.facebook.com/v20.0/me/messages?access_token=${META_PAGE_ACCESS_TOKEN}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: { id: conversation.externalId },
+          message: { text: text },
         }),
       });
     }
