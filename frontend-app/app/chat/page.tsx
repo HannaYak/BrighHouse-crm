@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
 export type PlatformType = 'TELEGRAM' | 'WHATSAPP' | 'INSTAGRAM' | 'FACEBOOK';
@@ -42,15 +42,22 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
+  // Для медиа и аудиозаписи
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recordingTimerRef = useRef<any>(null);
+
   // Для создания заказа сразу из чата
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [orderFromChat, setOrderFromChat] = useState<OrderDetail | null>(null);
 
-  // Загрузка диалогов со всех платформ
   const loadConversations = async () => {
     try {
       setLoading(true);
-      // Запрашиваем правильный эндпоинт /api/chat вместо несуществующего /api/chat/conversations
       const [convRes, cleanersRes] = await Promise.all([
         fetch('/api/chat'),
         fetch('/api/cleaners'),
@@ -58,7 +65,6 @@ export default function ChatPage() {
 
       const list: ChatContact[] = [];
 
-      // 1. Реальные диалоги клиентов из базы Conversation
       if (convRes.ok) {
         const convData = await convRes.json();
         if (Array.isArray(convData)) {
@@ -85,7 +91,6 @@ export default function ChatPage() {
         }
       }
 
-      // 2. Чаты с клинерами
       if (cleanersRes.ok) {
         const cleanersData = await cleanersRes.json();
         if (Array.isArray(cleanersData)) {
@@ -107,7 +112,6 @@ export default function ChatPage() {
 
       setContacts(list);
 
-      // Автовыбор диалога при первой загрузке
       if (list.length > 0) {
         setSelectedContact((prev) => {
           const current = prev ? list.find((item) => item.id === prev.id) || list[0] : list[0];
@@ -124,7 +128,6 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadConversations();
-    // Автообновление списка сообщений каждые 4 секунды
     const interval = setInterval(loadConversations, 4000);
     return () => clearInterval(interval);
   }, []);
@@ -160,7 +163,88 @@ export default function ChatPage() {
     displayMessages(contact);
   };
 
+  // Старт записи голосового
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/ogg; codecs=opus' });
+        const voiceFile = new File([audioBlob], `voice_${Date.now()}.ogg`, { type: 'audio/ogg' });
+        await sendMediaMessage(voiceFile);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (e) {
+      alert('Не удалось получить доступ к микрофону');
+    }
+  };
+
+  // Стоп записи и отправка
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  // Отмена записи
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      audioChunksRef.current = [];
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  // Отправка медиафайла
+  const sendMediaMessage = async (fileToSend: File) => {
+    if (!selectedContact) return;
+    try {
+      setSending(true);
+      const formData = new FormData();
+      formData.append('conversationId', selectedContact.id);
+      formData.append('file', fileToSend);
+      if (inputText.trim()) {
+        formData.append('text', inputText.trim());
+      }
+
+      await fetch('/api/chat', {
+        method: 'POST',
+        body: formData,
+      });
+
+      setInputText('');
+      setSelectedFile(null);
+      loadConversations();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Отправка текстового сообщения
   const handleSendMessage = async (customText?: string) => {
+    if (selectedFile) {
+      await sendMediaMessage(selectedFile);
+      return;
+    }
+
     const textToSend = customText || inputText;
     if (!textToSend.trim() || !selectedContact) return;
 
@@ -184,7 +268,6 @@ export default function ChatPage() {
           text: textToSend,
         }),
       });
-      // Сразу перезагружаем свежие данные
       loadConversations();
     } catch (e) {
       console.error('Ошибка отправки ответа:', e);
@@ -271,7 +354,7 @@ export default function ChatPage() {
             </span>
           </div>
 
-          {/* Фильтр по платформам */}
+          {/* Фильтр платформ */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold gap-1 overflow-x-auto">
             <button
               type="button"
@@ -320,7 +403,7 @@ export default function ChatPage() {
             </button>
           </div>
 
-          {/* Фильтр роли: Все / Клиенты / Бригада */}
+          {/* Фильтр роли */}
           <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-[10px] font-bold">
             <button
               type="button"
@@ -452,7 +535,6 @@ export default function ChatPage() {
             {/* Лента сообщений */}
             <div className="flex-1 p-5 overflow-y-auto space-y-3">
               {messages.map((msg) => {
-                // Парсим наличие медиафайлов
                 const mediaMatch = msg.text.match(/^\[MEDIA:(photo\vert{}video\vert{}round_video\vert{}voice):(.*?)\](.*)$/);
                 const mediaType = mediaMatch ? mediaMatch[1] : null;
                 const mediaUrl = mediaMatch ? mediaMatch[2] : null;
@@ -475,14 +557,14 @@ export default function ChatPage() {
                         <div className="mb-2 overflow-hidden rounded-xl">
                           <img
                             src={mediaUrl!}
-                            alt="Фото от клиента"
+                            alt="Медиа"
                             className="max-h-72 w-auto object-cover rounded-xl hover:scale-105 transition cursor-pointer"
                             onClick={() => window.open(mediaUrl!, '_blank')}
                           />
                         </div>
                       )}
 
-                      {/* Отрисовка кружочка (видеосообщения) */}
+                      {/* Отрисовка кружочка */}
                       {mediaType === 'round_video' && (
                         <div className="my-1 flex justify-center">
                           <video
@@ -497,7 +579,7 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Отрисовка обычного видео */}
+                      {/* Отрисовка видео */}
                       {mediaType === 'video' && (
                         <div className="mb-2 overflow-hidden rounded-xl">
                           <video
@@ -508,7 +590,7 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Отрисовка голосового сообщения */}
+                      {/* Отрисовка голосового */}
                       {mediaType === 'voice' && (
                         <div className="my-1">
                           <audio
@@ -519,7 +601,6 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Текст или подпись к медиа */}
                       {caption && <p>{caption}</p>}
 
                       <span
@@ -550,29 +631,104 @@ export default function ChatPage() {
               ))}
             </div>
 
-            {/* Поле ввода */}
-            <div className="p-3 bg-white border-t border-slate-200 flex gap-2">
+            {/* Превью выбранного файла перед отправкой */}
+            {selectedFile && (
+              <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex items-center justify-between text-xs text-blue-800">
+                <span className="truncate">📎 Выбран файл: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFile(null)}
+                  className="text-red-500 font-bold ml-2 hover:underline cursor-pointer"
+                >
+                  ✕ Удалить
+                </button>
+              </div>
+            )}
+
+            {/* Панель ввода с кнопками медиа и микрофона */}
+            <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+              {/* Скрытый инпут для выбора файлов */}
               <input
-                type="text"
-                placeholder={`Ответить в ${PLATFORM_CONFIG[selectedContact.platform].label}...`}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
+                type="file"
+                ref={fileInputRef}
+                accept="image/*,video/*,audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setSelectedFile(e.target.files[0]);
                   }
                 }}
-                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
               />
+
+              {/* Кнопка скрепки */}
               <button
                 type="button"
-                onClick={() => handleSendMessage()}
-                disabled={sending || !inputText.trim()}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
+                onClick={() => fileInputRef.current?.click()}
+                title="Прикрепить фото или видео"
+                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
               >
-                {sending ? '...' : `Отправить в ${PLATFORM_CONFIG[selectedContact.platform].label}`}
+                📎
               </button>
+
+              {/* Если идет запись голосового */}
+              {isRecording ? (
+                <div className="flex-1 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-red-600 animate-pulse">
+                    🔴 Идет запись: {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelRecording}
+                      className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1 rounded-lg"
+                    >
+                      Готово & Отправить
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    placeholder={`Ответить в ${PLATFORM_CONFIG[selectedContact.platform].label}...`}
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                  />
+
+                  {/* Кнопка голосового сообщения */}
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    title="Записать голосовое сообщение"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition cursor-pointer text-sm"
+                  >
+                    🎙
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSendMessage()}
+                    disabled={sending || (!inputText.trim() && !selectedFile)}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
+                  >
+                    {sending ? '...' : `Отправить`}
+                  </button>
+                </>
+              )}
             </div>
           </>
         ) : (
@@ -582,7 +738,6 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* Модалка оформления заказа прямо из чата */}
       {isOrderModalOpen && (
         <OrderModal
           order={orderFromChat}
