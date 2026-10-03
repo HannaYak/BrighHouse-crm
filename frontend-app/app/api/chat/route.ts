@@ -74,13 +74,13 @@ export async function POST(request: Request) {
       isVoice = isAudio;
       fileName = `out_${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
 
-      const mediaDir = path.resolve(process.cwd(), 'public', 'chat-media');
+      const mediaDir = path.resolve(process.cwd(), 'chat-storage');
       if (!fs.existsSync(mediaDir)) {
         fs.mkdirSync(mediaDir, { recursive: true });
       }
 
       fs.writeFileSync(path.join(mediaDir, fileName), fileBuffer);
-      const fileUrl = `/chat-media/${fileName}`;
+      const fileUrl = `/api/media/${fileName}`;
       const caption = text ? ` ${text}` : '';
       savedText = `[MEDIA:${type}:${fileUrl}]${caption}`;
     }
