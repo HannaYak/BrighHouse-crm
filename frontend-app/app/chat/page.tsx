@@ -42,7 +42,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
-  // Для медиа и аудиозаписи
+  // Для медиа и микрофона
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -51,13 +51,11 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recordingTimerRef = useRef<any>(null);
 
-  // Для создания заказа сразу из чата
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [orderFromChat, setOrderFromChat] = useState<OrderDetail | null>(null);
 
   const loadConversations = async () => {
     try {
-      setLoading(true);
       const [convRes, cleanersRes] = await Promise.all([
         fetch('/api/chat'),
         fetch('/api/cleaners'),
@@ -75,7 +73,7 @@ export default function ChatPage() {
 
             list.push({
               id: c.id,
-              name: c.clientName || c.senderName || 'Клиент Telegram',
+              name: c.clientName || c.senderName || 'Клиент',
               phone: c.phone || '',
               platform: PLATFORM_CONFIG[platformKey] ? platformKey : 'TELEGRAM',
               role: 'client',
@@ -128,7 +126,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadConversations();
-    const interval = setInterval(loadConversations, 4000);
+    const interval = setInterval(loadConversations, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -163,7 +161,6 @@ export default function ChatPage() {
     displayMessages(contact);
   };
 
-  // Старт записи голосового
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -188,11 +185,10 @@ export default function ChatPage() {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (e) {
-      alert('Не удалось получить доступ к микрофону');
+      alert('Нет доступа к микрофону в браузере');
     }
   };
 
-  // Стоп записи и отправка
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
@@ -201,7 +197,6 @@ export default function ChatPage() {
     }
   };
 
-  // Отмена записи
   const cancelRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       audioChunksRef.current = [];
@@ -211,7 +206,6 @@ export default function ChatPage() {
     }
   };
 
-  // Отправка медиафайла
   const sendMediaMessage = async (fileToSend: File) => {
     if (!selectedContact) return;
     try {
@@ -238,7 +232,6 @@ export default function ChatPage() {
     }
   };
 
-  // Отправка текстового сообщения
   const handleSendMessage = async (customText?: string) => {
     if (selectedFile) {
       await sendMediaMessage(selectedFile);
@@ -344,7 +337,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-      {/* Левая колонка: Диалоги */}
+      {/* Левая колонка */}
       <div className="w-80 sm:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50">
         <div className="p-4 border-b border-slate-200 bg-white space-y-3">
           <div className="flex items-center justify-between">
@@ -354,7 +347,6 @@ export default function ChatPage() {
             </span>
           </div>
 
-          {/* Фильтр платформ */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold gap-1 overflow-x-auto">
             <button
               type="button"
@@ -403,7 +395,6 @@ export default function ChatPage() {
             </button>
           </div>
 
-          {/* Фильтр роли */}
           <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-[10px] font-bold">
             <button
               type="button"
@@ -429,7 +420,6 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Список диалогов */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {loading && contacts.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400">Загрузка диалогов...</div>
@@ -465,7 +455,7 @@ export default function ChatPage() {
                     </div>
 
                     <p className="text-[11px] text-slate-500 truncate mb-1">
-                      {contact.lastMessage}
+                      {contact.lastMessage?.startsWith('[MEDIA:') ? '📎 [Медиафайл]' : contact.lastMessage}
                     </p>
 
                     <div className="flex items-center gap-1.5">
@@ -490,7 +480,6 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col bg-slate-50/40">
         {selectedContact ? (
           <>
-            {/* Шапка чата */}
             <div className="p-3.5 bg-white border-b border-slate-200 flex items-center justify-between shadow-2xs">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
@@ -552,36 +541,33 @@ export default function ChatPage() {
                           : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
                       }`}
                     >
-                      {/* Отрисовка фото */}
+                      {/* Фото */}
                       {mediaType === 'photo' && (
-                        <div className="mb-2 overflow-hidden rounded-xl">
+                        <div className="mb-1 overflow-hidden rounded-xl">
                           <img
                             src={mediaUrl!}
-                            alt="Медиа"
-                            className="max-h-72 w-auto object-cover rounded-xl hover:scale-105 transition cursor-pointer"
+                            alt="Фото"
+                            className="max-h-72 w-auto object-cover rounded-xl hover:opacity-90 transition cursor-pointer"
                             onClick={() => window.open(mediaUrl!, '_blank')}
                           />
                         </div>
                       )}
 
-                      {/* Отрисовка кружочка */}
+                      {/* Кружочек */}
                       {mediaType === 'round_video' && (
                         <div className="my-1 flex justify-center">
                           <video
                             src={mediaUrl!}
                             controls
-                            autoPlay
-                            muted
-                            loop
                             playsInline
-                            className="w-48 h-48 rounded-full object-cover border-2 border-slate-300 shadow-md"
+                            className="w-44 h-44 rounded-full object-cover border-2 border-slate-300 shadow-md"
                           />
                         </div>
                       )}
 
-                      {/* Отрисовка видео */}
+                      {/* Видео */}
                       {mediaType === 'video' && (
-                        <div className="mb-2 overflow-hidden rounded-xl">
+                        <div className="mb-1 overflow-hidden rounded-xl">
                           <video
                             src={mediaUrl!}
                             controls
@@ -590,7 +576,7 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Отрисовка голосового */}
+                      {/* Голосовое */}
                       {mediaType === 'voice' && (
                         <div className="my-1">
                           <audio
@@ -631,10 +617,10 @@ export default function ChatPage() {
               ))}
             </div>
 
-            {/* Превью выбранного файла перед отправкой */}
+            {/* Превью выбранного файла */}
             {selectedFile && (
               <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex items-center justify-between text-xs text-blue-800">
-                <span className="truncate">📎 Выбран файл: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
+                <span className="truncate">📎 Файл: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
                 <button
                   type="button"
                   onClick={() => setSelectedFile(null)}
@@ -647,7 +633,6 @@ export default function ChatPage() {
 
             {/* Панель ввода с кнопками медиа и микрофона */}
             <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
-              {/* Скрытый инпут для выбора файлов */}
               <input
                 type="file"
                 ref={fileInputRef}
@@ -660,17 +645,15 @@ export default function ChatPage() {
                 }}
               />
 
-              {/* Кнопка скрепки */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="Прикрепить фото или видео"
-                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer text-base"
               >
                 📎
               </button>
 
-              {/* Если идет запись голосового */}
               {isRecording ? (
                 <div className="flex-1 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2">
                   <div className="flex items-center gap-2 text-xs font-bold text-red-600 animate-pulse">
@@ -697,7 +680,7 @@ export default function ChatPage() {
                 <>
                   <input
                     type="text"
-                    placeholder={`Ответить в ${PLATFORM_CONFIG[selectedContact.platform].label}...`}
+                    placeholder={`Ответить в Telegram...`}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     onKeyDown={(e) => {
@@ -709,12 +692,11 @@ export default function ChatPage() {
                     className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                   />
 
-                  {/* Кнопка голосового сообщения */}
                   <button
                     type="button"
                     onClick={startRecording}
                     title="Записать голосовое сообщение"
-                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition cursor-pointer text-sm"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition cursor-pointer text-base"
                   >
                     🎙
                   </button>
@@ -725,7 +707,7 @@ export default function ChatPage() {
                     disabled={sending || (!inputText.trim() && !selectedFile)}
                     className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
                   >
-                    {sending ? '...' : `Отправить`}
+                    {sending ? '...' : `Отправить в Telegram`}
                   </button>
                 </>
               )}
