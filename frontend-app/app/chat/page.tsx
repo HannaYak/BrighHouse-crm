@@ -451,29 +451,88 @@ export default function ChatPage() {
 
             {/* Лента сообщений */}
             <div className="flex-1 p-5 overflow-y-auto space-y-3">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}
-                >
+              {messages.map((msg) => {
+                // Парсим наличие медиафайлов
+                const mediaMatch = msg.text.match(/^\[MEDIA:(photo\vert{}video\vert{}round_video\vert{}voice):(.*?)\](.*)$/);
+                const mediaType = mediaMatch ? mediaMatch[1] : null;
+                const mediaUrl = mediaMatch ? mediaMatch[2] : null;
+                const caption = mediaMatch ? mediaMatch[3].trim() : msg.text;
+
+                return (
                   <div
-                    className={`max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-2xs ${
-                      msg.sender === 'me'
-                        ? 'bg-blue-600 text-white rounded-tr-none'
-                        : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
-                    }`}
+                    key={msg.id}
+                    className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <p>{msg.text}</p>
-                    <span
-                      className={`text-[9px] block text-right mt-1 font-mono ${
-                        msg.sender === 'me' ? 'text-blue-200' : 'text-slate-400'
+                    <div
+                      className={`max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-2xs ${
+                        msg.sender === 'me'
+                          ? 'bg-blue-600 text-white rounded-tr-none'
+                          : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
                       }`}
                     >
-                      {msg.time}
-                    </span>
+                      {/* Отрисовка фото */}
+                      {mediaType === 'photo' && (
+                        <div className="mb-2 overflow-hidden rounded-xl">
+                          <img
+                            src={mediaUrl!}
+                            alt="Фото от клиента"
+                            className="max-h-72 w-auto object-cover rounded-xl hover:scale-105 transition cursor-pointer"
+                            onClick={() => window.open(mediaUrl!, '_blank')}
+                          />
+                        </div>
+                      )}
+
+                      {/* Отрисовка кружочка (видеосообщения) */}
+                      {mediaType === 'round_video' && (
+                        <div className="my-1 flex justify-center">
+                          <video
+                            src={mediaUrl!}
+                            controls
+                            autoPlay
+                            muted
+                            loop
+                            playsInline
+                            className="w-48 h-48 rounded-full object-cover border-2 border-slate-300 shadow-md"
+                          />
+                        </div>
+                      )}
+
+                      {/* Отрисовка обычного видео */}
+                      {mediaType === 'video' && (
+                        <div className="mb-2 overflow-hidden rounded-xl">
+                          <video
+                            src={mediaUrl!}
+                            controls
+                            className="max-h-72 w-full rounded-xl"
+                          />
+                        </div>
+                      )}
+
+                      {/* Отрисовка голосового сообщения */}
+                      {mediaType === 'voice' && (
+                        <div className="my-1">
+                          <audio
+                            src={mediaUrl!}
+                            controls
+                            className="h-10 w-64 rounded-lg"
+                          />
+                        </div>
+                      )}
+
+                      {/* Текст или подпись к медиа */}
+                      {caption && <p>{caption}</p>}
+
+                      <span
+                        className={`text-[9px] block text-right mt-1 font-mono ${
+                          msg.sender === 'me' ? 'text-blue-200' : 'text-slate-400'
+                        }`}
+                      >
+                        {msg.time}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Быстрые шаблоны */}
