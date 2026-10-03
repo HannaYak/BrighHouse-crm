@@ -38,6 +38,7 @@ async function start() {
         update: {
           lastMessage: text,
           lastActivity: new Date(),
+          updatedAt: new Date(),
           unreadCount: { increment: message.out ? 0 : 1 },
           clientName: senderName,
           phone: phone || undefined,
@@ -50,6 +51,7 @@ async function start() {
           phone: phone,
           lastMessage: text,
           lastActivity: new Date(),
+          updatedAt: new Date(),
           unreadCount: message.out ? 0 : 1,
         },
       });
