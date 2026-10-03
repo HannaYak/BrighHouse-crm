@@ -11,8 +11,7 @@ const apiId = 24697673;
 const apiHash = "5f1649ea00d1db0b7ba211bd9f8b1ed8";
 const session = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAULXpo//ar2SnhY50EXlbMjoRyak1cPvwTMmG/KZomUPL6U0vtpO/AjpRae2L1NlUEOrdFbKruILe5Q8UW9eQ2S8RutfY55rozrhD75ko6ap8O1l/g7GW1pvwUw7fNlCeYaFhkYnLLzphd4avmCJqyVDUHv/5qa1Au1XRJLMytvpnhH/3PxDHXsfZJbHvL9fzPLSiBL0/ieqOSPO6cRHuQM9STwtqHebDHvtNjRMKXpWGaxRQ0yyekj4TAyFsfFORf2batrqZpOO5RBO1J2A19rprS3/pjrHhuwhG1H5Pe92J3l8+FoDYbjVyFPEtIS/orwj7fKSePZVtu8LC4Xov1jk=");
 
-// Папка для сохранения медиа в public-директорию Next.js
-const mediaDir = path.resolve(process.cwd(), "public", "chat-media");
+const mediaDir = path.resolve(process.cwd(), "chat-storage");
 if (!fs.existsSync(mediaDir)) {
   fs.mkdirSync(mediaDir, { recursive: true });
 }
@@ -37,7 +36,6 @@ async function start() {
       
       let messageContent = message.text || "";
 
-      // Обработка фото, видео, кружочков и голосовых
       if (message.media) {
         try {
           const buffer = await client.downloadMedia(message);
@@ -68,19 +66,18 @@ async function start() {
             const filePath = path.join(mediaDir, fileName);
             fs.writeFileSync(filePath, buffer);
 
-            const fileUrl = `/chat-media/${fileName}`;
+            const fileUrl = `/api/media/${fileName}`;
             const caption = message.text ? ` ${message.text}` : "";
             messageContent = `[MEDIA:${type}:${fileUrl}]${caption}`;
           }
         } catch (mediaErr) {
           console.error("Ошибка сохранения медиафайла:", mediaErr);
-          if (!messageContent) messageContent = "[Не удалось загрузить медиа]";
+          if (!messageContent) messageContent = "[Медиафайл]";
         }
       }
 
       console.log(`📩 Новое сообщение от ${senderName} (${senderId}): ${messageContent}`);
 
-      // Сохраняем диалог в базу
       const conversation = await prisma.conversation.upsert({
         where: { externalId: senderId },
         update: {
@@ -104,7 +101,6 @@ async function start() {
         },
       });
 
-      // Сохраняем сообщение
       await prisma.message.create({
         data: {
           conversationId: conversation.id,
