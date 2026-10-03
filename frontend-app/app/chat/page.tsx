@@ -6,7 +6,7 @@ import OrderModal, { OrderDetail } from '../../components/OrderModal';
 export type PlatformType = 'TELEGRAM' | 'WHATSAPP' | 'INSTAGRAM' | 'FACEBOOK';
 
 interface ChatContact {
-  id: string; // ID диалога из БД Conversation или внешний ID
+  id: string;
   name: string;
   phone?: string;
   platform: PlatformType;
@@ -15,6 +15,7 @@ interface ChatContact {
   lastMessage?: string;
   lastTime?: string;
   unreadCount?: number;
+  rawMessages?: any[];
 }
 
 interface Message {
@@ -49,35 +50,42 @@ export default function ChatPage() {
   const loadConversations = async () => {
     try {
       setLoading(true);
+      // Запрашиваем правильный эндпоинт /api/chat вместо несуществующего /api/chat/conversations
       const [convRes, cleanersRes] = await Promise.all([
-        fetch('/api/chat/conversations'),
+        fetch('/api/chat'),
         fetch('/api/cleaners'),
       ]);
 
       const list: ChatContact[] = [];
 
-      // 1. Диалоги клиентов из базы Conversation (Telegram, WhatsApp, Instagram, Facebook)
+      // 1. Реальные диалоги клиентов из базы Conversation
       if (convRes.ok) {
         const convData = await convRes.json();
         if (Array.isArray(convData)) {
           convData.forEach((c: any) => {
             const platformKey = (c.channel || 'TELEGRAM').toUpperCase() as PlatformType;
-            const lastMsg = c.messages && c.messages.length > 0 ? c.messages[c.messages.length - 1] : null;
+            const msgs = c.messages || [];
+            const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+
             list.push({
               id: c.id,
-              name: c.clientName || 'Клиент',
+              name: c.clientName || c.senderName || 'Клиент Telegram',
               phone: c.phone || '',
               platform: PLATFORM_CONFIG[platformKey] ? platformKey : 'TELEGRAM',
               role: 'client',
-              district: c.address || 'Варшава',
-              lastMessage: lastMsg ? lastMsg.text : 'Новый диалог',
-              lastTime: lastMsg ? new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Сейчас',
+              district: 'Варшава',
+              lastMessage: c.lastMessage || (lastMsg ? lastMsg.text : 'Новый диалог'),
+              lastTime: lastMsg
+                ? new Date(lastMsg.timestamp || lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : new Date(c.lastActivity || c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              unreadCount: c.unreadCount || 0,
+              rawMessages: msgs,
             });
           });
         }
       }
 
-      // 2. Внутренние чаты с нашими клинерами через Telegram-бот бригады
+      // 2. Чаты с клинерами
       if (cleanersRes.ok) {
         const cleanersData = await cleanersRes.json();
         if (Array.isArray(cleanersData)) {
@@ -91,15 +99,21 @@ export default function ChatPage() {
               district: cl.district || 'Центр',
               lastMessage: cl.telegramChatId ? 'Telegram подключен' : 'Ожидает PIN',
               lastTime: 'Смена',
+              rawMessages: [],
             });
           });
         }
       }
 
       setContacts(list);
-      if (list.length > 0 && !selectedContact) {
-        setSelectedContact(list[0]);
-        loadMessages(list[0]);
+
+      // Автовыбор диалога при первой загрузке
+      if (list.length > 0) {
+        setSelectedContact((prev) => {
+          const current = prev ? list.find((item) => item.id === prev.id) || list[0] : list[0];
+          displayMessages(current);
+          return current;
+        });
       }
     } catch (err) {
       console.error('Ошибка загрузки сообщений:', err);
@@ -110,9 +124,12 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadConversations();
+    // Автообновление списка сообщений каждые 4 секунды
+    const interval = setInterval(loadConversations, 4000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loadMessages = async (contact: ChatContact) => {
+  const displayMessages = (contact: ChatContact) => {
     if (contact.role === 'cleaner') {
       setMessages([
         {
@@ -125,42 +142,22 @@ export default function ChatPage() {
       return;
     }
 
-    try {
-      const res = await fetch(`/api/chat/messages?conversationId=${contact.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        const formatted: Message[] = (data || []).map((m: any) => ({
-          id: m.id,
-          sender: m.senderType === 'CLIENT' ? 'them' : 'me',
-          text: m.text,
-          time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        }));
-        setMessages(formatted.length > 0 ? formatted : [
-          {
-            id: 'init_1',
-            sender: 'them',
-            text: 'Здравствуйте! Подскажите стоимость уборки квартиры 50 м² в Варшаве?',
-            time: '12:00',
-          }
-        ]);
-      } else {
-        setMessages([
-          {
-            id: 'init_1',
-            sender: 'them',
-            text: 'Dzień dobry! Chciałbym zamówić sprzątanie mieszkania.',
-            time: '11:40',
-          },
-        ]);
-      }
-    } catch (e) {
-      console.error(e);
+    if (contact.rawMessages && contact.rawMessages.length > 0) {
+      const formatted: Message[] = contact.rawMessages.map((m: any) => ({
+        id: m.id,
+        sender: m.senderType === 'CLIENT' ? 'them' : 'me',
+        text: m.text,
+        time: new Date(m.timestamp || m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }));
+      setMessages(formatted);
+    } else {
+      setMessages([]);
     }
   };
 
   const handleSelectContact = (contact: ChatContact) => {
     setSelectedContact(contact);
-    loadMessages(contact);
+    displayMessages(contact);
   };
 
   const handleSendMessage = async (customText?: string) => {
@@ -179,16 +176,16 @@ export default function ChatPage() {
 
     try {
       setSending(true);
-      await fetch('/api/chat/send', {
+      await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversationId: selectedContact.id,
-          platform: selectedContact.platform,
-          phone: selectedContact.phone,
           text: textToSend,
         }),
       });
+      // Сразу перезагружаем свежие данные
+      loadConversations();
     } catch (e) {
       console.error('Ошибка отправки ответа:', e);
     } finally {
@@ -196,7 +193,6 @@ export default function ChatPage() {
     }
   };
 
-  // Открытие модалки создания заказа с предзаполненными данными из чата
   const handleCreateOrderFromChat = () => {
     if (!selectedContact) return;
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -275,7 +271,7 @@ export default function ChatPage() {
             </span>
           </div>
 
-          {/* Фильтр по платформам: Все, TG, WA, IG, FB */}
+          {/* Фильтр по платформам */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold gap-1 overflow-x-auto">
             <button
               type="button"
@@ -324,7 +320,7 @@ export default function ChatPage() {
             </button>
           </div>
 
-          {/* Фильтр роли: Клиенты / Клинеры */}
+          {/* Фильтр роли: Все / Клиенты / Бригада */}
           <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-[10px] font-bold">
             <button
               type="button"
@@ -352,7 +348,7 @@ export default function ChatPage() {
 
         {/* Список диалогов */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-          {loading ? (
+          {loading && contacts.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400">Загрузка диалогов...</div>
           ) : filteredContacts.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400">Диалогов пока нет</div>
