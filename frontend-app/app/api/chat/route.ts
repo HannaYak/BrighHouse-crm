@@ -10,20 +10,6 @@ const apiId = 24697673;
 const apiHash = "5f1649ea00d1db0b7ba211bd9f8b1ed8";
 const session = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAULXpo//ar2SnhY50EXlbMjoRyak1cPvwTMmG/KZomUPL6U0vtpO/AjpRae2L1NlUEOrdFbKruILe5Q8UW9eQ2S8RutfY55rozrhD75ko6ap8O1l/g7GW1pvwUw7fNlCeYaFhkYnLLzphd4avmCJqyVDUHv/5qa1Au1XRJLMytvpnhH/3PxDHXsfZJbHvL9fzPLSiBL0/ieqOSPO6cRHuQM9STwtqHebDHvtNjRMKXpWGaxRQ0yyekj4TAyFsfFORf2batrqZpOO5RBO1J2A19rprS3/pjrHhuwhG1H5Pe92J3l8+FoDYbjVyFPEtIS/orwj7fKSePZVtu8LC4Xov1jk=");
 
-let tgSenderClient: TelegramClient | null = null;
-
-async function getTelegramSender() {
-  if (!tgSenderClient) {
-    tgSenderClient = new TelegramClient(session, apiId, apiHash, {
-      connectionRetries: 5,
-    });
-    await tgSenderClient.connect();
-  } else if (!tgSenderClient.connected) {
-    await tgSenderClient.connect();
-  }
-  return tgSenderClient;
-}
-
 export async function GET() {
   try {
     const conversations = await prisma.conversation.findMany({
@@ -77,7 +63,6 @@ export async function POST(request: Request) {
     let fileName = '';
     let isVoice = false;
 
-    // Если менеджер прикрепил файл или записал голосовое
     if (uploadedFile) {
       const bytes = await uploadedFile.arrayBuffer();
       fileBuffer = Buffer.from(bytes);
@@ -100,7 +85,6 @@ export async function POST(request: Request) {
       savedText = `[MEDIA:${type}:${fileUrl}]${caption}`;
     }
 
-    // Сохраняем сообщение менеджера в базу CRM
     const savedMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -122,24 +106,33 @@ export async function POST(request: Request) {
       },
     });
 
-    // Отправка в реальный Telegram клиенту
     if (conversation.channel === 'TELEGRAM' && conversation.externalId) {
-      const client = await getTelegramSender();
+      const client = new TelegramClient(session, apiId, apiHash, {
+        connectionRetries: 3,
+        autoReconnect: false,
+      });
 
-      if (fileBuffer) {
-        const toUpload = new CustomFile(fileName, fileBuffer.length, '', fileBuffer);
-        const uploaded = await client.uploadFile({
-          file: toUpload,
-          workers: 1,
-        });
+      try {
+        await client.connect();
+        if (fileBuffer) {
+          const toUpload = new CustomFile(fileName, fileBuffer.length, '', fileBuffer);
+          const uploaded = await client.uploadFile({
+            file: toUpload,
+            workers: 1,
+          });
 
-        await client.sendFile(conversation.externalId, {
-          file: uploaded,
-          caption: text || undefined,
-          voiceNote: isVoice,
-        });
-      } else if (text) {
-        await client.sendMessage(conversation.externalId, { message: text });
+          await client.sendFile(conversation.externalId, {
+            file: uploaded,
+            caption: text || undefined,
+            voiceNote: isVoice,
+          });
+        } else if (text) {
+          await client.sendMessage(conversation.externalId, { message: text });
+        }
+      } catch (tgErr: any) {
+        console.error('Ошибка отправки в Telegram:', tgErr);
+      } finally {
+        await client.disconnect().catch(() => {});
       }
     }
 
