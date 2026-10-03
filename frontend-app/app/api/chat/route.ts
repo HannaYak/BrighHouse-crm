@@ -1,10 +1,28 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions/index.js';
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const META_PAGE_ACCESS_TOKEN = process.env.META_PAGE_ACCESS_TOKEN;
+const apiId = 24697673;
+const apiHash = "5f1649ea00d1db0b7ba211bd9f8b1ed8";
+const session = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAULXpo//ar2SnhY50EXlbMjoRyak1cPvwTMmG/KZomUPL6U0vtpO/AjpRae2L1NlUEOrdFbKruILe5Q8UW9eQ2S8RutfY55rozrhD75ko6ap8O1l/g7GW1pvwUw7fNlCeYaFhkYnLLzphd4avmCJqyVDUHv/5qa1Au1XRJLMytvpnhH/3PxDHXsfZJbHvL9fzPLSiBL0/ieqOSPO6cRHuQM9STwtqHebDHvtNjRMKXpWGaxRQ0yyekj4TAyFsfFORf2batrqZpOO5RBO1J2A19rprS3/pjrHhuwhG1H5Pe92J3l8+FoDYbjVyFPEtIS/orwj7fKSePZVtu8LC4Xov1jk=");
 
-// Получение списка диалогов и сообщений
+// Одиночный инстанс клиента для отправки сообщений
+let tgSenderClient: TelegramClient | null = null;
+
+async function getTelegramSender() {
+  if (!tgSenderClient) {
+    tgSenderClient = new TelegramClient(session, apiId, apiHash, {
+      connectionRetries: 5,
+    });
+    await tgSenderClient.connect();
+  } else if (!tgSenderClient.connected) {
+    await tgSenderClient.connect();
+  }
+  return tgSenderClient;
+}
+
+// Получение диалогов
 export async function GET() {
   try {
     const conversations = await prisma.conversation.findMany({
@@ -13,7 +31,7 @@ export async function GET() {
           orderBy: { timestamp: 'asc' },
         },
       },
-      orderBy: { lastActivity: 'desc' }, // Сортируем по реальной активности последнего сообщения
+      orderBy: { lastActivity: 'desc' },
     });
 
     return NextResponse.json(conversations);
@@ -23,7 +41,7 @@ export async function GET() {
   }
 }
 
-// Отправка ответа клиенту из CRM (в Telegram или Instagram)
+// Отправка ответа клиенту из CRM
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -41,50 +59,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 });
     }
 
-    // Сохраняем сообщение в базу
+    // 1. Сохраняем исходящее сообщение менеджера в базу CRM
     const savedMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         senderId: 'manager',
         senderType: 'MANAGER',
-        senderName: 'Диспетчер',
+        senderName: 'Менеджер',
         text: text,
         isIncoming: false,
         timestamp: new Date(),
       },
     });
 
-    // Обновляем последнее сообщение в диалоге
+    // 2. Обновляем статус диалога
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         lastMessage: text,
         lastActivity: new Date(),
+        updatedAt: new Date(),
       },
     });
 
-    // 1. Отправка клиенту в Telegram
-    if (conversation.channel === 'TELEGRAM' && conversation.externalId && TELEGRAM_BOT_TOKEN) {
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: conversation.externalId,
-          text: text,
-        }),
-      });
-    }
-
-    // 2. Отправка клиенту в Instagram Direct
-    if (conversation.channel === 'INSTAGRAM' && conversation.externalId && META_PAGE_ACCESS_TOKEN) {
-      await fetch(`https://graph.facebook.com/v20.0/me/messages?access_token=${META_PAGE_ACCESS_TOKEN}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: { id: conversation.externalId },
-          message: { text: text },
-        }),
-      });
+    // 3. Отправка в реальный Telegram клиенту через UserBot
+    if (conversation.channel === 'TELEGRAM' && conversation.externalId) {
+      try {
+        const client = await getTelegramSender();
+        // Отправляем сообщение в чат по externalId (id пользователя Telegram)
+        await client.sendMessage(conversation.externalId, { message: text });
+        console.log(`🚀 Успешно отправлен ответ в Telegram пользователю ${conversation.externalId}`);
+      } catch (tgErr: any) {
+        console.error('Ошибка отправки сообщения через Telegram UserBot:', tgErr.message);
+      }
     }
 
     return NextResponse.json(savedMessage, { status: 201 });
