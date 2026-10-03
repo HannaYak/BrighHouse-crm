@@ -42,6 +42,11 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
+  // Ссылка для автоматической прокрутки вниз
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const selectedContactRef = useRef<ChatContact | null>(null);
+
+  // Для медиа и микрофона
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -52,6 +57,19 @@ export default function ChatPage() {
 
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [orderFromChat, setOrderFromChat] = useState<OrderDetail | null>(null);
+
+  useEffect(() => {
+    selectedContactRef.current = selectedContact;
+  }, [selectedContact]);
+
+  // Автоскролл к последнему сообщению
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
+
+  useEffect(() => {
+    scrollToBottom('auto');
+  }, [messages]);
 
   const loadConversations = async () => {
     try {
@@ -109,12 +127,15 @@ export default function ChatPage() {
 
       setContacts(list);
 
+      // Синхронизация открытого чата: моментально обновляем сообщения в открытом диалоге
       if (list.length > 0) {
-        setSelectedContact((prev) => {
-          const current = prev ? list.find((item) => item.id === prev.id) || list[0] : list[0];
-          displayMessages(current);
-          return current;
-        });
+        const currentActive = selectedContactRef.current;
+        const matchingContact = currentActive
+          ? list.find((item) => item.id === currentActive.id) || list[0]
+          : list[0];
+
+        setSelectedContact(matchingContact);
+        displayMessages(matchingContact);
       }
     } catch (err) {
       console.error('Ошибка загрузки сообщений:', err);
@@ -125,7 +146,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadConversations();
-    const interval = setInterval(loadConversations, 3000);
+    // Опрашиваем сервер каждые 2.5 секунды на наличие свежих сообщений
+    const interval = setInterval(loadConversations, 2500);
     return () => clearInterval(interval);
   }, []);
 
@@ -158,6 +180,7 @@ export default function ChatPage() {
   const handleSelectContact = (contact: ChatContact) => {
     setSelectedContact(contact);
     displayMessages(contact);
+    setTimeout(() => scrollToBottom('auto'), 50);
   };
 
   const startRecording = async () => {
@@ -223,7 +246,8 @@ export default function ChatPage() {
 
       setInputText('');
       setSelectedFile(null);
-      loadConversations();
+      await loadConversations();
+      setTimeout(() => scrollToBottom('smooth'), 100);
     } catch (e) {
       console.error(e);
     } finally {
@@ -249,6 +273,7 @@ export default function ChatPage() {
 
     setMessages((prev) => [...prev, newMsg]);
     if (!customText) setInputText('');
+    setTimeout(() => scrollToBottom('smooth'), 50);
 
     try {
       setSending(true);
@@ -260,7 +285,7 @@ export default function ChatPage() {
           text: textToSend,
         }),
       });
-      loadConversations();
+      await loadConversations();
     } catch (e) {
       console.error('Ошибка отправки ответа:', e);
     } finally {
@@ -336,6 +361,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+      {/* Левая колонка */}
       <div className="w-80 sm:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50">
         <div className="p-4 border-b border-slate-200 bg-white space-y-3">
           <div className="flex items-center justify-between">
@@ -474,6 +500,7 @@ export default function ChatPage() {
         </div>
       </div>
 
+      {/* Правая колонка: Окно активного чата */}
       <div className="flex-1 flex flex-col bg-slate-50/40">
         {selectedContact ? (
           <>
@@ -518,6 +545,7 @@ export default function ChatPage() {
               </div>
             </div>
 
+            {/* Лента сообщений */}
             <div className="flex-1 p-5 overflow-y-auto space-y-3">
               {messages.map((msg) => {
                 const isMedia = msg.text.startsWith('[MEDIA:');
@@ -548,6 +576,7 @@ export default function ChatPage() {
                           : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
                       }`}
                     >
+                      {/* Фото */}
                       {mediaType === 'photo' && mediaUrl && (
                         <div className="mb-1 overflow-hidden rounded-xl">
                           <img
@@ -559,6 +588,7 @@ export default function ChatPage() {
                         </div>
                       )}
 
+                      {/* Кружочек */}
                       {mediaType === 'round_video' && mediaUrl && (
                         <div className="my-1 flex justify-center">
                           <video
@@ -570,6 +600,7 @@ export default function ChatPage() {
                         </div>
                       )}
 
+                      {/* Видео */}
                       {mediaType === 'video' && mediaUrl && (
                         <div className="mb-1 overflow-hidden rounded-xl">
                           <video
@@ -580,6 +611,7 @@ export default function ChatPage() {
                         </div>
                       )}
 
+                      {/* Голосовое */}
                       {mediaType === 'voice' && mediaUrl && (
                         <div className="my-1">
                           <audio
@@ -603,8 +635,11 @@ export default function ChatPage() {
                   </div>
                 );
               })}
+              {/* Невидимый якорь в самом низу списка сообщений */}
+              <div ref={messagesEndRef} />
             </div>
 
+            {/* Быстрые шаблоны */}
             <div className="px-4 py-2 bg-white border-t border-slate-100 flex items-center gap-2 overflow-x-auto">
               <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">⚡ Быстрый ответ:</span>
               {quickTemplates.map((tmpl, idx) => (
@@ -619,6 +654,7 @@ export default function ChatPage() {
               ))}
             </div>
 
+            {/* Превью выбранного файла */}
             {selectedFile && (
               <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex items-center justify-between text-xs text-blue-800">
                 <span className="truncate">📎 Файл: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
@@ -632,6 +668,7 @@ export default function ChatPage() {
               </div>
             )}
 
+            {/* Панель ввода */}
             <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
               <input
                 type="file"
