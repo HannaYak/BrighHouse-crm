@@ -42,7 +42,6 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
-  // Для медиа и микрофона
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -329,7 +328,7 @@ export default function ChatPage() {
         'Напоминаем: смена начинается в 10:00. Код домофона в наряде.',
       ]
     : [
-        'Dzień dobry! Zespół BrightHouse potwierdza termin sprzątania na jutro 🏠✨',
+        'Dzień dobry! Zespół BrightHouse подтверждает время уборки на завтра 🏠✨',
         'Клинеры закончили уборку! Всё ли вам понравилось по качеству?',
         '💳 Реквизиты для оплаты: счет Sp. z o.o. или перевод BLIK на номер фирмы.',
         'Прайс: 1-комн. (до 34м²) — 170 zł, 2-комн. (до 50м²) — 200 zł. Приезжаем со своей химией и инвентарем!',
@@ -337,7 +336,6 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-      {/* Левая колонка */}
       <div className="w-80 sm:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50">
         <div className="p-4 border-b border-slate-200 bg-white space-y-3">
           <div className="flex items-center justify-between">
@@ -476,7 +474,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Правая колонка: Окно активного чата */}
       <div className="flex-1 flex flex-col bg-slate-50/40">
         {selectedContact ? (
           <>
@@ -521,13 +518,23 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* Лента сообщений */}
             <div className="flex-1 p-5 overflow-y-auto space-y-3">
               {messages.map((msg) => {
-                const mediaMatch = msg.text.match(/^\[MEDIA:(photo\vert{}video\vert{}round_video\vert{}voice):(.*?)\](.*)$/);
-                const mediaType = mediaMatch ? mediaMatch[1] : null;
-                const mediaUrl = mediaMatch ? mediaMatch[2] : null;
-                const caption = mediaMatch ? mediaMatch[3].trim() : msg.text;
+                const isMedia = msg.text.startsWith('[MEDIA:');
+                let mediaType: string | null = null;
+                let mediaUrl: string | null = null;
+                let caption = msg.text;
+
+                if (isMedia) {
+                  const endBracket = msg.text.indexOf(']');
+                  if (endBracket !== -1) {
+                    const tagContent = msg.text.slice(7, endBracket);
+                    const tagParts = tagContent.split(':');
+                    mediaType = tagParts[0];
+                    mediaUrl = tagParts.slice(1).join(':');
+                    caption = msg.text.slice(endBracket + 1).trim();
+                  }
+                }
 
                 return (
                   <div
@@ -541,11 +548,10 @@ export default function ChatPage() {
                           : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'
                       }`}
                     >
-                      {/* Фото */}
-                      {mediaType === 'photo' && (
+                      {mediaType === 'photo' && mediaUrl && (
                         <div className="mb-1 overflow-hidden rounded-xl">
                           <img
-                            src={mediaUrl!}
+                            src={mediaUrl}
                             alt="Фото"
                             className="max-h-72 w-auto object-cover rounded-xl hover:opacity-90 transition cursor-pointer"
                             onClick={() => window.open(mediaUrl!, '_blank')}
@@ -553,11 +559,10 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Кружочек */}
-                      {mediaType === 'round_video' && (
+                      {mediaType === 'round_video' && mediaUrl && (
                         <div className="my-1 flex justify-center">
                           <video
-                            src={mediaUrl!}
+                            src={mediaUrl}
                             controls
                             playsInline
                             className="w-44 h-44 rounded-full object-cover border-2 border-slate-300 shadow-md"
@@ -565,22 +570,20 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {/* Видео */}
-                      {mediaType === 'video' && (
+                      {mediaType === 'video' && mediaUrl && (
                         <div className="mb-1 overflow-hidden rounded-xl">
                           <video
-                            src={mediaUrl!}
+                            src={mediaUrl}
                             controls
                             className="max-h-72 w-full rounded-xl"
                           />
                         </div>
                       )}
 
-                      {/* Голосовое */}
-                      {mediaType === 'voice' && (
+                      {mediaType === 'voice' && mediaUrl && (
                         <div className="my-1">
                           <audio
-                            src={mediaUrl!}
+                            src={mediaUrl}
                             controls
                             className="h-10 w-64 rounded-lg"
                           />
@@ -602,7 +605,6 @@ export default function ChatPage() {
               })}
             </div>
 
-            {/* Быстрые шаблоны */}
             <div className="px-4 py-2 bg-white border-t border-slate-100 flex items-center gap-2 overflow-x-auto">
               <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">⚡ Быстрый ответ:</span>
               {quickTemplates.map((tmpl, idx) => (
@@ -617,7 +619,6 @@ export default function ChatPage() {
               ))}
             </div>
 
-            {/* Превью выбранного файла */}
             {selectedFile && (
               <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex items-center justify-between text-xs text-blue-800">
                 <span className="truncate">📎 Файл: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)</span>
@@ -631,7 +632,6 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Панель ввода с кнопками медиа и микрофона */}
             <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
               <input
                 type="file"
