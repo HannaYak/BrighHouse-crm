@@ -10,10 +10,10 @@ export async function GET() {
     const conversations = await prisma.conversation.findMany({
       include: {
         messages: {
-          orderBy: { timestamp: 'asc' }, // сортируем по реальному полю timestamp
+          orderBy: { timestamp: 'asc' },
         },
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { lastActivity: 'desc' }, // Сортируем по реальной активности последнего сообщения
     });
 
     return NextResponse.json(conversations);
