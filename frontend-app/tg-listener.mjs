@@ -34,8 +34,26 @@ async function start() {
       const senderName = [sender?.firstName, sender?.lastName].filter(Boolean).join(" ") || sender?.username || "Клиент Telegram";
       const phone = sender?.phone ? `+${sender.phone}` : null;
       
-      let messageContent = message.text || "";
+      let rawText = message.text || message.message || "";
 
+      // 1. Проверяем, является ли это ответом (reply/цитатой) на другое сообщение
+      let replyPrefix = "";
+      if (message.replyTo) {
+        try {
+          const repliedMsg = await message.getReplyMessage();
+          if (repliedMsg) {
+            const originalSender = (await repliedMsg.getSender())?.firstName || "сообщение";
+            const quoteSnippet = (repliedMsg.text || repliedMsg.message || "[Медиа/Файл]").slice(0, 45);
+            replyPrefix = `💬 [Ответ на «${quoteSnippet}»]:\n`;
+          }
+        } catch (e) {
+          console.warn("Не удалось извлечь цитируемое сообщение:", e);
+        }
+      }
+
+      let messageContent = replyPrefix + rawText;
+
+      // 2. Обработка прикрепленных файлов (фото, видео, голосовые)
       if (message.media) {
         try {
           const buffer = await client.downloadMedia(message);
@@ -67,13 +85,18 @@ async function start() {
             fs.writeFileSync(filePath, buffer);
 
             const fileUrl = `/api/media/${fileName}`;
-            const caption = message.text ? ` ${message.text}` : "";
-            messageContent = `[MEDIA:${type}:${fileUrl}]${caption}`;
+            const caption = rawText ? ` ${rawText}` : "";
+            messageContent = `${replyPrefix}[MEDIA:${type}:${fileUrl}]${caption}`;
           }
         } catch (mediaErr) {
           console.error("Ошибка сохранения медиафайла:", mediaErr);
-          if (!messageContent) messageContent = "[Медиафайл]";
+          if (!messageContent) messageContent = `${replyPrefix}[Медиафайл]`;
         }
+      }
+
+      // Если в сообщении совсем нет текста и медиа (пустой реплай)
+      if (!messageContent.trim()) {
+        messageContent = `${replyPrefix}[Ответ на сообщение]`;
       }
 
       console.log(`📩 Новое сообщение от ${senderName} (${senderId}): ${messageContent}`);
