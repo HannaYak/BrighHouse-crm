@@ -4,81 +4,55 @@ const require = createRequire(import.meta.url);
 const { 
   default: makeWASocket, 
   DisconnectReason,
-  initAuthCreds,
-  BufferJSON,
-  proto,
+  useMultiFileAuthState,
   fetchLatestWaWebVersion
 } = require('@whiskeysockets/baileys');
 
 import { PrismaClient } from '@prisma/client';
+import fs from 'fs';
+import path from 'path';
 import pino from 'pino';
 
 const prisma = new PrismaClient();
+const SESSION_DIR = './wa-session-store';
 
-async function usePrismaAuthState() {
-  const readData = async (id) => {
-    try {
-      const row = await prisma.whatsAppSession.findUnique({ where: { id } });
-      if (!row?.data) return null;
-      return JSON.parse(row.data, BufferJSON.reviver);
-    } catch {
-      return null;
+// 1. Восстановление сессии из базы данных PostgreSQL при старте контейнера
+async function restoreSessionFromDB() {
+  if (!fs.existsSync(SESSION_DIR)) {
+    fs.mkdirSync(SESSION_DIR, { recursive: true });
+  }
+
+  try {
+    const rows = await prisma.whatsAppSession.findMany();
+    for (const row of rows) {
+      const filePath = path.join(SESSION_DIR, row.id.endsWith('.json') ? row.id : `${row.id}.json`);
+      fs.writeFileSync(filePath, row.data, 'utf-8');
     }
-  };
-
-  const writeData = async (id, data) => {
-    try {
-      const serialized = JSON.stringify(data, BufferJSON.replacer);
-      await prisma.whatsAppSession.upsert({
-        where: { id },
-        update: { data: serialized },
-        create: { id, data: serialized }
-      });
-    } catch (e) {
-      console.error('Ошибка записи ключа:', e.message);
+    if (rows.length > 0) {
+      console.log(`📦 Успешно выгружено ${rows.length} файлов ключей из PostgreSQL в файловый кэш.`);
     }
-  };
+  } catch (err) {
+    console.error('Ошибка выгрузки сессии из БД:', err.message);
+  }
+}
 
-  const removeData = async (id) => {
-    try {
-      await prisma.whatsAppSession.delete({ where: { id } });
-    } catch {}
-  };
-
-  const creds = (await readData('creds')) || initAuthCreds();
-
-  return {
-    state: {
-      creds,
-      keys: {
-        get: async (type, ids) => {
-          const data = {};
-          await Promise.all(
-            ids.map(async (id) => {
-              let value = await readData(`${type}-${id}`);
-              if (type === 'app-state-sync-key' && value) {
-                value = proto.Message.AppStateSyncKeyData.fromObject(value);
-              }
-              data[id] = value;
-            })
-          );
-          return data;
-        },
-        set: async (data) => {
-          const tasks = [];
-          for (const category in data) {
-            for (const id in data[category]) {
-              const value = data[category][id];
-              const key = `${category}-${id}`;
-              tasks.push(value ? writeData(key, value) : removeData(key));
-            }
-          }
-          await Promise.all(tasks);
-        }
-      }
-    },
-    saveCreds: () => writeData('creds', creds)
-  };
+// 2. Бэкап измененных ключей обратно в PostgreSQL
+async function backupFileToDB(fileName) {
+  try {
+    const filePath = path.join(SESSION_DIR, fileName);
+    if (!fs.existsSync(filePath)) {
+      await prisma.whatsAppSession.deleteMany({ where: { id: fileName } });
+      return;
+    }
+    const data = fs.readFileSync(filePath, 'utf-8');
+    await prisma.whatsAppSession.upsert({
+      where: { id: fileName },
+      update: { data },
+      create: { id: fileName, data }
+    });
+  } catch (err) {
+    // игнорируем мелкие гонки записи
+  }
 }
 
 let isConnecting = false;
@@ -87,17 +61,16 @@ async function startWhatsAppListener() {
   if (isConnecting) return;
   isConnecting = true;
 
-  console.log('⏳ Загружаем ключи из БД и подключаем WhatsApp...');
+  console.log('⏳ Синхронизация ключей WhatsApp с PostgreSQL...');
+  await restoreSessionFromDB();
+
+  const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
   let version = [2, 2413, 51];
   try {
     const waVersion = await fetchLatestWaWebVersion();
     if (waVersion?.version) version = waVersion.version;
-  } catch {
-    // fallback
-  }
-
-  const { state, saveCreds } = await usePrismaAuthState();
+  } catch {}
 
   const sock = makeWASocket({
     version,
@@ -108,17 +81,21 @@ async function startWhatsAppListener() {
     keepAliveIntervalMs: 25000,
     syncFullHistory: false,
     markOnlineOnConnect: false,
-    browser: ['Ubuntu', 'Chrome', '124.0.0.0'], // валидная маскировка под WhatsApp Web
-    getMessage: async (key) => {
-      const msg = await prisma.message.findFirst({
-        where: { externalId: key.id }
-      });
-      if (msg) return { conversation: msg.text };
-      return proto.Message.fromObject({});
-    }
+    browser: ['Ubuntu', 'Chrome', '124.0.0.0']
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', async () => {
+    await saveCreds();
+    // Сохраняем все обновленные файлы в PostgreSQL
+    if (fs.existsSync(SESSION_DIR)) {
+      const files = fs.readdirSync(SESSION_DIR);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          await backupFileToDB(file);
+        }
+      }
+    }
+  });
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
@@ -129,12 +106,12 @@ async function startWhatsAppListener() {
       const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
       if (isConflict) {
-        console.log('⚠️ Сессия активна на другом инстансе. Процесс ждет.');
+        console.log('⚠️ Сессия активна на другом инстансе. Ожидание...');
         return;
       }
 
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`⚠️ WhatsApp закрыл сокет (код: ${statusCode}). Переподключение через 5 сек...`);
+      console.log(`⚠️ WhatsApp закрыл сокет (код: ${statusCode}). Переподключение...`);
       if (shouldReconnect) {
         setTimeout(startWhatsAppListener, 5000);
       }
