@@ -193,7 +193,6 @@ async function startWhatsAppListener() {
         await prisma.message.create({
           data: {
             conversationId: conversation.id,
-            externalId: msg.key.id || undefined,
             senderId: isFromMe ? 'manager' : remoteJid,
             senderName: isFromMe ? 'Менеджер' : clientName,
             senderType: isFromMe ? 'MANAGER' : 'CLIENT',
