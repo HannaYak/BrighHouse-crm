@@ -15,7 +15,7 @@ import pino from 'pino';
 const prisma = new PrismaClient();
 
 async function startWhatsAppListener() {
-  console.log('⏳ Проверяем сессию и подключаемся к WhatsApp...');
+  console.log('⏳ Проверяем сессию и запускаем WhatsApp слушатель...');
 
   const { state, saveCreds } = await useMultiFileAuthState('./wa-session');
   const { version } = await fetchLatestBaileysVersion();
@@ -32,7 +32,6 @@ async function startWhatsAppListener() {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    // Если ключей нет, выводим QR-код прямо сюда!
     if (qr) {
       console.log('\n================ СКАНИРУЙТЕ QR-КОД В WHATSAPP ================');
       qrcode.generate(qr, { small: true });
@@ -46,15 +45,12 @@ async function startWhatsAppListener() {
       console.log(`⚠️ WhatsApp соединение разорвано (код: ${statusCode}). Переподключение: ${shouldReconnect}`);
       if (shouldReconnect) {
         startWhatsAppListener();
-      } else {
-        console.log('❌ Сессия была отключена на телефоне. Требуется повторное сканирование QR.');
       }
     } else if (connection === 'open') {
-      console.log('\n🟢 WhatsApp слушатель активен и принимает сообщения для CRM BrightHouse!\n');
+      console.log('🟢 WhatsApp слушатель успешно запущен и слушает сообщения!');
     }
   });
 
-  // Обработка входящих и исходящих сообщений
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
 
@@ -62,11 +58,11 @@ async function startWhatsAppListener() {
       if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
 
       const remoteJid = msg.key.remoteJid;
-      if (remoteJid.endsWith('@g.us')) continue; // пропускаем группы
+      if (remoteJid.endsWith('@g.us')) continue; // игнорируем группы
 
       const isFromMe = Boolean(msg.key.fromMe);
-      const cleanPhone = remoteJid.replace('@s.whatsapp.net', '');
-      const clientName = msg.pushName || `+${cleanPhone}`;
+      const cleanPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
+      const clientName = msg.pushName || `WA +${cleanPhone}`;
 
       const text = 
         msg.message.conversation || 
