@@ -105,8 +105,14 @@ async function startWhatsAppListener() {
     }
 
     if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+  const statusCode = lastDisconnect?.error?.output?.statusCode;
+  const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
+  const shouldReconnect = statusCode !== DisconnectReason.loggedOut && !isConflict;
+
+  if (isConflict) {
+    console.log('⚠️ Сессия перехвачена другим процессом. Этот экземпляр останавливается во избежание конфликта.');
+    return;
+  }
       console.log(`⚠️ WhatsApp соединение разорвано (код: ${statusCode}). Переподключение: ${shouldReconnect}`);
       if (shouldReconnect) {
         startWhatsAppListener();
