@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "node tg-listener.mjs & next start",
+    "start": "node tg-listener.mjs & node wa-listener.mjs & next start",
     "lint": "next lint"
   },
   "prisma": {
