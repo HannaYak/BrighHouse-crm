@@ -14,14 +14,16 @@ import pino from 'pino';
 const prisma = new PrismaClient();
 
 async function startWhatsAppListener() {
-  console.log('⏳ Запуск фонового слушателя WhatsApp...');
+  console.log('Проверяем ключи сессии...');
+const { state, saveCreds } = await useMultiFileAuthState('./wa-session');
+console.log('Ключи загружены, подключаемся к сокету...');
 
   const { state, saveCreds } = await useMultiFileAuthState('./wa-session');
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
-    logger: pino({ level: 'error' }),
+    logger: pino({ level: 'info' }),
     auth: state,
     connectTimeoutMs: 60000,
   });
