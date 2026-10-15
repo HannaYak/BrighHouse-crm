@@ -36,7 +36,7 @@ async function usePrismaAuthState() {
         create: { id, data: serialized }
       });
     } catch (e) {
-      console.error('Ошибка записи ключа:', e.message);
+      console.error('Ошибка записи:', e.message);
     }
   };
 
@@ -82,8 +82,8 @@ async function usePrismaAuthState() {
   };
 }
 
-async function run() {
-  console.log('⏳ Подключение к базе данных и генерация QR...');
+async function startLogin() {
+  console.log('⏳ Подключение и ожидание QR...');
   const { state, saveCreds } = await usePrismaAuthState();
   const { version } = await fetchLatestBaileysVersion();
 
@@ -92,6 +92,7 @@ async function run() {
     logger: pino({ level: 'silent' }),
     auth: state,
     connectTimeoutMs: 60000,
+    syncFullHistory: false
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -100,26 +101,31 @@ async function run() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('\n================ СКАНИРУЙ QR-КОД В WHATSAPP ================');
+      console.log('\n================ СКАНИРУЙТЕ ЭТОТ QR-КОД ================');
       qrcode.generate(qr, { small: true });
       console.log('WhatsApp -> Связанные устройства -> Привязка устройства');
-      console.log('===============================================================\n');
+      console.log('========================================================\n');
     }
 
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      if (statusCode === DisconnectReason.loggedOut) {
-        console.log('❌ Сессия завершена на телефоне.');
-        process.exit(1);
+      // При первичном сканировании часто прилетает код 515 (перезапуск потока) — это норма!
+      if (statusCode === 515 || statusCode === 408) {
+        console.log('🔄 Сервер WhatsApp финализирует сессию, подключаемся...');
+        startLogin();
+      } else if (statusCode === DisconnectReason.loggedOut) {
+        console.log('❌ Сессия сброшена телефоном. Очищаем старые ключи...');
+        prisma.whatsAppSession.deleteMany().then(() => startLogin());
+      } else {
+        console.log(`⚠️ Переподключение (код: ${statusCode})...`);
+        startLogin();
       }
     } else if (connection === 'open') {
-      console.log('\n🟢 УСПЕШНО! Ключи WhatsApp записаны в базу данных PostgreSQL!\n');
-      process.exit(0);
+      console.log('\n🟢 УСПЕШНО! WhatsApp подключен и сохранен в PostgreSQL!');
+      console.log('Теперь можно закрыть Shell и пользоваться CRM.\n');
+      setTimeout(() => process.exit(0), 3000);
     }
   });
 }
 
-run().catch((err) => {
-  console.error('Ошибка:', err);
-  process.exit(1);
-});
+startLogin().catch(console.error);
