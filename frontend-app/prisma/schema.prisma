@@ -301,3 +301,9 @@ model Message {
   timestamp      DateTime     @default(now())
   createdAt      DateTime     @default(now()) // <--- добавь эту строчку
 }
+
+model WhatsAppSession {
+  id        String   @id
+  data      String   @db.Text
+  updatedAt DateTime @updatedAt
+}
