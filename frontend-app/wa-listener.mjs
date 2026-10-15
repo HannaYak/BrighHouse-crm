@@ -6,7 +6,8 @@ const {
   DisconnectReason,
   initAuthCreds,
   BufferJSON,
-  proto 
+  proto,
+  fetchLatestWaWebVersion
 } = require('@whiskeysockets/baileys');
 
 import { PrismaClient } from '@prisma/client';
@@ -34,7 +35,7 @@ async function usePrismaAuthState() {
         create: { id, data: serialized }
       });
     } catch (e) {
-      console.error('Ошибка записи ключа в БД:', e.message);
+      console.error('Ошибка записи ключа:', e.message);
     }
   };
 
@@ -86,20 +87,28 @@ async function startWhatsAppListener() {
   if (isConnecting) return;
   isConnecting = true;
 
-  console.log('⏳ Загружаем ключи из БД и поднимаем сокет WhatsApp...');
+  console.log('⏳ Загружаем ключи из БД и подключаем WhatsApp...');
+
+  let version = [2, 2413, 51];
+  try {
+    const waVersion = await fetchLatestWaWebVersion();
+    if (waVersion?.version) version = waVersion.version;
+  } catch {
+    // fallback
+  }
 
   const { state, saveCreds } = await usePrismaAuthState();
 
   const sock = makeWASocket({
-    version: [2, 3000, 1015901307], // Фиксированная стабильная версия Baileys без сетевого запроса
-    logger: pino({ level: 'error' }),
+    version,
+    logger: pino({ level: 'silent' }),
     auth: state,
     printQRInTerminal: false,
     connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 25000,
     syncFullHistory: false,
     markOnlineOnConnect: false,
+    browser: ['Ubuntu', 'Chrome', '124.0.0.0'], // валидная маскировка под WhatsApp Web
     getMessage: async (key) => {
       const msg = await prisma.message.findFirst({
         where: { externalId: key.id }
@@ -112,11 +121,7 @@ async function startWhatsAppListener() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      console.log('⚠️ Сессия требует сканирования QR (в БД нет валидных creds)');
-    }
+    const { connection, lastDisconnect } = update;
 
     if (connection === 'close') {
       isConnecting = false;
@@ -124,7 +129,7 @@ async function startWhatsAppListener() {
       const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
       if (isConflict) {
-        console.log('⚠️ Сессия активна на другом контейнере. Процесс приостановлен во избежание конфликта.');
+        console.log('⚠️ Сессия активна на другом инстансе. Процесс ждет.');
         return;
       }
 
@@ -139,7 +144,6 @@ async function startWhatsAppListener() {
     }
   });
 
-  // Обработка любых сообщений
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
@@ -149,7 +153,7 @@ async function startWhatsAppListener() {
 
       const isFromMe = Boolean(msg.key.fromMe);
       const cleanPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
-      const clientName = msg.pushName || `WA +${cleanPhone}`;
+      const clientName = msg.pushName || `+${cleanPhone}`;
 
       const text = 
         msg.message.conversation || 
@@ -199,9 +203,9 @@ async function startWhatsAppListener() {
           },
         });
 
-        console.log(`✅ Сообщение WhatsApp успешно сохранено в CRM (диалог: ${conversation.id})`);
+        console.log(`✅ Сообщение WhatsApp сохранено в CRM (диалог: ${conversation.id})`);
       } catch (err) {
-        console.error('Ошибка записи сообщения в базу:', err.message);
+        console.error('Ошибка записи сообщения:', err.message);
       }
     }
   });
