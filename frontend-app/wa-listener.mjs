@@ -9,14 +9,16 @@ const {
 } = require('@whiskeysockets/baileys');
 
 import { PrismaClient } from '@prisma/client';
+import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
 
 const prisma = new PrismaClient();
 const SESSION_DIR = './wa-session-store';
+let activeSock = null;
 
-// 1. Восстановление сессии из базы данных PostgreSQL при старте контейнера
+// 1. Восстановление сессии из БД PostgreSQL
 async function restoreSessionFromDB() {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -29,14 +31,14 @@ async function restoreSessionFromDB() {
       fs.writeFileSync(filePath, row.data, 'utf-8');
     }
     if (rows.length > 0) {
-      console.log(`📦 Успешно выгружено ${rows.length} файлов ключей из PostgreSQL в файловый кэш.`);
+      console.log(`📦 Загружено ${rows.length} файлов сессии из PostgreSQL.`);
     }
   } catch (err) {
     console.error('Ошибка выгрузки сессии из БД:', err.message);
   }
 }
 
-// 2. Бэкап измененных ключей обратно в PostgreSQL
+// 2. Бэкап сессии в PostgreSQL
 async function backupFileToDB(fileName) {
   try {
     const filePath = path.join(SESSION_DIR, fileName);
@@ -50,9 +52,7 @@ async function backupFileToDB(fileName) {
       update: { data },
       create: { id: fileName, data }
     });
-  } catch (err) {
-    // игнорируем мелкие гонки записи
-  }
+  } catch {}
 }
 
 let isConnecting = false;
@@ -61,7 +61,7 @@ async function startWhatsAppListener() {
   if (isConnecting) return;
   isConnecting = true;
 
-  console.log('⏳ Синхронизация ключей WhatsApp с PostgreSQL...');
+  console.log('⏳ Подготовка сессии WhatsApp...');
   await restoreSessionFromDB();
 
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -84,9 +84,10 @@ async function startWhatsAppListener() {
     browser: ['Ubuntu', 'Chrome', '124.0.0.0']
   });
 
+  activeSock = sock;
+
   sock.ev.on('creds.update', async () => {
     await saveCreds();
-    // Сохраняем все обновленные файлы в PostgreSQL
     if (fs.existsSync(SESSION_DIR)) {
       const files = fs.readdirSync(SESSION_DIR);
       for (const file of files) {
@@ -102,16 +103,18 @@ async function startWhatsAppListener() {
 
     if (connection === 'close') {
       isConnecting = false;
+      activeSock = null;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
       if (isConflict) {
-        console.log('⚠️ Сессия активна на другом инстансе. Ожидание...');
+        console.log('⚠️ Сессия активна на параллельном инстансе. Ожидание освобождения сокета (15 сек)...');
+        setTimeout(startWhatsAppListener, 15000);
         return;
       }
 
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`⚠️ WhatsApp закрыл сокет (код: ${statusCode}). Переподключение...`);
+      console.log(`⚠️ Сокет WhatsApp закрыт (код: ${statusCode}). Переподключение через 5 сек: ${shouldReconnect}`);
       if (shouldReconnect) {
         setTimeout(startWhatsAppListener, 5000);
       }
@@ -141,16 +144,24 @@ async function startWhatsAppListener() {
 
       if (!text) continue;
 
-      console.log(`📥 ПОЛУЧЕНО СООБЩЕНИЕ WHATSAPP от ${clientName}: "${text}"`);
+      console.log(`📥 СООБЩЕНИЕ WHATSAPP от ${clientName}: "${text}"`);
 
       try {
+        // Безопасное обновление без падений из-за null в unreadCount
+        const existingConv = await prisma.conversation.findUnique({
+          where: { externalId: remoteJid }
+        });
+
+        const currentUnread = existingConv?.unreadCount || 0;
+        const newUnread = isFromMe ? 0 : currentUnread + 1;
+
         const conversation = await prisma.conversation.upsert({
           where: { externalId: remoteJid },
           update: {
             lastMessage: text,
             lastActivity: new Date(),
             updatedAt: new Date(),
-            unreadCount: { increment: isFromMe ? 0 : 1 },
+            unreadCount: newUnread,
             clientName: clientName,
             phone: `+${cleanPhone}`,
           },
@@ -181,10 +192,44 @@ async function startWhatsAppListener() {
 
         console.log(`✅ Сообщение WhatsApp сохранено в CRM (диалог: ${conversation.id})`);
       } catch (err) {
-        console.error('Ошибка записи сообщения:', err.message);
+        console.error('Ошибка базы данных при сохранении сообщения:', err.message);
       }
     }
   });
 }
+
+// 3. Внутренний HTTP-мост для отправки сообщений из Next.js (порт 3001)
+const server = http.createServer(async (req, res) => {
+  if (req.method === 'POST' && req.url === '/send') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const { to, text } = JSON.parse(body);
+
+        if (!activeSock) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'WhatsApp сокет сейчас не подключен' }));
+        }
+
+        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
+        await activeSock.sendMessage(jid, { text });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+server.listen(3001, '127.0.0.1', () => {
+  console.log('🚀 Локальный шлюз отправки сообщений WhatsApp запущен на порту 3001');
+});
 
 startWhatsAppListener().catch(console.error);
