@@ -124,7 +124,7 @@ async function startWhatsAppListener() {
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+ sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
 
@@ -132,8 +132,24 @@ async function startWhatsAppListener() {
       if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
 
       const isFromMe = Boolean(msg.key.fromMe);
-      const cleanPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
-      const clientName = msg.pushName || `+${cleanPhone}`;
+
+      // Корректно определяем реальный номер телефона:
+      let cleanPhone = '';
+      if (remoteJid.endsWith('@s.whatsapp.net')) {
+        cleanPhone = remoteJid.replace('@s.whatsapp.net', '');
+      } else if (msg.key?.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
+        cleanPhone = msg.key.remoteJidAlt.replace('@s.whatsapp.net', '');
+      } else {
+        // Если это LID, пробуем получить реальный номер из маппинга или контакта
+        const pn = sock.signalRepository?.lidMapping?.getPNForLID ? 
+          await sock.signalRepository.lidMapping.getPNForLID(remoteJid) : null;
+        cleanPhone = pn ? pn.replace('@s.whatsapp.net', '') : remoteJid.replace('@lid', '');
+      }
+
+      // Определяем реальное имя контакта
+      const clientName = isFromMe 
+        ? 'Менеджер' 
+        : (msg.pushName || (cleanPhone.length < 13 ? `+${cleanPhone}` : 'Клиент WhatsApp'));
 
       const text = 
         msg.message.conversation || 
@@ -144,10 +160,9 @@ async function startWhatsAppListener() {
 
       if (!text) continue;
 
-      console.log(`📥 СООБЩЕНИЕ WHATSAPP от ${clientName}: "${text}"`);
+      console.log(`📥 [${isFromMe ? 'ИСХОДЯЩЕЕ' : 'ВХОДЯЩЕЕ'}] WhatsApp ${cleanPhone}: "${text}"`);
 
       try {
-        // Безопасное обновление без падений из-за null в unreadCount
         const existingConv = await prisma.conversation.findUnique({
           where: { externalId: remoteJid }
         });
@@ -162,15 +177,14 @@ async function startWhatsAppListener() {
             lastActivity: new Date(),
             updatedAt: new Date(),
             unreadCount: newUnread,
-            clientName: clientName,
-            phone: `+${cleanPhone}`,
+            ...(isFromMe ? {} : { clientName, phone: cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}` })
           },
           create: {
             channel: 'WHATSAPP',
             externalId: remoteJid,
             senderName: clientName,
             clientName: clientName,
-            phone: `+${cleanPhone}`,
+            phone: cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`,
             lastMessage: text,
             lastActivity: new Date(),
             updatedAt: new Date(),
@@ -190,46 +204,11 @@ async function startWhatsAppListener() {
           },
         });
 
-        console.log(`✅ Сообщение WhatsApp сохранено в CRM (диалог: ${conversation.id})`);
+        console.log(`✅ Сообщение сохранено в CRM`);
       } catch (err) {
-        console.error('Ошибка базы данных при сохранении сообщения:', err.message);
+        console.error('Ошибка записи сообщения:', err.message);
       }
     }
   });
-}
-
-// 3. Внутренний HTTP-мост для отправки сообщений из Next.js (порт 3001)
-const server = http.createServer(async (req, res) => {
-  if (req.method === 'POST' && req.url === '/send') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const { to, text } = JSON.parse(body);
-
-        if (!activeSock) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'WhatsApp сокет сейчас не подключен' }));
-        }
-
-        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
-        await activeSock.sendMessage(jid, { text });
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true }));
-      } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
-      }
-    });
-  } else {
-    res.writeHead(404);
-    res.end();
-  }
-});
-
-server.listen(3001, '127.0.0.1', () => {
-  console.log('🚀 Локальный шлюз отправки сообщений WhatsApp запущен на порту 3001');
-});
 
 startWhatsAppListener().catch(console.error);
