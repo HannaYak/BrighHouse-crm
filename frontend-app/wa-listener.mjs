@@ -7,7 +7,7 @@ const {
   DisconnectReason,
   initAuthCreds,
   BufferJSON,
-  proto
+  proto 
 } = require('@whiskeysockets/baileys');
 
 import { PrismaClient } from '@prisma/client';
@@ -16,7 +16,6 @@ import pino from 'pino';
 
 const prisma = new PrismaClient();
 
-// Адаптер сессии Baileys через PostgreSQL (Prisma)
 async function usePrismaAuthState() {
   const readData = async (id) => {
     try {
@@ -29,12 +28,16 @@ async function usePrismaAuthState() {
   };
 
   const writeData = async (id, data) => {
-    const serialized = JSON.stringify(data, BufferJSON.replacer);
-    await prisma.whatsAppSession.upsert({
-      where: { id },
-      update: { data: serialized },
-      create: { id, data: serialized }
-    });
+    try {
+      const serialized = JSON.stringify(data, BufferJSON.replacer);
+      await prisma.whatsAppSession.upsert({
+        where: { id },
+        update: { data: serialized },
+        create: { id, data: serialized }
+      });
+    } catch (e) {
+      console.error('Ошибка записи сессии WhatsApp в БД:', e.message);
+    }
   };
 
   const removeData = async (id) => {
@@ -79,17 +82,26 @@ async function usePrismaAuthState() {
   };
 }
 
+let isConnecting = false;
+
 async function startWhatsAppListener() {
-  console.log('⏳ Проверяем сессию в БД и запускаем WhatsApp...');
+  if (isConnecting) return;
+  isConnecting = true;
+
+  console.log('⏳ Запуск стабильного WhatsApp слушателя...');
 
   const { state, saveCreds } = await usePrismaAuthState();
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
-    logger: pino({ level: 'error' }),
+    logger: pino({ level: 'silent' }), // убираем системный мусор из консоли
     auth: state,
-    connectTimeoutMs: 60000,
+    connectTimeoutMs: 180000,
+    defaultQueryTimeoutMs: 180000,
+    keepAliveIntervalMs: 30000,
+    syncFullHistory: false,          // не качать архивные чаты, чтобы не ловить Time-out 408
+    markOnlineOnConnect: true,
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -98,32 +110,34 @@ async function startWhatsAppListener() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('\n================ СКАНИРУЙТЕ QR-КОД В WHATSAPP (ОДИН РАЗ) ================');
+      console.log('\n================ СКАНИРУЙТЕ QR-КОД В WHATSAPP ================');
       qrcode.generate(qr, { small: true });
-      console.log('WhatsApp на телефоне -> Связанные устройства -> Привязка устройства');
-      console.log('=========================================================================\n');
+      console.log('WhatsApp -> Связанные устройства -> Привязка устройства');
+      console.log('=================================================================\n');
     }
 
     if (connection === 'close') {
-  const statusCode = lastDisconnect?.error?.output?.statusCode;
-  const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
-  const shouldReconnect = statusCode !== DisconnectReason.loggedOut && !isConflict;
+      isConnecting = false;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
-  if (isConflict) {
-    console.log('⚠️ Сессия перехвачена другим процессом. Этот экземпляр останавливается во избежание конфликта.');
-    return;
-  }
-      console.log(`⚠️ WhatsApp соединение разорвано (код: ${statusCode}). Переподключение: ${shouldReconnect}`);
+      if (isConflict) {
+        console.log('⚠️ Сессия активна на другом инстансе. Процесс останавливает попытки подключения.');
+        return;
+      }
+
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      console.log(`⚠️ WhatsApp соединение разорвано (код: ${statusCode}). Переподключение через 5 сек: ${shouldReconnect}`);
       if (shouldReconnect) {
-        startWhatsAppListener();
-      } else {
-        console.log('❌ Сессия была удалена с телефона.');
+        setTimeout(startWhatsAppListener, 5000);
       }
     } else if (connection === 'open') {
+      isConnecting = false;
       console.log('🟢 WhatsApp слушатель успешно запущен и авторизован из БД!');
     }
   });
 
+  // Прием входящих и исходящих сообщений
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
 
@@ -131,11 +145,11 @@ async function startWhatsAppListener() {
       if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
 
       const remoteJid = msg.key.remoteJid;
-      if (remoteJid.endsWith('@g.us')) continue;
+      if (remoteJid.endsWith('@g.us')) continue; // без групп
 
       const isFromMe = Boolean(msg.key.fromMe);
       const cleanPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '');
-      const clientName = msg.pushName || `WA +${cleanPhone}`;
+      const clientName = msg.pushName || `+${cleanPhone}`;
 
       const text = 
         msg.message.conversation || 
@@ -184,7 +198,7 @@ async function startWhatsAppListener() {
 
         console.log(`💬 WhatsApp [${clientName}]: ${text}`);
       } catch (err) {
-        console.error('Ошибка сохранения WhatsApp сообщения:', err);
+        console.error('Ошибка сохранения WhatsApp сообщения:', err.message);
       }
     }
   });
