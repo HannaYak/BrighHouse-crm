@@ -1,19 +1,50 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma'; // 4 уровня вверх
+import { prisma } from '../../../../lib/prisma';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 export async function POST(request: Request) {
   try {
-    const { conversationId, text } = await request.json();
+    const { conversationId, text, channel, phone, recipientName } = await request.json();
 
-    if (!conversationId || !text) {
-      return NextResponse.json({ error: 'Не указан conversationId или текст' }, { status: 400 });
+    if (!text || (!conversationId && !phone)) {
+      return NextResponse.json({ error: 'Укажите текст и диалог либо номер телефона' }, { status: 400 });
     }
 
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId },
-    });
+    let conversation: any = null;
+
+    if (conversationId) {
+      conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+      });
+    } else if (phone) {
+      // Создаем новый диалог по прямому номеру
+      const cleanPhone = phone.replace(/[^\d+]/g, '');
+      const externalId = channel === 'WHATSAPP' 
+        ? `${cleanPhone.replace('+', '')}@s.whatsapp.net` 
+        : cleanPhone;
+
+      conversation = await prisma.conversation.upsert({
+        where: { externalId },
+        update: {
+          lastMessage: text,
+          lastActivity: new Date(),
+          updatedAt: new Date(),
+        },
+        create: {
+          channel: channel || 'WHATSAPP',
+          externalId,
+          senderName: recipientName || cleanPhone,
+          clientName: recipientName || cleanPhone,
+          phone: cleanPhone,
+          lastMessage: text,
+          lastActivity: new Date(),
+          updatedAt: new Date(),
+          unreadCount: 0,
+          status: 'NONE',
+        },
+      });
+    }
 
     if (!conversation) {
       return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 });
@@ -26,13 +57,13 @@ export async function POST(request: Request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: conversation.externalId,
-          text: text,
+          text,
           parse_mode: 'HTML',
         }),
       });
 
       if (!tgRes.ok) {
-        const errData = await tgRes.json();
+        const errData = await tgRes.json().catch(() => ({}));
         console.error('Telegram API error:', errData);
         return NextResponse.json({ error: 'Ошибка отправки в Telegram' }, { status: 500 });
       }
@@ -46,7 +77,7 @@ export async function POST(request: Request) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: conversation.externalId,
-            text: text,
+            text,
           }),
         });
 
@@ -67,18 +98,21 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Сохранение сообщения менеджера в CRM
+    // 3. Сохранение сообщения в базе данных
     const newMessage = await prisma.message.create({
       data: {
-        conversationId,
+        conversationId: conversation.id,
+        senderId: 'manager',
+        senderName: 'Менеджер',
         senderType: 'MANAGER',
         text,
+        isIncoming: false,
       },
     });
 
-    // 4. Обновление диалога (последнее сообщение и время)
+    // 4. Обновление диалога
     await prisma.conversation.update({
-      where: { id: conversationId },
+      where: { id: conversation.id },
       data: {
         lastMessage: text,
         lastActivity: new Date(),
