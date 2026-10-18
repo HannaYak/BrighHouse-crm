@@ -117,7 +117,7 @@ async function startWhatsAppListener() {
       const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
       if (isConflict) {
-        console.log('⚠️ Сессия активна на параллельном инстансе. Ожидание 15 сек перед повторной попыткой...');
+        console.log('⚠️ Сессия активна на параллельном инстансе. Ожидание 15 сек...');
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
@@ -154,11 +154,25 @@ async function startWhatsAppListener() {
 
       const isFromMe = Boolean(msg.key.fromMe);
 
-      // Получаем наш собственный номер (чтобы не создавать диалог с самим собой)
-      const myJid = sock.user?.id || '';
-      const myPhone = myJid.split(':')[0].replace(/\D/g, '');
+      // Распаковываем все возможные слои сообщений WhatsApp
+      const content = 
+        msg.message.ephemeralMessage?.message ||
+        msg.message.viewOnceMessage?.message ||
+        msg.message.viewOnceMessageV2?.message ||
+        msg.message.documentWithCaptionMessage?.message ||
+        msg.message;
 
-      // 1. Извлекаем чистый номер телефона клиента
+      const text = 
+        content.conversation || 
+        content.extendedTextMessage?.text || 
+        content.imageMessage?.caption || 
+        content.videoMessage?.caption ||
+        (content.imageMessage ? '📷 Фотография' : '') ||
+        (content.videoMessage ? '📹 Видео' : '') ||
+        (content.audioMessage ? '🎤 Голосовое сообщение' : '') ||
+        '';
+
+      // 1. Извлекаем номер телефона
       let clientPhone = '';
       if (remoteJid.endsWith('@s.whatsapp.net')) {
         clientPhone = remoteJid.replace('@s.whatsapp.net', '');
@@ -169,28 +183,14 @@ async function startWhatsAppListener() {
         if (pn) clientPhone = pn.replace('@s.whatsapp.net', '');
       }
 
-      // Игнорируем технические сообщения самому себе
-      if (isFromMe && clientPhone && clientPhone === myPhone) {
-        continue;
-      }
-
-      // Канонический externalId для базы: всегда используем формат телефона @s.whatsapp.net
-      const targetExternalId = clientPhone ? `${clientPhone}@s.whatsapp.net` : remoteJid;
-
-      const clientName = isFromMe 
-        ? 'Менеджер' 
-        : (msg.pushName || (clientPhone ? `+${clientPhone}` : 'Клиент WhatsApp'));
-
-      const text = 
-        msg.message.conversation || 
-        msg.message.extendedTextMessage?.text || 
-        msg.message.imageMessage?.caption || 
-        (msg.message.imageMessage ? '📷 Фотография' : '') ||
-        '';
+      console.log(`📩 [WA EVENT] JID: ${remoteJid} | Phone: ${clientPhone || 'none'} | fromMe: ${isFromMe} | text: "${text}"`);
 
       if (!text) continue;
 
-      console.log(`📥 [${isFromMe ? 'ИСХОДЯЩЕЕ' : 'ВХОДЯЩЕЕ'}] WhatsApp ${clientPhone || remoteJid}: "${text}"`);
+      const targetExternalId = clientPhone ? `${clientPhone}@s.whatsapp.net` : remoteJid;
+      const clientName = isFromMe 
+        ? 'Менеджер' 
+        : (msg.pushName || (clientPhone ? `+${clientPhone}` : 'Клиент WhatsApp'));
 
       try {
         const existingConv = await prisma.conversation.findFirst({
@@ -245,7 +245,7 @@ async function startWhatsAppListener() {
           },
         });
 
-        console.log(`✅ Сообщение сохранено в CRM`);
+        console.log(`✅ [CRM SAVE] Диалог ${conversation.id} обновлен, сообщение записано`);
       } catch (err) {
         console.error('Ошибка записи сообщения:', err.message);
       }
@@ -267,7 +267,6 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'WhatsApp сокет сейчас не подключен' }));
         }
 
-        // Если передан ID диалога или LID — находим настоящий телефон в базе
         let targetPhone = to;
         if (to.includes('@lid') || !to.includes('@s.whatsapp.net')) {
           const conv = await prisma.conversation.findFirst({
@@ -283,7 +282,6 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Очищаем номер от любых символов, кроме цифр
         const cleanDigits = targetPhone.replace(/\D/g, '');
         if (!cleanDigits) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
