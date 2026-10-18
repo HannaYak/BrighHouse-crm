@@ -16,9 +16,12 @@ import pino from 'pino';
 
 const prisma = new PrismaClient();
 const SESSION_DIR = './wa-session-store';
-let activeSock = null;
 
-// 1. Восстановление сессии из БД PostgreSQL с безопасными именами файлов
+let activeSock = null;
+let reconnectTimer = null;
+let isStarting = false;
+
+// 1. Восстановление файлов сессии из БД PostgreSQL
 async function restoreSessionFromDB() {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -39,7 +42,7 @@ async function restoreSessionFromDB() {
   }
 }
 
-// 2. Бэкап сессии в PostgreSQL с декодированием имен
+// 2. Бэкап сессии в PostgreSQL
 async function backupFileToDB(fileName) {
   try {
     const filePath = path.join(SESSION_DIR, fileName);
@@ -58,11 +61,14 @@ async function backupFileToDB(fileName) {
   } catch {}
 }
 
-let isConnecting = false;
-
 async function startWhatsAppListener() {
-  if (isConnecting) return;
-  isConnecting = true;
+  if (isStarting) return;
+  isStarting = true;
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
 
   console.log('⏳ Подготовка сессии WhatsApp...');
   await restoreSessionFromDB();
@@ -105,24 +111,36 @@ async function startWhatsAppListener() {
     const { connection, lastDisconnect } = update;
 
     if (connection === 'close') {
-      isConnecting = false;
+      isStarting = false;
       activeSock = null;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
       if (isConflict) {
-        console.log('⚠️ Сессия активна на параллельном инстансе. Ожидание освобождения сокета (15 сек)...');
-        setTimeout(startWhatsAppListener, 15000);
+        console.log('⚠️ Сессия активна на параллельном инстансе. Ожидание 15 сек перед повторной попыткой...');
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            startWhatsAppListener();
+          }, 15000);
+        }
         return;
       }
 
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`⚠️ Сокет WhatsApp закрыт (код: ${statusCode}). Переподключение через 5 сек: ${shouldReconnect}`);
-      if (shouldReconnect) {
-        setTimeout(startWhatsAppListener, 5000);
+      console.log(`⚠️ Сокет WhatsApp закрыт (код: ${statusCode}). Реконнект: ${shouldReconnect}`);
+      if (shouldReconnect && !reconnectTimer) {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          startWhatsAppListener();
+        }, 5000);
       }
     } else if (connection === 'open') {
-      isConnecting = false;
+      isStarting = false;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       console.log('🟢 WHATSAPP СЛУШАТЕЛЬ УСПЕШНО ПОДКЛЮЧЕН И СЛУШАЕТ ЧАТЫ!');
     }
   });
@@ -189,6 +207,7 @@ async function startWhatsAppListener() {
             lastActivity: new Date(),
             updatedAt: new Date(),
             unreadCount: isFromMe ? 0 : 1,
+            status: 'NONE',
           },
         });
 
@@ -212,7 +231,7 @@ async function startWhatsAppListener() {
   });
 }
 
-// 3. HTTP-шлюз отправки сообщений
+// 3. HTTP-шлюз отправки сообщений из Next.js (порт 3001)
 const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/send') {
     let body = '';
