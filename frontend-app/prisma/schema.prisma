@@ -32,6 +32,15 @@ enum ServiceType {
   OFFICE_GENERAL
 }
 
+enum ConversationStatus {
+  NONE
+  IN_PROGRESS
+  BOOKED
+  REMIND
+  THINKING
+  CLOSED
+}
+
 model Client {
   id               Int      @id @default(autoincrement())
   name             String
@@ -57,8 +66,7 @@ model Cleaner {
   incompatibleWith String[]
   status           String         @default("active")
   
-  // Базовый график (Пн, Вт, Ср...) и стандартные часы
-  workDays         Int[]          @default([1, 2, 3, 4, 5]) // 1 = Пн, 7 = Вс
+  workDays         Int[]          @default([1, 2, 3, 4, 5])
   defaultStartTime String         @default("08:00")
   defaultEndTime   String         @default("20:00")
 
@@ -66,9 +74,9 @@ model Cleaner {
   assignments      OrderCleaner[]
   createdAt        DateTime       @default(now())
 
-  expenses         Expense[]
-  collectedCashOrders Order[]  @relation("CashCollector")
-  equipmentItems   Equipment[]       // Техника, которая сейчас на руках у клинера
+  expenses            Expense[]
+  collectedCashOrders Order[]        @relation("CashCollector")
+  equipmentItems      Equipment[]
 }
 
 model ServiceTariff {
@@ -82,39 +90,38 @@ model ServiceTariff {
 }
 
 model AddOnService {
-  id               Int     @id @default(autoincrement())
-  code             String  @unique
-  title            String
-  price            Float
-  durationMins     Int
-  unit             String  @default("шт")
+  id           Int     @id @default(autoincrement())
+  code         String  @unique
+  title        String
+  price        Float
+  durationMins Int
+  unit         String  @default("шт")
 }
 
 model Order {
-  id                String         @id @default(cuid())
-  orderNumber       String         @unique
+  id                String       @id @default(cuid())
+  orderNumber       String       @unique
   date              DateTime
   timeSlot          String
-  serviceType       ServiceType    @default(STANDARD)
-  areaM2            Int            @default(45)
-  roomsCount        Int            @default(1)
-  bathroomsCount    Int            @default(1)
-  windowsCount      Int            @default(0)
+  serviceType       ServiceType  @default(STANDARD)
+  areaM2            Int          @default(45)
+  roomsCount        Int          @default(1)
+  bathroomsCount    Int          @default(1)
+  windowsCount      Int          @default(0)
   
-  // Дополнительные опции уборки
-  hasOven           Boolean        @default(false)
-  hasFridge         Boolean        @default(false)
-  hasFridgeFreeze   Boolean        @default(false)
-  hasMicrowave      Boolean        @default(false)
-  hasBalcony        Boolean        @default(false)
-  hasKitchenClosets Boolean        @default(false)
-  hasStairs         Boolean        @default(false)
-  hasSteamer        Boolean        @default(false)
-  hasDishes         Boolean        @default(false)
-  hasIroning        Boolean        @default(false)
-  hasVacuum         Boolean        @default(false)
-  hasPets           Boolean        @default(false)
-  hasKeys           Boolean        @default(false)
+  hasOven           Boolean      @default(false)
+  hasFridge         Boolean      @default(false)
+  hasFridgeFreeze   Boolean      @default(false)
+  hasMicrowave      Boolean      @default(false)
+  hasBalcony        Boolean      @default(false)
+  hasKitchenClosets Boolean      @default(false)
+  hasStairs         Boolean      @default(false)
+  hasSteamer        Boolean      @default(false)
+  hasDishes         Boolean      @default(false)
+  hasIroning        Boolean      @default(false)
+  hasVacuum         Boolean      @default(false)
+  hasPets           Boolean      @default(false)
+  hasKeys           Boolean      @default(false)
 
   clientName        String
   clientPhone       String
@@ -123,22 +130,21 @@ model Order {
   latitude          Float?
   longitude         Float?
   price             Float
-  cleanersCount     Int            @default(1)
+  cleanersCount     Int          @default(1)
   notes             String?
   cancelReason      String?
-  urgency           UrgencyLevel   @default(NORMAL)
-  status            OrderStatus    @default(NEW)
+  urgency           UrgencyLevel @default(NORMAL)
+  status            OrderStatus  @default(NEW)
   clientId          Int?
-  client            Client?        @relation(fields: [clientId], references: [id])
+  client            Client?      @relation(fields: [clientId], references: [id])
   assignedCleaners  OrderCleaner[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
-  // Способ оплаты
-  paymentMethod      String?   @default("CASH") // CASH, BIZ_CARD, SILA_CARD, REVOLUT, PAYPAL, MOMS_CARD, DADS_CARD, STRIPE, OTHER
-  paymentNote        String?   // Пометка куда ушли деньги (если OTHER или коммент)
-  cashCollectedById  Int?      // ID клинера, если нал забрал сотрудник
-  cashCollectedBy    Cleaner?  @relation("CashCollector", fields: [cashCollectedById], references: [id], onDelete: SetNull)
+  paymentMethod     String?      @default("CASH")
+  paymentNote       String?
+  cashCollectedById Int?
+  cashCollectedBy   Cleaner?     @relation("CashCollector", fields: [cashCollectedById], references: [id], onDelete: SetNull)
 }
 
 model OrderCleaner {
@@ -156,10 +162,10 @@ model PromoCode {
   id          Int       @id @default(autoincrement())
   code        String    @unique
   description String?
-  discountType String   // "PERCENT" или "FIXED"
-  value       Float     // процент (например 10) или фикс. сумма в zł (например 30)
+  discountType String
+  value       Float
   minOrderSum Float?    @default(0)
-  maxUses     Int?      // максимальное кол-во использований (null = безлимит)
+  maxUses     Int?
   usedCount   Int       @default(0)
   isActive    Boolean   @default(true)
   expiresAt   DateTime?
@@ -167,56 +173,53 @@ model PromoCode {
 }
 
 model CompanySettings {
-  id              Int      @id @default(1)
-  companyName     String   @default("BrightHouse Cleaning")
-  nip             String?  @default("")
-  phone           String?  @default("")
-  email           String?  @default("")
-  city            String?  @default("Warszawa")
-  address         String?  @default("")
-  instagram       String?  @default("@brighthouse.pl")
+  id                 Int      @id @default(1)
+  companyName        String   @default("BrightHouse Cleaning")
+  nip                String?  @default("")
+  phone              String?  @default("")
+  email              String?  @default("")
+  city               String?  @default("Warszawa")
+  address            String?  @default("")
+  instagram          String?  @default("@brighthouse.pl")
   
-  // Банковские реквизиты для клиентов
-  bankName        String?  @default("Santander / mBank")
-  accountNumber   String?  @default("") // IBAN
-  blikPhone       String?  @default("") // Номер для перевода BLIK на телефон
-  recipientName   String?  @default("")
+  bankName           String?  @default("Santander / mBank")
+  accountNumber      String?  @default("")
+  blikPhone          String?  @default("")
+  recipientName      String?  @default("")
 
-  // Проценты выплат клинерам
-  cleanerRatePercent Float @default(40.0) // Ставка клинера (% от заказа по умолчанию)
+  cleanerRatePercent Float    @default(40.0)
 
-  updatedAt       DateTime @updatedAt
+  updatedAt          DateTime @updatedAt
 }
 
 enum InventoryCategory {
-  CHEMISTRY     // Профессиональная химия
-  CONSUMABLE    // Расходники (губки, салфетки, перчатки)
-  EQUIPMENT     // Оборудование (пылесосы, пароочистители)
-  UNIFORM       // Форма / инвентарь
+  CHEMISTRY
+  CONSUMABLE
+  EQUIPMENT
+  UNIFORM
 }
 
 model Equipment {
-  id           Int      @id @default(autoincrement())
-  name         String   
-  category     String   @default("EQUIPMENT") 
-  status       String   @default("IN_STOCK")  
-  holderId     Int?     
-  holder       Cleaner? @relation(fields: [holderId], references: [id], onDelete: SetNull)
-  notes        String?  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  name      String   
+  category  String   @default("EQUIPMENT") 
+  status    String   @default("IN_STOCK")  
+  holderId  Int?     
+  holder    Cleaner? @relation(fields: [holderId], references: [id], onDelete: SetNull)
+  notes     String?  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
-
 
 model InventoryItem {
   id          String            @id @default(cuid())
   name        String
   category    InventoryCategory @default(CHEMISTRY)
   quantity    Int               @default(0)
-  minQuantity Int               @default(5)       // Порог предупреждения об остатке
-  unit        String            @default("шт")     // шт, л, уп
+  minQuantity Int               @default(5)
+  unit        String            @default("шт")
   location    String?           @default("Главный склад")
-  assignedTo  String?                              // Имя клинера, если техника на руках
+  assignedTo  String?
   notes       String?
   updatedAt   DateTime          @updatedAt
   createdAt   DateTime          @default(now())
@@ -228,7 +231,7 @@ model CleanerShift {
   date      DateTime @db.Date
   startTime String   @default("08:00")
   endTime   String   @default("20:00")
-  isWorking Boolean  @default(true) // true = работает, false = выходной / отгул
+  isWorking Boolean  @default(true)
 
   cleaner   Cleaner  @relation(fields: [cleanerId], references: [id], onDelete: Cascade)
 
@@ -236,16 +239,16 @@ model CleanerShift {
 }
 
 model Expense {
-  id          String   @id @default(cuid())
-  type        String   @default("EXPENSE") // EXPENSE или INCOME
-  category    String   // Химия и инвентарь, Маркетинг, Зарплата клинеру, Транспорт, Аренда, Свой вариант
-  amount      Float
-  date        DateTime @default(now())
-  comment     String?
-  cleanerId   Int?
-  cleaner     Cleaner? @relation(fields: [cleanerId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  type      String   @default("EXPENSE")
+  category  String
+  amount    Float
+  date      DateTime @default(now())
+  comment   String?
+  cleanerId Int?
+  cleaner   Cleaner? @relation(fields: [cleanerId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([date])
   @@index([category])
@@ -253,12 +256,12 @@ model Expense {
 
 model FinanceTransaction {
   id          String   @id @default(cuid())
-  type        String   // "INCOME" (Доход), "EXPENSE" (Расход), "TRANSFER" (Перевод)
+  type        String
   amount      Float
-  category    String   // "Маркетинг", "Химия", "Зарплата", "Резерв", "Владельцам"
+  category    String
   description String?
-  sourceFund  String?  // Откуда списали: "MAIN", "MARKETING", "RESERVE", "CASH"
-  targetFund  String?  // Куда зачислили (если TRANSFER)
+  sourceFund  String?
+  targetFund  String?
   date        DateTime @default(now())
   cleanerId   Int?     
   createdAt   DateTime @default(now())
@@ -272,17 +275,18 @@ enum ChatChannel {
 }
 
 model Conversation {
-  id           String      @id @default(uuid())
-  channel      ChatChannel @default(INSTAGRAM)
-  externalId   String      @unique
+  id           String             @id @default(uuid())
+  channel      ChatChannel        @default(INSTAGRAM)
+  externalId   String             @unique
   senderName   String?
   clientName   String?
   phone        String?
   lastMessage  String?
-  lastActivity DateTime    @default(now())
-  unreadCount  Int         @default(0)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  lastActivity DateTime           @default(now())
+  unreadCount  Int                @default(0)
+  status       ConversationStatus @default(NONE)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
   messages     Message[]
 
   @@index([phone])
@@ -295,11 +299,11 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   senderId       String       @default("")
   senderName     String?
-  senderType     String       @default("CLIENT") // 'CLIENT' или 'MANAGER'
+  senderType     String       @default("CLIENT")
   text           String
   isIncoming     Boolean      @default(true)
   timestamp      DateTime     @default(now())
-  createdAt      DateTime     @default(now()) // <--- добавь эту строчку
+  createdAt      DateTime     @default(now())
 }
 
 model WhatsAppSession {
