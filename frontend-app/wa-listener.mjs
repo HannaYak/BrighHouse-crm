@@ -307,8 +307,16 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(3001, '127.0.0.1', () => {
-  console.log('🚀 Локальный шлюз отправки WhatsApp запущен на порту 3001');
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error('⛔ ОШИБКА: Порт 3001 уже занят другим процессом wa-listener! Завершение дубликата.');
+    process.exit(0);
+  } else {
+    console.error('Ошибка сервера шлюза:', err);
+  }
 });
 
-startWhatsAppListener().catch(console.error);
+server.listen(3001, '127.0.0.1', () => {
+  console.log('🚀 Локальный шлюз отправки WhatsApp запущен на порту 3001');
+  startWhatsAppListener().catch(console.error);
+});
