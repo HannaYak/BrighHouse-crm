@@ -124,7 +124,7 @@ async function startWhatsAppListener() {
     }
   });
 
- sock.ev.on('messages.upsert', async ({ messages, type }) => {
+sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
 
@@ -210,5 +210,5 @@ async function startWhatsAppListener() {
       }
     }
   });
-
+  
 startWhatsAppListener().catch(console.error);
