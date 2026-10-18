@@ -18,10 +18,10 @@ const prisma = new PrismaClient();
 const SESSION_DIR = './wa-session-store';
 
 let activeSock = null;
-let reconnectTimer = null;
 let isStarting = false;
+let reconnectTimer = null;
 
-// 1. Восстановление файлов сессии из БД PostgreSQL
+// 1. Выгрузка файлов сессии из базы данных PostgreSQL
 async function restoreSessionFromDB() {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -42,7 +42,7 @@ async function restoreSessionFromDB() {
   }
 }
 
-// 2. Бэкап сессии в PostgreSQL
+// 2. Сохранение файла сессии в базу данных PostgreSQL
 async function backupFileToDB(fileName) {
   try {
     const filePath = path.join(SESSION_DIR, fileName);
@@ -61,13 +61,26 @@ async function backupFileToDB(fileName) {
   } catch {}
 }
 
+// 3. Запуск слушателя WhatsApp с защитой от дубликатов
 async function startWhatsAppListener() {
-  if (isStarting) return;
+  if (isStarting) {
+    console.log('⏳ Подключение уже в процессе, пропускаем повторный запуск.');
+    return;
+  }
   isStarting = true;
 
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
+  }
+
+  // Если прошлый сокет всё ещё активен — мягко закрываем его перед созданием нового
+  if (activeSock) {
+    try {
+      activeSock.ev.removeAllListeners();
+      activeSock.end(undefined);
+    } catch {}
+    activeSock = null;
   }
 
   console.log('⏳ Подготовка сессии WhatsApp...');
@@ -117,7 +130,7 @@ async function startWhatsAppListener() {
       const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
       if (isConflict) {
-        console.log('⚠️ Сессия активна на параллельном инстансе. Ожидание 15 сек...');
+        console.log('⚠️ Сессия перехвачена или перезапускается сервисом. Ожидание 15 сек...');
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
@@ -128,7 +141,7 @@ async function startWhatsAppListener() {
       }
 
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`⚠️ Сокет WhatsApp закрыт (код: ${statusCode}). Реконнект: ${shouldReconnect}`);
+      console.log(`⚠️ Сокет закрыт (код: ${statusCode}). Реконнект: ${shouldReconnect}`);
       if (shouldReconnect && !reconnectTimer) {
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
@@ -145,7 +158,7 @@ async function startWhatsAppListener() {
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
 
@@ -154,7 +167,7 @@ async function startWhatsAppListener() {
 
       const isFromMe = Boolean(msg.key.fromMe);
 
-      // Распаковываем все возможные слои сообщений WhatsApp
+      // Распаковываем любые вложенные типы сообщений
       const content = 
         msg.message.ephemeralMessage?.message ||
         msg.message.viewOnceMessage?.message ||
@@ -172,7 +185,7 @@ async function startWhatsAppListener() {
         (content.audioMessage ? '🎤 Голосовое сообщение' : '') ||
         '';
 
-      // 1. Извлекаем номер телефона
+      // Извлекаем реальный номер телефона собеседника
       let clientPhone = '';
       if (remoteJid.endsWith('@s.whatsapp.net')) {
         clientPhone = remoteJid.replace('@s.whatsapp.net', '');
@@ -183,7 +196,7 @@ async function startWhatsAppListener() {
         if (pn) clientPhone = pn.replace('@s.whatsapp.net', '');
       }
 
-      console.log(`📩 [WA EVENT] JID: ${remoteJid} | Phone: ${clientPhone || 'none'} | fromMe: ${isFromMe} | text: "${text}"`);
+      console.log(`📩 [WA EVENT] JID: ${remoteJid} | Номер: ${clientPhone || 'нет'} | Исходящее: ${isFromMe} | Текст: "${text}"`);
 
       if (!text) continue;
 
@@ -245,15 +258,15 @@ async function startWhatsAppListener() {
           },
         });
 
-        console.log(`✅ [CRM SAVE] Диалог ${conversation.id} обновлен, сообщение записано`);
+        console.log(`✅ [CRM SAVE] Диалог ${conversation.id} обновлен, сообщение зафиксировано`);
       } catch (err) {
-        console.error('Ошибка записи сообщения:', err.message);
+        console.error('Ошибка записи в БД:', err.message);
       }
     }
   });
 }
 
-// 3. HTTP-шлюз отправки сообщений (порт 3001)
+// 4. HTTP-шлюз отправки сообщений (порт 3001)
 const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/send') {
     let body = '';
@@ -268,6 +281,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         let targetPhone = to;
+        // Если пришел UUID диалога или LID — вытаскиваем номер из базы
         if (to.includes('@lid') || !to.includes('@s.whatsapp.net')) {
           const conv = await prisma.conversation.findFirst({
             where: {
@@ -289,7 +303,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         const realJid = `${cleanDigits}@s.whatsapp.net`;
-        console.log(`🚀 Отправка сообщения через WhatsApp сокет на ${realJid}...`);
+        console.log(`🚀 Отправка в WhatsApp на ${realJid}: "${text}"`);
         
         await activeSock.sendMessage(realJid, { text });
 
@@ -307,15 +321,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Защита от запуска второй копии wa-listener
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error('⛔ ОШИБКА: Порт 3001 уже занят другим процессом wa-listener! Завершение дубликата.');
+    console.error('⛔ ОШИБКА: Порт 3001 уже занят другим процессом wa-listener! Завершаем дубликат.');
     process.exit(0);
   } else {
     console.error('Ошибка сервера шлюза:', err);
   }
 });
 
+// ЕДИНСТВЕННАЯ точка входа: слушатель стартует только после занятия порта 3001
 server.listen(3001, '127.0.0.1', () => {
   console.log('🚀 Локальный шлюз отправки WhatsApp запущен на порту 3001');
   startWhatsAppListener().catch(console.error);
