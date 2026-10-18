@@ -119,41 +119,47 @@ async function startWhatsAppListener() {
     }
   });
 
-  sock.ev.on('connection.update', (update) => {
+sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
 
-    if (connection === 'close') {
-      isStarting = false;
-      activeSock = null;
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
-
-      if (isConflict) {
-        console.log('⚠️ Сессия перехвачена или перезапускается сервисом. Ожидание 15 сек...');
-        if (!reconnectTimer) {
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            startWhatsAppListener();
-          }, 15000);
-        }
-        return;
-      }
-
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`⚠️ Сокет закрыт (код: ${statusCode}). Реконнект: ${shouldReconnect}`);
-      if (shouldReconnect && !reconnectTimer) {
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          startWhatsAppListener();
-        }, 5000);
-      }
-    } else if (connection === 'open') {
+    if (connection === 'open') {
       isStarting = false;
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
       console.log('🟢 WHATSAPP СЛУШАТЕЛЬ УСПЕШНО ПОДКЛЮЧЕН И СЛУШАЕТ ЧАТЫ!');
+      return;
+    }
+
+    if (connection === 'close') {
+      isStarting = false;
+      activeSock = null;
+      
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
+
+      // Если сессия отключена вручную со стороны телефона — реконнект делать нельзя
+      if (isLoggedOut) {
+        console.log('❌ Сессия WhatsApp закрыта (Logged Out). Требуется повторный вход через QR.');
+        return;
+      }
+
+      // При конфликте 440 НЕ перезапускаем сокет сразу циклично — даем текущему сокету стабилизироваться
+      if (isConflict) {
+        console.log('⚠️ Код 440 (Connection Replaced). Ожидаем завершения параллельного процесса без перезапуска...');
+        return;
+      }
+
+      // Стандартный реконнект только при сетевых разрывах (ETIMEDOUT, 515 и т.д.)
+      if (!reconnectTimer) {
+        console.log(`⚠️ Сетевой разрыв сокета (код: ${statusCode}). Реконнект через 10 сек...`);
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          startWhatsAppListener().catch(console.error);
+        }, 10000);
+      }
     }
   });
 
