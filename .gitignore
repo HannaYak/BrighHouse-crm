@@ -1,0 +1,9 @@
+node_modules/
+.next/
+chat-storage/
+wa-session-store/
+.env
+.env.local
+.env.*.local
+powershell.cmd
+powershell.exe
