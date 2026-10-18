@@ -154,20 +154,32 @@ async function startWhatsAppListener() {
 
       const isFromMe = Boolean(msg.key.fromMe);
 
-      let cleanPhone = '';
+      // Получаем наш собственный номер (чтобы не создавать диалог с самим собой)
+      const myJid = sock.user?.id || '';
+      const myPhone = myJid.split(':')[0].replace(/\D/g, '');
+
+      // 1. Извлекаем чистый номер телефона клиента
+      let clientPhone = '';
       if (remoteJid.endsWith('@s.whatsapp.net')) {
-        cleanPhone = remoteJid.replace('@s.whatsapp.net', '');
+        clientPhone = remoteJid.replace('@s.whatsapp.net', '');
       } else if (msg.key?.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
-        cleanPhone = msg.key.remoteJidAlt.replace('@s.whatsapp.net', '');
-      } else {
-        const pn = sock.signalRepository?.lidMapping?.getPNForLID ? 
-          await sock.signalRepository.lidMapping.getPNForLID(remoteJid) : null;
-        cleanPhone = pn ? pn.replace('@s.whatsapp.net', '') : remoteJid.replace('@lid', '');
+        clientPhone = msg.key.remoteJidAlt.replace('@s.whatsapp.net', '');
+      } else if (sock.signalRepository?.lidMapping?.getPNForLID) {
+        const pn = await sock.signalRepository.lidMapping.getPNForLID(remoteJid);
+        if (pn) clientPhone = pn.replace('@s.whatsapp.net', '');
       }
+
+      // Игнорируем технические сообщения самому себе
+      if (isFromMe && clientPhone && clientPhone === myPhone) {
+        continue;
+      }
+
+      // Канонический externalId для базы: всегда используем формат телефона @s.whatsapp.net
+      const targetExternalId = clientPhone ? `${clientPhone}@s.whatsapp.net` : remoteJid;
 
       const clientName = isFromMe 
         ? 'Менеджер' 
-        : (msg.pushName || (cleanPhone.length < 13 ? `+${cleanPhone}` : 'Клиент WhatsApp'));
+        : (msg.pushName || (clientPhone ? `+${clientPhone}` : 'Клиент WhatsApp'));
 
       const text = 
         msg.message.conversation || 
@@ -178,31 +190,41 @@ async function startWhatsAppListener() {
 
       if (!text) continue;
 
-      console.log(`📥 [${isFromMe ? 'ИСХОДЯЩЕЕ' : 'ВХОДЯЩЕЕ'}] WhatsApp ${cleanPhone}: "${text}"`);
+      console.log(`📥 [${isFromMe ? 'ИСХОДЯЩЕЕ' : 'ВХОДЯЩЕЕ'}] WhatsApp ${clientPhone || remoteJid}: "${text}"`);
 
       try {
-        const existingConv = await prisma.conversation.findUnique({
-          where: { externalId: remoteJid }
+        const existingConv = await prisma.conversation.findFirst({
+          where: {
+            OR: [
+              { externalId: targetExternalId },
+              { externalId: remoteJid },
+              ...(clientPhone ? [{ phone: `+${clientPhone}` }] : [])
+            ]
+          }
         });
 
         const currentUnread = existingConv?.unreadCount || 0;
         const newUnread = isFromMe ? 0 : currentUnread + 1;
+        const convExternalId = existingConv ? existingConv.externalId : targetExternalId;
 
         const conversation = await prisma.conversation.upsert({
-          where: { externalId: remoteJid },
+          where: { externalId: convExternalId },
           update: {
             lastMessage: text,
             lastActivity: new Date(),
             updatedAt: new Date(),
             unreadCount: newUnread,
-            ...(isFromMe ? {} : { clientName, phone: cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}` })
+            ...(isFromMe ? {} : { 
+              clientName, 
+              phone: clientPhone ? `+${clientPhone}` : existingConv?.phone 
+            })
           },
           create: {
             channel: 'WHATSAPP',
-            externalId: remoteJid,
+            externalId: targetExternalId,
             senderName: clientName,
             clientName: clientName,
-            phone: cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`,
+            phone: clientPhone ? `+${clientPhone}` : null,
             lastMessage: text,
             lastActivity: new Date(),
             updatedAt: new Date(),
@@ -214,7 +236,7 @@ async function startWhatsAppListener() {
         await prisma.message.create({
           data: {
             conversationId: conversation.id,
-            senderId: isFromMe ? 'manager' : remoteJid,
+            senderId: isFromMe ? 'manager' : (clientPhone || remoteJid),
             senderName: isFromMe ? 'Менеджер' : clientName,
             senderType: isFromMe ? 'MANAGER' : 'CLIENT',
             text: text,
@@ -231,7 +253,7 @@ async function startWhatsAppListener() {
   });
 }
 
-// 3. HTTP-шлюз отправки сообщений из Next.js (порт 3001)
+// 3. HTTP-шлюз отправки сообщений (порт 3001)
 const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/send') {
     let body = '';
@@ -245,12 +267,38 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'WhatsApp сокет сейчас не подключен' }));
         }
 
-        const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
-        await activeSock.sendMessage(jid, { text });
+        // Если передан ID диалога или LID — находим настоящий телефон в базе
+        let targetPhone = to;
+        if (to.includes('@lid') || !to.includes('@s.whatsapp.net')) {
+          const conv = await prisma.conversation.findFirst({
+            where: {
+              OR: [
+                { externalId: to },
+                { id: to }
+              ]
+            }
+          });
+          if (conv && conv.phone) {
+            targetPhone = conv.phone;
+          }
+        }
+
+        // Очищаем номер от любых символов, кроме цифр
+        const cleanDigits = targetPhone.replace(/\D/g, '');
+        if (!cleanDigits) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Не найден реальный номер телефона получателя' }));
+        }
+
+        const realJid = `${cleanDigits}@s.whatsapp.net`;
+        console.log(`🚀 Отправка сообщения через WhatsApp сокет на ${realJid}...`);
+        
+        await activeSock.sendMessage(realJid, { text });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       } catch (e) {
+        console.error('Ошибка отправки в шлюзе:', e);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: e.message }));
       }
