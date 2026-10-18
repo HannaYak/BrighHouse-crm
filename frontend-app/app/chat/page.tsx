@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
 export type PlatformType = 'TELEGRAM' | 'WHATSAPP' | 'INSTAGRAM' | 'FACEBOOK';
+export type ConvStatus = 'NONE' | 'IN_PROGRESS' | 'BOOKED' | 'REMIND' | 'THINKING' | 'CLOSED';
 
 interface ChatContact {
   id: string;
@@ -15,6 +16,7 @@ interface ChatContact {
   lastMessage?: string;
   lastTime?: string;
   unreadCount?: number;
+  status: ConvStatus;
   rawMessages?: any[];
 }
 
@@ -32,21 +34,36 @@ const PLATFORM_CONFIG: Record<PlatformType, { label: string; icon: string; badge
   FACEBOOK: { label: 'Facebook', icon: '📘', badgeClass: 'bg-blue-50 text-blue-700 border-blue-200' },
 };
 
+const STATUS_CONFIG: Record<ConvStatus, { label: string; dot: string; pillClass: string }> = {
+  NONE: { label: 'Без статуса', dot: '⚪', pillClass: 'bg-slate-100 text-slate-600 border-slate-200' },
+  IN_PROGRESS: { label: 'В процессе', dot: '🟡', pillClass: 'bg-amber-50 text-amber-700 border-amber-300' },
+  BOOKED: { label: 'Записан', dot: '🟢', pillClass: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
+  REMIND: { label: 'Напомнить', dot: '🔵', pillClass: 'bg-blue-50 text-blue-700 border-blue-300' },
+  THINKING: { label: 'Думает / Оценка', dot: '🟣', pillClass: 'bg-purple-50 text-purple-700 border-purple-300' },
+  CLOSED: { label: 'Архив / Отказ', dot: '⚫', pillClass: 'bg-zinc-100 text-zinc-500 border-zinc-300' },
+};
+
 export default function ChatPage() {
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [activePlatformFilter, setActivePlatformFilter] = useState<'ALL' | PlatformType>('ALL');
   const [activeRoleFilter, setActiveRoleFilter] = useState<'ALL' | 'cleaners' | 'clients'>('ALL');
+  const [activeStatusFilter, setActiveStatusFilter] = useState<'ALL' | ConvStatus>('ALL');
   const [selectedContact, setSelectedContact] = useState<ChatContact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
-  // Ссылка для автоматической прокрутки вниз
+  // Модалка "Написать новому клиенту"
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [newChatPhone, setNewChatPhone] = useState('');
+  const [newChatName, setNewChatName] = useState('');
+  const [newChatChannel, setNewChatChannel] = useState<PlatformType>('WHATSAPP');
+  const [newChatMessage, setNewChatMessage] = useState('');
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const selectedContactRef = useRef<ChatContact | null>(null);
 
-  // Для медиа и микрофона
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -62,7 +79,6 @@ export default function ChatPage() {
     selectedContactRef.current = selectedContact;
   }, [selectedContact]);
 
-  // Автоскролл к последнему сообщению
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
@@ -95,6 +111,7 @@ export default function ChatPage() {
               platform: PLATFORM_CONFIG[platformKey] ? platformKey : 'TELEGRAM',
               role: 'client',
               district: 'Варшава',
+              status: (c.status as ConvStatus) || 'NONE',
               lastMessage: c.lastMessage || (lastMsg ? lastMsg.text : 'Новый диалог'),
               lastTime: lastMsg
                 ? new Date(lastMsg.timestamp || lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -116,6 +133,7 @@ export default function ChatPage() {
               phone: cl.phone,
               platform: 'TELEGRAM',
               role: 'cleaner',
+              status: 'NONE',
               district: cl.district || 'Центр',
               lastMessage: cl.telegramChatId ? 'Telegram подключен' : 'Ожидает PIN',
               lastTime: 'Смена',
@@ -127,7 +145,6 @@ export default function ChatPage() {
 
       setContacts(list);
 
-      // Синхронизация открытого чата: моментально обновляем сообщения в открытом диалоге
       if (list.length > 0) {
         const currentActive = selectedContactRef.current;
         const matchingContact = currentActive
@@ -146,7 +163,6 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadConversations();
-    // Опрашиваем сервер каждые 2.5 секунды на наличие свежих сообщений
     const interval = setInterval(loadConversations, 2500);
     return () => clearInterval(interval);
   }, []);
@@ -181,6 +197,55 @@ export default function ChatPage() {
     setSelectedContact(contact);
     displayMessages(contact);
     setTimeout(() => scrollToBottom('auto'), 50);
+  };
+
+  const handleChangeStatus = async (newStatus: ConvStatus) => {
+    if (!selectedContact || selectedContact.role === 'cleaner') return;
+    try {
+      await fetch('/api/chat/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: selectedContact.id, status: newStatus }),
+      });
+      setSelectedContact((prev) => (prev ? { ...prev, status: newStatus } : null));
+      await loadConversations();
+    } catch (e) {
+      console.error('Ошибка смены статуса:', e);
+    }
+  };
+
+  const handleCreateNewChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newChatPhone.trim() || !newChatMessage.trim()) return;
+
+    try {
+      setSending(true);
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: newChatPhone.trim(),
+          recipientName: newChatName.trim() || undefined,
+          channel: newChatChannel,
+          text: newChatMessage.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setIsNewChatModalOpen(false);
+        setNewChatPhone('');
+        setNewChatName('');
+        setNewChatMessage('');
+        await loadConversations();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Ошибка отправки новому контакту');
+      }
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setSending(false);
+    }
   };
 
   const startRecording = async () => {
@@ -277,7 +342,7 @@ export default function ChatPage() {
 
     try {
       setSending(true);
-      await fetch('/api/chat', {
+      await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -343,6 +408,7 @@ export default function ChatPage() {
     if (activePlatformFilter !== 'ALL' && c.platform !== activePlatformFilter) return false;
     if (activeRoleFilter === 'cleaners' && c.role !== 'cleaner') return false;
     if (activeRoleFilter === 'clients' && c.role !== 'client') return false;
+    if (activeStatusFilter !== 'ALL' && c.status !== activeStatusFilter) return false;
     return true;
   });
 
@@ -359,18 +425,25 @@ export default function ChatPage() {
         'Прайс: 1-комн. (до 34м²) — 170 zł, 2-комн. (до 50м²) — 200 zł. Приезжаем со своей химией и инвентарем!',
       ];
 
+  const currentPlatformLabel = selectedContact ? PLATFORM_CONFIG[selectedContact.platform].label : 'чат';
+
   return (
     <div className="flex h-[calc(100vh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
       {/* Левая колонка */}
       <div className="w-80 sm:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50">
-        <div className="p-4 border-b border-slate-200 bg-white space-y-3">
+        <div className="p-3.5 border-b border-slate-200 bg-white space-y-2.5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-slate-800">Омниканальные чаты</h2>
-            <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full font-bold">
-              Все каналы
-            </span>
+            <button
+              type="button"
+              onClick={() => setIsNewChatModalOpen(true)}
+              className="text-[11px] bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
+            >
+              ➕ Написать
+            </button>
           </div>
 
+          {/* Фильтр по платформам */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold gap-1 overflow-x-auto">
             <button
               type="button"
@@ -419,6 +492,7 @@ export default function ChatPage() {
             </button>
           </div>
 
+          {/* Фильтр по роли */}
           <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-[10px] font-bold">
             <button
               type="button"
@@ -442,8 +516,34 @@ export default function ChatPage() {
               Бригада
             </button>
           </div>
+
+          {/* Фильтр по статусам */}
+          <div className="flex gap-1 overflow-x-auto text-[10px] pb-1">
+            <button
+              type="button"
+              onClick={() => setActiveStatusFilter('ALL')}
+              className={`px-2 py-0.5 rounded-md font-semibold shrink-0 transition ${
+                activeStatusFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Все статусы
+            </button>
+            {(['BOOKED', 'IN_PROGRESS', 'REMIND', 'THINKING', 'CLOSED'] as ConvStatus[]).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setActiveStatusFilter(st)}
+                className={`px-2 py-0.5 rounded-md font-semibold shrink-0 border transition ${
+                  activeStatusFilter === st ? 'ring-2 ring-blue-500 font-bold' : ''
+                } ${STATUS_CONFIG[st].pillClass}`}
+              >
+                {STATUS_CONFIG[st].dot} {STATUS_CONFIG[st].label}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {/* Список диалогов */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {loading && contacts.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400">Загрузка диалогов...</div>
@@ -453,6 +553,7 @@ export default function ChatPage() {
             filteredContacts.map((contact) => {
               const isSelected = selectedContact?.id === contact.id;
               const platformCfg = PLATFORM_CONFIG[contact.platform];
+              const statusCfg = STATUS_CONFIG[contact.status || 'NONE'];
 
               return (
                 <div
@@ -482,10 +583,17 @@ export default function ChatPage() {
                       {contact.lastMessage?.startsWith('[MEDIA:') ? '📎 [Медиафайл]' : contact.lastMessage}
                     </p>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${platformCfg.badgeClass}`}>
                         {platformCfg.icon} {platformCfg.label}
                       </span>
+
+                      {contact.role === 'client' && contact.status !== 'NONE' && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${statusCfg.pillClass}`}>
+                          {statusCfg.dot} {statusCfg.label}
+                        </span>
+                      )}
+
                       {contact.phone && (
                         <span className="text-[10px] text-slate-400 font-mono truncate">
                           {contact.phone}
@@ -525,6 +633,22 @@ export default function ChatPage() {
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Выпадающий список выбора статуса переписки */}
+                {selectedContact.role === 'client' && (
+                  <select
+                    value={selectedContact.status || 'NONE'}
+                    onChange={(e) => handleChangeStatus(e.target.value as ConvStatus)}
+                    className="text-xs font-bold border border-slate-300 rounded-xl px-2.5 py-1.5 bg-white text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="NONE">⚪ Без статуса</option>
+                    <option value="IN_PROGRESS">🟡 В процессе</option>
+                    <option value="BOOKED">🟢 Записан</option>
+                    <option value="REMIND">🔵 Напомнить</option>
+                    <option value="THINKING">🟣 Думает / Оценка</option>
+                    <option value="CLOSED">⚫ Архив / Отказ</option>
+                  </select>
+                )}
+
                 {selectedContact.role === 'client' && (
                   <button
                     type="button"
@@ -635,7 +759,6 @@ export default function ChatPage() {
                   </div>
                 );
               })}
-              {/* Невидимый якорь в самом низу списка сообщений */}
               <div ref={messagesEndRef} />
             </div>
 
@@ -717,7 +840,7 @@ export default function ChatPage() {
                 <>
                   <input
                     type="text"
-                    placeholder={`Ответить в Telegram...`}
+                    placeholder={`Ответить в ${currentPlatformLabel}...`}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     onKeyDown={(e) => {
@@ -744,7 +867,7 @@ export default function ChatPage() {
                     disabled={sending || (!inputText.trim() && !selectedFile)}
                     className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
                   >
-                    {sending ? '...' : `Отправить в Telegram`}
+                    {sending ? '...' : `Отправить в ${currentPlatformLabel}`}
                   </button>
                 </>
               )}
@@ -757,6 +880,105 @@ export default function ChatPage() {
         )}
       </div>
 
+      {/* Модальное окно: Написать новому клиенту */}
+      {isNewChatModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl border border-slate-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-slate-800 text-base">Новый диалог с клиентом</h3>
+              <button
+                type="button"
+                onClick={() => setIsNewChatModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewChat} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Канал связи</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewChatChannel('WHATSAPP')}
+                    className={`flex-1 py-1.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1 ${
+                      newChatChannel === 'WHATSAPP' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    💬 WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewChatChannel('TELEGRAM')}
+                    className={`flex-1 py-1.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1 ${
+                      newChatChannel === 'TELEGRAM' ? 'bg-sky-500 text-white border-sky-500' : 'bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    ✈️ Telegram
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {newChatChannel === 'WHATSAPP' ? 'Номер телефона (с кодом страны, например: +48...)' : 'Chat ID или телефон'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="+48 123 456 789"
+                  value={newChatPhone}
+                  onChange={(e) => setNewChatPhone(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Имя клиента (необязательно)</label>
+                <input
+                  type="text"
+                  placeholder="Анна"
+                  value={newChatName}
+                  onChange={(e) => setNewChatName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Первое сообщение</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Здравствуйте! По поводу клининга..."
+                  value={newChatMessage}
+                  onChange={(e) => setNewChatMessage(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsNewChatModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={sending}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  {sending ? 'Отправка...' : 'Отправить'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка заказа из чата */}
       {isOrderModalOpen && (
         <OrderModal
           order={orderFromChat}
