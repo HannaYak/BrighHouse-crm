@@ -61,10 +61,9 @@ async function backupFileToDB(fileName) {
   } catch {}
 }
 
-// 3. Запуск слушателя WhatsApp с защитой от дубликатов
+// 3. Запуск слушателя WhatsApp
 async function startWhatsAppListener() {
   if (isStarting) {
-    console.log('⏳ Подключение уже в процессе, пропускаем повторный запуск.');
     return;
   }
   isStarting = true;
@@ -72,14 +71,6 @@ async function startWhatsAppListener() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
-  }
-
-  if (activeSock) {
-    try {
-      activeSock.ev.removeAllListeners();
-      activeSock.end(undefined);
-    } catch {}
-    activeSock = null;
   }
 
   console.log('⏳ Подготовка сессии WhatsApp...');
@@ -105,8 +96,6 @@ async function startWhatsAppListener() {
     browser: ['Ubuntu', 'Chrome', '124.0.0.0']
   });
 
-  activeSock = sock;
-
   sock.ev.on('creds.update', async () => {
     await saveCreds();
     if (fs.existsSync(SESSION_DIR)) {
@@ -119,11 +108,12 @@ async function startWhatsAppListener() {
     }
   });
 
-sock.ev.on('connection.update', (update) => {
+  sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
 
     if (connection === 'open') {
       isStarting = false;
+      activeSock = sock; // Фиксируем рабочий сокет для шлюза
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -134,42 +124,33 @@ sock.ev.on('connection.update', (update) => {
 
     if (connection === 'close') {
       isStarting = false;
-      activeSock = null;
-      
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-      const isConflict = statusCode === 440 || statusCode === DisconnectReason.connectionReplaced;
 
-      // Если сессия отключена вручную со стороны телефона — реконнект делать нельзя
       if (isLoggedOut) {
-        console.log('❌ Сессия WhatsApp закрыта (Logged Out). Требуется повторный вход через QR.');
+        activeSock = null;
+        console.log('❌ Сессия WhatsApp закрыта (Logged Out). Нужен повторный вход через QR.');
         return;
       }
 
-      // При конфликте 440 НЕ перезапускаем сокет сразу циклично — даем текущему сокету стабилизироваться
-      if (isConflict) {
-        console.log('⚠️ Код 440 (Connection Replaced). Ожидаем завершения параллельного процесса без перезапуска...');
-        return;
-      }
-
-      // Стандартный реконнект только при сетевых разрывах (ETIMEDOUT, 515 и т.д.)
+      // При любых временных разрывах или перехвате (440) перезапускаем соединение через 5 сек
       if (!reconnectTimer) {
-        console.log(`⚠️ Сетевой разрыв сокета (код: ${statusCode}). Реконнект через 10 сек...`);
+        console.log(`⚠️ Сокет временно закрыт (код: ${statusCode}). Восстановление через 5 сек...`);
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
           startWhatsAppListener().catch(console.error);
-        }, 10000);
+        }, 5000);
       }
     }
   });
 
   // 1. Слушаем все входящие сообщения
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       const remoteJid = msg.key?.remoteJid;
       if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
 
-      // Извлекаем чистый номер телефона
+      // Извлекаем номер собеседника
       let clientPhone = '';
       if (remoteJid.endsWith('@s.whatsapp.net')) {
         clientPhone = remoteJid.replace('@s.whatsapp.net', '');
@@ -180,7 +161,7 @@ sock.ev.on('connection.update', (update) => {
         if (pn) clientPhone = pn.replace('@s.whatsapp.net', '');
       }
 
-      // Проверяем наличие текста во всех возможных полях Baileys
+      // Распаковываем текст
       const msgObj = msg.message || {};
       const content = 
         msgObj.ephemeralMessage?.message ||
@@ -204,9 +185,7 @@ sock.ev.on('connection.update', (update) => {
 
       console.log(`📥 [MSG RECV] От: ${clientPhone || remoteJid} | isIncoming: ${isIncoming} | Текст: "${text}"`);
 
-      // Если пришло техническое сообщение (рукопожатие ключей без текста)
       if (!text) {
-        console.log(`ℹ️ Служебный пакет Signal от ${clientPhone || remoteJid}, отправляем квитанцию прочтения...`);
         try {
           await sock.readMessages([msg.key]);
         } catch {}
@@ -278,11 +257,10 @@ sock.ev.on('connection.update', (update) => {
     }
   });
 
-  // 2. Ловим события изменения статусов и синхронизации
   sock.ev.on('messages.update', (updates) => {
     for (const update of updates) {
       if (update.update?.message) {
-        console.log('🔄 Получено отложенно расшифрованное сообщение:', update.key?.remoteJid);
+        console.log('🔄 Синхронизировано отложенное сообщение:', update.key?.remoteJid);
       }
     }
   });
@@ -342,7 +320,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Защита от запуска второй копии wa-listener
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error('⛔ ОШИБКА: Порт 3001 уже занят другим процессом wa-listener! Завершаем дубликат.');
@@ -352,7 +329,6 @@ server.on('error', (err) => {
   }
 });
 
-// ЕДИНСТВЕННАЯ точка входа: слушатель стартует только после занятия порта 3001
 server.listen(3001, '127.0.0.1', () => {
   console.log('🚀 Локальный шлюз отправки WhatsApp запущен на порту 3001');
   startWhatsAppListener().catch(console.error);
