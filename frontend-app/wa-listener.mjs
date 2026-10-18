@@ -18,7 +18,7 @@ const prisma = new PrismaClient();
 const SESSION_DIR = './wa-session-store';
 let activeSock = null;
 
-// 1. Восстановление сессии из БД PostgreSQL
+// 1. Восстановление сессии из БД PostgreSQL с безопасными именами файлов
 async function restoreSessionFromDB() {
   if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
@@ -27,7 +27,8 @@ async function restoreSessionFromDB() {
   try {
     const rows = await prisma.whatsAppSession.findMany();
     for (const row of rows) {
-      const filePath = path.join(SESSION_DIR, row.id.endsWith('.json') ? row.id : `${row.id}.json`);
+      const safeName = encodeURIComponent(row.id) + (row.id.endsWith('.json') ? '' : '.json');
+      const filePath = path.join(SESSION_DIR, safeName);
       fs.writeFileSync(filePath, row.data, 'utf-8');
     }
     if (rows.length > 0) {
@@ -38,19 +39,21 @@ async function restoreSessionFromDB() {
   }
 }
 
-// 2. Бэкап сессии в PostgreSQL
+// 2. Бэкап сессии в PostgreSQL с декодированием имен
 async function backupFileToDB(fileName) {
   try {
     const filePath = path.join(SESSION_DIR, fileName);
+    const originalId = decodeURIComponent(fileName.replace(/\.json$/, ''));
+
     if (!fs.existsSync(filePath)) {
-      await prisma.whatsAppSession.deleteMany({ where: { id: fileName } });
+      await prisma.whatsAppSession.deleteMany({ where: { id: originalId } });
       return;
     }
     const data = fs.readFileSync(filePath, 'utf-8');
     await prisma.whatsAppSession.upsert({
-      where: { id: fileName },
+      where: { id: originalId },
       update: { data },
-      create: { id: fileName, data }
+      create: { id: originalId, data }
     });
   } catch {}
 }
@@ -133,7 +136,6 @@ async function startWhatsAppListener() {
 
       const isFromMe = Boolean(msg.key.fromMe);
 
-      // Корректно определяем реальный номер телефона:
       let cleanPhone = '';
       if (remoteJid.endsWith('@s.whatsapp.net')) {
         cleanPhone = remoteJid.replace('@s.whatsapp.net', '');
@@ -145,7 +147,6 @@ async function startWhatsAppListener() {
         cleanPhone = pn ? pn.replace('@s.whatsapp.net', '') : remoteJid.replace('@lid', '');
       }
 
-      // Имя контакта
       const clientName = isFromMe 
         ? 'Менеджер' 
         : (msg.pushName || (cleanPhone.length < 13 ? `+${cleanPhone}` : 'Клиент WhatsApp'));
@@ -209,9 +210,9 @@ async function startWhatsAppListener() {
       }
     }
   });
-} // <--- Закрыта функция startWhatsAppListener
+}
 
-// 3. HTTP-шлюз для отправки сообщений менеджером из интерфейса CRM (порт 3001)
+// 3. HTTP-шлюз отправки сообщений
 const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/send') {
     let body = '';
