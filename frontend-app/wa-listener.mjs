@@ -10,7 +10,8 @@ const {
 import { PrismaClient } from '@prisma/client';
 import http from 'http';
 import pino from 'pino';
-import { usePrismaAuthState, migrateLegacyFilesIfNeeded } from './prismaAuthState.mjs';
+import qrcode from 'qrcode-terminal';
+import { usePrismaAuthState } from './prismaAuthState.mjs';
 
 const prisma = new PrismaClient();
 
@@ -55,7 +56,6 @@ async function startWhatsAppListener() {
   }
 
   console.log('⏳ Подготовка сессии WhatsApp из PostgreSQL...');
-  await migrateLegacyFilesIfNeeded(prisma);
 
   authStateHelper = await usePrismaAuthState(prisma);
   const { state, saveCreds, removeSessionKey } = authStateHelper;
@@ -74,7 +74,7 @@ async function startWhatsAppListener() {
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 25000,
     syncFullHistory: false,
-    markOnlineOnConnect: false,
+    markOnlineOnConnect: true,
     browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
     getMessage: async (key) => {
       if (key?.id && messageStore.has(key.id)) {
@@ -103,7 +103,14 @@ async function startWhatsAppListener() {
   });
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      console.log('\n================ СКАНИРУЙТЕ ЭТОТ QR-КОД ================');
+      qrcode.generate(qr, { small: true });
+      console.log('WhatsApp -> Связанные устройства -> Привязка устройства');
+      console.log('========================================================\n');
+    }
 
     if (connection === 'open') {
       isStarting = false;
@@ -154,8 +161,12 @@ async function startWhatsAppListener() {
   });
 
   // Слушаем входящие сообщения
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    for (const msg of messages) {
+  sock.ev.on('messages.upsert', async (upsert) => {
+    console.log('RAW UPSERT:', JSON.stringify(upsert, null, 2));
+    const { messages, type } = upsert;
+    console.log(`[UPSERT TYPE] Режим: ${type}, сообщений: ${messages?.length || 0}`);
+    for (const msg of messages || []) {
+
       try {
         const remoteJid = msg.key?.remoteJid;
         if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) {
