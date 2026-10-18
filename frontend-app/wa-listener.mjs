@@ -74,7 +74,6 @@ async function startWhatsAppListener() {
     reconnectTimer = null;
   }
 
-  // Если прошлый сокет всё ещё активен — мягко закрываем его перед созданием нового
   if (activeSock) {
     try {
       activeSock.ev.removeAllListeners();
@@ -165,8 +164,6 @@ async function startWhatsAppListener() {
       const remoteJid = msg.key?.remoteJid;
       if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
 
-      const isFromMe = Boolean(msg.key.fromMe);
-
       // Распаковываем любые вложенные типы сообщений
       const content = 
         msg.message.ephemeralMessage?.message ||
@@ -185,7 +182,7 @@ async function startWhatsAppListener() {
         (content.audioMessage ? '🎤 Голосовое сообщение' : '') ||
         '';
 
-      // Извлекаем реальный номер телефона собеседника
+      // Извлекаем чистый номер телефона собеседника (клиента)
       let clientPhone = '';
       if (remoteJid.endsWith('@s.whatsapp.net')) {
         clientPhone = remoteJid.replace('@s.whatsapp.net', '');
@@ -196,14 +193,18 @@ async function startWhatsAppListener() {
         if (pn) clientPhone = pn.replace('@s.whatsapp.net', '');
       }
 
-      console.log(`📩 [WA EVENT] JID: ${remoteJid} | Номер: ${clientPhone || 'нет'} | Исходящее: ${isFromMe} | Текст: "${text}"`);
+      // Сообщение входящее, если оно пришло от собеседника (не отправлено менеджером)
+      const isFromMe = Boolean(msg.key.fromMe);
+      const isIncoming = !isFromMe;
+
+      console.log(`📩 [WA EVENT] JID: ${remoteJid} | Номер: ${clientPhone || 'нет'} | Входящее: ${isIncoming} | Текст: "${text}"`);
 
       if (!text) continue;
 
       const targetExternalId = clientPhone ? `${clientPhone}@s.whatsapp.net` : remoteJid;
-      const clientName = isFromMe 
-        ? 'Менеджер' 
-        : (msg.pushName || (clientPhone ? `+${clientPhone}` : 'Клиент WhatsApp'));
+      const clientName = isIncoming 
+        ? (msg.pushName || (clientPhone ? `+${clientPhone}` : 'Клиент WhatsApp'))
+        : 'Менеджер';
 
       try {
         const existingConv = await prisma.conversation.findFirst({
@@ -217,7 +218,7 @@ async function startWhatsAppListener() {
         });
 
         const currentUnread = existingConv?.unreadCount || 0;
-        const newUnread = isFromMe ? 0 : currentUnread + 1;
+        const newUnread = isIncoming ? currentUnread + 1 : 0;
         const convExternalId = existingConv ? existingConv.externalId : targetExternalId;
 
         const conversation = await prisma.conversation.upsert({
@@ -227,10 +228,10 @@ async function startWhatsAppListener() {
             lastActivity: new Date(),
             updatedAt: new Date(),
             unreadCount: newUnread,
-            ...(isFromMe ? {} : { 
+            ...(isIncoming ? { 
               clientName, 
               phone: clientPhone ? `+${clientPhone}` : existingConv?.phone 
-            })
+            } : {})
           },
           create: {
             channel: 'WHATSAPP',
@@ -241,7 +242,7 @@ async function startWhatsAppListener() {
             lastMessage: text,
             lastActivity: new Date(),
             updatedAt: new Date(),
-            unreadCount: isFromMe ? 0 : 1,
+            unreadCount: isIncoming ? 1 : 0,
             status: 'NONE',
           },
         });
@@ -249,11 +250,11 @@ async function startWhatsAppListener() {
         await prisma.message.create({
           data: {
             conversationId: conversation.id,
-            senderId: isFromMe ? 'manager' : (clientPhone || remoteJid),
-            senderName: isFromMe ? 'Менеджер' : clientName,
-            senderType: isFromMe ? 'MANAGER' : 'CLIENT',
+            senderId: isIncoming ? (clientPhone || remoteJid) : 'manager',
+            senderName: clientName,
+            senderType: isIncoming ? 'CLIENT' : 'MANAGER',
             text: text,
-            isIncoming: !isFromMe,
+            isIncoming: isIncoming,
             timestamp: new Date((msg.messageTimestamp || Date.now() / 1000) * 1000),
           },
         });
@@ -281,7 +282,6 @@ const server = http.createServer(async (req, res) => {
         }
 
         let targetPhone = to;
-        // Если пришел UUID диалога или LID — вытаскиваем номер из базы
         if (to.includes('@lid') || !to.includes('@s.whatsapp.net')) {
           const conv = await prisma.conversation.findFirst({
             where: {
