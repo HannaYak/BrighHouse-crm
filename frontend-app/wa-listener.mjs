@@ -157,32 +157,13 @@ async function startWhatsAppListener() {
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  // 1. Слушаем все входящие сообщения
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
-      if (!msg.message) continue;
-
       const remoteJid = msg.key?.remoteJid;
       if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
 
-      // Распаковываем любые вложенные типы сообщений
-      const content = 
-        msg.message.ephemeralMessage?.message ||
-        msg.message.viewOnceMessage?.message ||
-        msg.message.viewOnceMessageV2?.message ||
-        msg.message.documentWithCaptionMessage?.message ||
-        msg.message;
-
-      const text = 
-        content.conversation || 
-        content.extendedTextMessage?.text || 
-        content.imageMessage?.caption || 
-        content.videoMessage?.caption ||
-        (content.imageMessage ? '📷 Фотография' : '') ||
-        (content.videoMessage ? '📹 Видео' : '') ||
-        (content.audioMessage ? '🎤 Голосовое сообщение' : '') ||
-        '';
-
-      // Извлекаем чистый номер телефона собеседника (клиента)
+      // Извлекаем чистый номер телефона
       let clientPhone = '';
       if (remoteJid.endsWith('@s.whatsapp.net')) {
         clientPhone = remoteJid.replace('@s.whatsapp.net', '');
@@ -193,13 +174,38 @@ async function startWhatsAppListener() {
         if (pn) clientPhone = pn.replace('@s.whatsapp.net', '');
       }
 
-      // Сообщение входящее, если оно пришло от собеседника (не отправлено менеджером)
+      // Проверяем наличие текста во всех возможных полях Baileys
+      const msgObj = msg.message || {};
+      const content = 
+        msgObj.ephemeralMessage?.message ||
+        msgObj.viewOnceMessage?.message ||
+        msgObj.viewOnceMessageV2?.message ||
+        msgObj.documentWithCaptionMessage?.message ||
+        msgObj;
+
+      const text = 
+        content.conversation || 
+        content.extendedTextMessage?.text || 
+        content.imageMessage?.caption || 
+        content.videoMessage?.caption ||
+        (content.imageMessage ? '📷 Фотография' : '') ||
+        (content.videoMessage ? '📹 Видео' : '') ||
+        (content.audioMessage ? '🎤 Голосовое' : '') ||
+        '';
+
       const isFromMe = Boolean(msg.key.fromMe);
       const isIncoming = !isFromMe;
 
-      console.log(`📩 [WA EVENT] JID: ${remoteJid} | Номер: ${clientPhone || 'нет'} | Входящее: ${isIncoming} | Текст: "${text}"`);
+      console.log(`📥 [MSG RECV] От: ${clientPhone || remoteJid} | isIncoming: ${isIncoming} | Текст: "${text}"`);
 
-      if (!text) continue;
+      // Если пришло техническое сообщение (рукопожатие ключей без текста)
+      if (!text) {
+        console.log(`ℹ️ Служебный пакет Signal от ${clientPhone || remoteJid}, отправляем квитанцию прочтения...`);
+        try {
+          await sock.readMessages([msg.key]);
+        } catch {}
+        continue;
+      }
 
       const targetExternalId = clientPhone ? `${clientPhone}@s.whatsapp.net` : remoteJid;
       const clientName = isIncoming 
@@ -259,9 +265,18 @@ async function startWhatsAppListener() {
           },
         });
 
-        console.log(`✅ [CRM SAVE] Диалог ${conversation.id} обновлен, сообщение зафиксировано`);
+        console.log(`✅ [CRM OK] Сохранено в диалог ${conversation.id}`);
       } catch (err) {
-        console.error('Ошибка записи в БД:', err.message);
+        console.error('Ошибка сохранения в БД:', err.message);
+      }
+    }
+  });
+
+  // 2. Ловим события изменения статусов и синхронизации
+  sock.ev.on('messages.update', (updates) => {
+    for (const update of updates) {
+      if (update.update?.message) {
+        console.log('🔄 Получено отложенно расшифрованное сообщение:', update.key?.remoteJid);
       }
     }
   });
