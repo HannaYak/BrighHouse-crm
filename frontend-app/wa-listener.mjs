@@ -222,132 +222,172 @@ async function startWhatsAppListener() {
 
   console.log('⏳ Подготовка сессии WhatsApp из PostgreSQL...');
 
-  authStateHelper = await usePrismaAuthState(prisma);
-  const { state, saveCreds } = authStateHelper;
-
-  let version = [2, 2413, 51];
   try {
-    const waVersion = await fetchLatestBaileysVersion();
-    if (waVersion?.version) version = waVersion.version;
-  } catch {}
+    authStateHelper = await usePrismaAuthState(prisma);
+    const { state, saveCreds } = authStateHelper;
 
-  const sock = makeWASocket({
-    version,
-    logger: pino({ level: 'silent' }),
-    auth: state,
-    printQRInTerminal: false,
-    connectTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,
-    syncFullHistory: false,
-    markOnlineOnConnect: true,
-    browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
-    msgRetryCounterCache,
-    getMessage: async (key) => {
-      if (key?.id && messageStore.has(key.id)) {
-        return messageStore.get(key.id);
-      }
-      return undefined;
-    }
-  });
-
-  sock.ev.on('creds.update', async () => {
+    let version = [2, 2413, 51];
     try {
-      await saveCreds();
-    } catch (err) {
-      console.error('Ошибка сохранения creds в PostgreSQL:', err.message);
-    }
-  });
+      const waVersion = await fetchLatestBaileysVersion();
+      if (waVersion?.version) version = waVersion.version;
+    } catch {}
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      console.log('\n================ СКАНИРУЙТЕ ЭТОТ QR-КОД ================');
-      qrcode.generate(qr, { small: true });
-      console.log('WhatsApp -> Связанные устройства -> Привязка устройства');
-      console.log('========================================================\n');
-    }
-
-    if (connection === 'open') {
-      isStarting = false;
-      activeSock = sock;
-      reconnectAttempts = 0;
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      console.log('🟢 WHATSAPP СЛУШАТЕЛЬ УСПЕШНО ПОДКЛЮЧЕН И СЛУШАЕТ ЧАТЫ!');
-      return;
-    }
-
-    if (connection === 'close') {
-      isStarting = false;
-      activeSock = null;
-
-      const error = lastDisconnect?.error;
-      const statusCode = error?.output?.statusCode || error?.statusCode;
-
-      if (statusCode === DisconnectReason.connectionReplaced) {
-        console.log('⚠️ Сессия перехвачена другим процессом (код 440). Реконнект остановлен для предотвращения конфликта.');
-        return;
-      }
-
-      if (statusCode === DisconnectReason.loggedOut) {
-        console.log('❌ Сессия WhatsApp закрыта (Logged Out). Нужен повторный вход через QR.');
-        try {
-          await authStateHelper?.clearAllAuth();
-        } catch (e) {
-          console.error('Ошибка очистки старой сессии:', e.message);
+    const sock = makeWASocket({
+      version,
+      logger: pino({ level: 'silent' }),
+      auth: state,
+      printQRInTerminal: false,
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+      syncFullHistory: false,
+      markOnlineOnConnect: true,
+      browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
+      msgRetryCounterCache,
+      getMessage: async (key) => {
+        if (key?.id && messageStore.has(key.id)) {
+          return messageStore.get(key.id);
         }
+        return undefined;
+      }
+    });
+
+    sock.ev.on('creds.update', async () => {
+      try {
+        await saveCreds();
+      } catch (err) {
+        console.error('Ошибка сохранения creds в PostgreSQL:', err.message);
+      }
+    });
+
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        console.log('\n================ СКАНИРУЙТЕ ЭТОТ QR-КОД ================');
+        qrcode.generate(qr, { small: true });
+        console.log('WhatsApp -> Связанные устройства -> Привязка устройства');
+        console.log('========================================================\n');
+      }
+
+      if (connection === 'open') {
+        isStarting = false;
+        activeSock = sock;
+        reconnectAttempts = 0;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        console.log('🟢 WHATSAPP СЛУШАТЕЛЬ УСПЕШНО ПОДКЛЮЧЕН И СЛУШАЕТ ЧАТЫ!');
         return;
       }
 
-      // Экспоненциальный backoff: от 2 сек до макс. 60 сек
-      reconnectAttempts++;
-      const delay = statusCode === 515 
-        ? 1500 
-        : Math.min(2000 * Math.pow(1.5, reconnectAttempts - 1), 60000);
+      if (connection === 'close') {
+        isStarting = false;
+        activeSock = null;
 
-      if (!reconnectTimer) {
-        console.log(`⚠️ Сокет закрыт (код: ${statusCode || 'unknown'}). Попытка реконнекта #${reconnectAttempts} через ${Math.round(delay / 1000)} сек...`);
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          startWhatsAppListener().catch(err => {
-            console.error('Ошибка перезапуска слушателя:', err.message);
+        const error = lastDisconnect?.error;
+        const statusCode = error?.output?.statusCode || error?.statusCode;
+
+        if (statusCode === DisconnectReason.connectionReplaced) {
+          reconnectAttempts++;
+          if (reconnectAttempts <= 3) {
+            console.log(`⚠️ Сессия перехвачена (код 440). Возможно, завершается предыдущий контейнер Render. Повторная попытка #${reconnectAttempts} через 25 сек...`);
+            if (!reconnectTimer) {
+              reconnectTimer = setTimeout(() => {
+                reconnectTimer = null;
+                startWhatsAppListener().catch(console.error);
+              }, 25000);
+            }
+            return;
+          } else {
+            console.log('⚠️ Сессия стабильно удерживается другим процессом (код 440). Ожидание heartbeat...');
+            return;
+          }
+        }
+
+        if (statusCode === DisconnectReason.loggedOut) {
+          console.log('❌ Сессия WhatsApp закрыта (Logged Out). Нужен повторный вход через QR.');
+          return;
+        }
+
+        // Экспоненциальный backoff: от 2 сек до макс. 60 сек
+        reconnectAttempts++;
+        const delay = statusCode === 515 
+          ? 1500 
+          : Math.min(2000 * Math.pow(1.5, reconnectAttempts - 1), 60000);
+
+        if (!reconnectTimer) {
+          console.log(`⚠️ Сокет закрыт (код: ${statusCode || 'unknown'}). Попытка реконнекта #${reconnectAttempts} через ${Math.round(delay / 1000)} сек...`);
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            startWhatsAppListener().catch(err => {
+              console.error('Ошибка перезапуска слушателя:', err.message);
+            });
+          }, delay);
+        }
+      }
+    });
+
+    // Слушаем входящие сообщения
+    sock.ev.on('messages.upsert', async (upsert) => {
+      console.log('RAW UPSERT:', JSON.stringify(upsert, null, 2));
+      const { messages, type } = upsert;
+      console.log(`[UPSERT TYPE] Режим: ${type}, сообщений: ${messages?.length || 0}`);
+      for (const msg of messages || []) {
+        await processMessage(msg);
+      }
+    });
+
+    // Обработка сообщений из очереди/дешифрованных повторов
+    sock.ev.on('messages.update', async (updates) => {
+      for (const update of updates) {
+        if (update.update?.message) {
+          storeMessage(update.key, update.update.message);
+          console.log('🔄 Синхронизировано сообщение из очереди:', update.key?.remoteJid);
+          await processMessage({
+            key: update.key,
+            message: update.update.message,
+            messageTimestamp: update.update.messageTimestamp || Math.floor(Date.now() / 1000)
           });
-        }, delay);
+        }
       }
+    });
+  } catch (err) {
+    isStarting = false;
+    console.error('Ошибка инициализации WhatsApp слушателя:', err.message);
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        startWhatsAppListener().catch(console.error);
+      }, 5000);
     }
-  });
-
-  // Слушаем входящие сообщения
-  sock.ev.on('messages.upsert', async (upsert) => {
-    console.log('RAW UPSERT:', JSON.stringify(upsert, null, 2));
-    const { messages, type } = upsert;
-    console.log(`[UPSERT TYPE] Режим: ${type}, сообщений: ${messages?.length || 0}`);
-    for (const msg of messages || []) {
-      await processMessage(msg);
-    }
-  });
-
-  // Обработка сообщений из очереди/дешифрованных повторов
-  sock.ev.on('messages.update', async (updates) => {
-    for (const update of updates) {
-      if (update.update?.message) {
-        storeMessage(update.key, update.update.message);
-        console.log('🔄 Синхронизировано сообщение из очереди:', update.key?.remoteJid);
-        await processMessage({
-          key: update.key,
-          message: update.update.message,
-          messageTimestamp: update.update.messageTimestamp || Math.floor(Date.now() / 1000)
-        });
-      }
-    }
-  });
+  }
 }
 
-// HTTP-шлюз отправки сообщений (порт 3001)
+// HTTP-шлюз отправки сообщений и проверки статуса (порт 3001)
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      connected: !!activeSock,
+      isStarting,
+      reconnectAttempts,
+      timestamp: new Date().toISOString()
+    }));
+  }
+
+  if ((req.method === 'POST' || req.method === 'GET') && req.url === '/reconnect') {
+    console.log('🔄 Принудительный запрос на переподключение WhatsApp сокета...');
+    isStarting = false;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    startWhatsAppListener().catch(console.error);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ status: 'reconnecting' }));
+  }
+
   if (req.method === 'POST' && req.url === '/send') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -355,9 +395,21 @@ const server = http.createServer(async (req, res) => {
       try {
         const { to, text } = JSON.parse(body);
 
+        // Если сокет не активен, пробуем инициировать подключение и подождать до 6 секунд
+        if (!activeSock) {
+          console.log('⚠️ Запрос на отправку при неактивном сокете. Пробуем подключиться...');
+          if (!isStarting) {
+            startWhatsAppListener().catch(console.error);
+          }
+          for (let i = 0; i < 12; i++) {
+            await new Promise(r => setTimeout(r, 500));
+            if (activeSock) break;
+          }
+        }
+
         if (!activeSock) {
           res.writeHead(503, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'WhatsApp сокет сейчас не подключен' }));
+          return res.end(JSON.stringify({ error: 'WhatsApp сокет сейчас не подключен. Повторите попытку через пару секунд.' }));
         }
 
         let targetJid = to;
@@ -372,12 +424,14 @@ const server = http.createServer(async (req, res) => {
           }
         });
 
-        if (conv?.phone) {
-          const cleanPhone = conv.phone.replace(/\D/g, '');
-          targetJid = `${cleanPhone}@s.whatsapp.net`;
-        } else if (to.endsWith('@lid')) {
-          targetJid = to;
-        } else if (to.endsWith('@s.whatsapp.net')) {
+        if (conv) {
+          if (conv.phone) {
+            const cleanPhone = conv.phone.replace(/\D/g, '');
+            targetJid = `${cleanPhone}@s.whatsapp.net`;
+          } else if (conv.externalId) {
+            targetJid = conv.externalId;
+          }
+        } else if (to.endsWith('@lid') || to.endsWith('@s.whatsapp.net')) {
           targetJid = to;
         } else {
           const cleanDigits = to.replace(/\D/g, '');
@@ -424,8 +478,15 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  if (String(reason)?.includes('Bad MAC')) {
-    console.warn('⚠️ Перехвачен некритический Unhandled Rejection Bad MAC, процесс продолжает работу.');
+  const str = String(reason?.message || reason);
+  if (
+    str.includes('Bad MAC') || 
+    str.includes('Connection Closed') || 
+    str.includes('precondition required') || 
+    str.includes('Timed Out') ||
+    str.includes('statusCode: 428')
+  ) {
+    console.warn('⚠️ Перехвачено временное сетевое событие Baileys:', str);
     return;
   }
   console.error('💥 [CRITICAL] Unhandled Rejection в wa-listener:', reason);
@@ -450,6 +511,14 @@ const shutdown = async () => {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+// Фоновый Heartbeat для гарантии постоянного подключения
+setInterval(() => {
+  if (!activeSock && !isStarting && !reconnectTimer) {
+    console.log('💓 [HEARTBEAT] Сокет WhatsApp не активен, инициируем авто-подключение...');
+    startWhatsAppListener().catch(console.error);
+  }
+}, 30000);
 
 server.listen(3001, '127.0.0.1', () => {
   console.log('🚀 Локальный шлюз отправки WhatsApp запущен на порту 3001');
