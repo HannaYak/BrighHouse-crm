@@ -49,6 +49,7 @@ export default function ChatPage() {
   const [activeRoleFilter, setActiveRoleFilter] = useState<'ALL' | 'cleaners' | 'clients'>('ALL');
   const [activeStatusFilter, setActiveStatusFilter] = useState<'ALL' | ConvStatus>('ALL');
   const [selectedContact, setSelectedContact] = useState<ChatContact | null>(null);
+  const [mobileShowChat, setMobileShowChat] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -195,6 +196,7 @@ export default function ChatPage() {
 
   const handleSelectContact = (contact: ChatContact) => {
     setSelectedContact(contact);
+    setMobileShowChat(true);
     displayMessages(contact);
     setTimeout(() => scrollToBottom('auto'), 50);
   };
@@ -428,9 +430,9 @@ export default function ChatPage() {
   const currentPlatformLabel = selectedContact ? PLATFORM_CONFIG[selectedContact.platform].label : 'чат';
 
   return (
-    <div className="flex h-[calc(100vh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+    <div className="flex h-[calc(100vh-8.5rem)] md:h-[calc(100vh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
       {/* Левая колонка */}
-      <div className="w-80 sm:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50">
+      <div className={`w-full md:w-80 lg:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50 ${mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-3.5 border-b border-slate-200 bg-white space-y-2.5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-slate-800">Омниканальные чаты</h2>
@@ -595,9 +597,21 @@ export default function ChatPage() {
                       )}
 
                       {contact.phone && (
-                        <span className="text-[10px] text-slate-400 font-mono truncate">
-                          {contact.phone}
-                        </span>
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          <span className="text-[10px] text-slate-400 font-mono truncate">
+                            {contact.phone}
+                          </span>
+                          <a
+                            href={`https://wa.me/${contact.phone.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[9px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded font-bold shrink-0 transition"
+                            title="Открыть в WhatsApp"
+                          >
+                            💬 WA
+                          </a>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -609,25 +623,35 @@ export default function ChatPage() {
       </div>
 
       {/* Правая колонка: Окно активного чата */}
-      <div className="flex-1 flex flex-col bg-slate-50/40">
+      <div className={`flex-1 flex flex-col bg-slate-50/40 ${mobileShowChat ? 'flex' : 'hidden md:flex'}`}>
         {selectedContact ? (
           <>
-            <div className="p-3.5 bg-white border-b border-slate-200 flex items-center justify-between shadow-2xs">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${
+            <div className="p-3 bg-white border-b border-slate-200 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {/* Кнопка "Назад к списку" для мобильных телефонов */}
+                <button
+                  type="button"
+                  onClick={() => setMobileShowChat(false)}
+                  className="md:hidden p-1.5 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg text-base font-bold shrink-0 transition cursor-pointer"
+                  title="Назад к списку чатов"
+                >
+                  ←
+                </button>
+
+                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm shrink-0 ${
                   selectedContact.role === 'cleaner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
                 }`}>
                   {selectedContact.name.slice(0, 2).toUpperCase()}
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                    {selectedContact.name}
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${PLATFORM_CONFIG[selectedContact.platform].badgeClass}`}>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5 truncate">
+                    <span className="truncate">{selectedContact.name}</span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border shrink-0 ${PLATFORM_CONFIG[selectedContact.platform].badgeClass}`}>
                       {PLATFORM_CONFIG[selectedContact.platform].icon} {PLATFORM_CONFIG[selectedContact.platform].label}
                     </span>
                   </h3>
-                  <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                    <span>{selectedContact.phone || 'Без телефона'}</span>
+                  <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
+                    <span className="font-mono">{selectedContact.phone || 'Без телефона'}</span>
                     <button
                       type="button"
                       onClick={async () => {
@@ -654,48 +678,68 @@ export default function ChatPage() {
                           }
                         }
                       }}
-                      className="text-[10px] text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer"
+                      className="text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer shrink-0"
                     >
-                      {selectedContact.phone ? '✏️ Изменить' : '➕ Указать телефон'}
+                      {selectedContact.phone ? '✏️' : '➕ Указать'}
                     </button>
-                    <span>• {selectedContact.district || 'Варшава'}</span>
+                    <span className="truncate">• {selectedContact.district || 'Варшава'}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {/* Выпадающий список выбора статуса переписки */}
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
+                {/* 1. Прямая ссылка на WhatsApp на телефоне */}
+                {selectedContact.phone && (
+                  <a
+                    href={`https://wa.me/${selectedContact.phone.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1.5 rounded-xl transition shadow-xs flex items-center gap-1 shrink-0"
+                    title="Открыть диалог в приложении WhatsApp"
+                  >
+                    <span>💬</span>
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </a>
+                )}
+
+                {/* 2. Быстрый звонок по телефону */}
+                {selectedContact.phone && (
+                  <a
+                    href={`tel:${selectedContact.phone}`}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1.5 rounded-xl transition flex items-center gap-1 shrink-0"
+                    title="Позвонить клиенту"
+                  >
+                    <span>📞</span>
+                    <span className="hidden sm:inline">Звонок</span>
+                  </a>
+                )}
+
+                {/* 3. Выпадающий список статуса */}
                 {selectedContact.role === 'client' && (
                   <select
                     value={selectedContact.status || 'NONE'}
                     onChange={(e) => handleChangeStatus(e.target.value as ConvStatus)}
-                    className="text-xs font-bold border border-slate-300 rounded-xl px-2.5 py-1.5 bg-white text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    className="text-[11px] font-bold border border-slate-300 rounded-xl px-2 py-1.5 bg-white text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
                     <option value="NONE">⚪ Без статуса</option>
                     <option value="IN_PROGRESS">🟡 В процессе</option>
                     <option value="BOOKED">🟢 Записан</option>
                     <option value="REMIND">🔵 Напомнить</option>
-                    <option value="THINKING">🟣 Думает / Оценка</option>
-                    <option value="CLOSED">⚫ Архив / Отказ</option>
+                    <option value="THINKING">🟣 Думает</option>
+                    <option value="CLOSED">⚫ Архив</option>
                   </select>
                 )}
 
+                {/* 4. Оформить заказ */}
                 {selectedContact.role === 'client' && (
                   <button
                     type="button"
                     onClick={handleCreateOrderFromChat}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs transition shadow-xs flex items-center gap-1 cursor-pointer"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1.5 rounded-xl text-xs transition shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
                   >
-                    📝 Оформить заказ
+                    <span>📝</span>
+                    <span className="hidden sm:inline">Заказ</span>
                   </button>
-                )}
-                {selectedContact.phone && (
-                  <a
-                    href={`tel:${selectedContact.phone}`}
-                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-xl transition"
-                  >
-                    📞 Позвонить
-                  </a>
                 )}
               </div>
             </div>
@@ -988,21 +1032,35 @@ export default function ChatPage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsNewChatModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  disabled={sending}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  {sending ? 'Отправка...' : 'Отправить'}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                {newChatPhone.trim() ? (
+                  <a
+                    href={`https://wa.me/${newChatPhone.trim().replace(/\D/g, '')}${newChatMessage.trim() ? `?text=${encodeURIComponent(newChatMessage.trim())}` : ''}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setIsNewChatModalOpen(false)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 transition"
+                  >
+                    💬 Открыть в WhatsApp
+                  </a>
+                ) : <div />}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsNewChatModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={sending}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                  >
+                    {sending ? 'Отправка...' : 'Отправить'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

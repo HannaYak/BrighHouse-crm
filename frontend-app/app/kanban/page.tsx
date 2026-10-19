@@ -179,26 +179,26 @@ export default function KanbanPage() {
   if (loading) return <div className="p-10 text-center text-slate-500">Загрузка доски...</div>;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden max-w-[1600px] mx-auto">
+    <div className="flex flex-col h-[calc(100vh-135px)] md:h-[calc(100vh-80px)] overflow-hidden max-w-[1600px] mx-auto">
       {/* Шапка Канбана */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 mb-3 flex-shrink-0">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">📋 Канбан-доска</h1>
-          <p className="text-xs text-slate-500">Управление статусами заказов (Drag & Drop)</p>
+          <h1 className="text-lg sm:text-xl font-bold text-slate-900">📋 Канбан-доска</h1>
+          <p className="text-[11px] sm:text-xs text-slate-500">Управление статусами заказов (Drag & Drop)</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => setIsTemplatesOpen(!isTemplatesOpen)}
-            className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs flex items-center gap-1 cursor-pointer"
+            className="bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl transition shadow-xs flex items-center gap-1 cursor-pointer"
           >
-            ⚡ Шаблоны ответов
+            ⚡ Шаблоны
           </button>
           <button
             onClick={() => {
               setEditingOrder(null);
               setIsModalOpen(true);
             }}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition shadow-xs cursor-pointer"
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl transition shadow-xs cursor-pointer"
           >
             + Создать заказ
           </button>
@@ -213,7 +213,7 @@ export default function KanbanPage() {
             return (
               <div
                 key={col.id}
-                className={`flex-shrink-0 w-80 flex flex-col rounded-2xl border ${col.borderColor} ${col.color}`}
+                className={`flex-shrink-0 w-72 sm:w-80 flex flex-col rounded-2xl border ${col.borderColor} ${col.color}`}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, col.id)}
               >
@@ -268,13 +268,38 @@ export default function KanbanPage() {
                           </div>
                         </div>
 
-                        <div>
-                          <div className="font-bold text-xs text-slate-900 leading-snug">
-                            {order.clientName || 'Клиент без имени'}
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-slate-900 leading-snug truncate">
+                              {order.clientName || 'Клиент без имени'}
+                            </div>
+                            <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                              📍 {order.addressLine1 || 'Адрес не указан'}
+                            </div>
                           </div>
-                          <div className="text-[10px] text-slate-500 truncate mt-0.5">
-                            📍 {order.addressLine1 || 'Адрес не указан'}
-                          </div>
+
+                          {order.clientPhone && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <a
+                                href={`https://wa.me/${order.clientPhone.replace(/\D/g, '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-bold transition"
+                                title="Написать в WhatsApp"
+                              >
+                                💬
+                              </a>
+                              <a
+                                href={`tel:${order.clientPhone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold transition"
+                                title="Позвонить"
+                              >
+                                📞
+                              </a>
+                            </div>
+                          )}
                         </div>
 
                         {badges.length > 0 && (

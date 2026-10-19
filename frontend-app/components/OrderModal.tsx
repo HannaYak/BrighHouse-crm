@@ -453,18 +453,18 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-6xl h-[92vh] max-h-[880px] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-6xl h-[96vh] md:h-[92vh] max-h-[920px] flex flex-col overflow-hidden">
         {/* Шапка */}
-        <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="px-4 py-3 md:px-6 md:py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <span className="font-mono text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded">
               {form.orderNumber || 'НОВЫЙ ЗАКАЗ'}
             </span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${form.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
               {form.status === 'COMPLETED' ? '✓ ОПЛАЧЕН' : form.status || 'В РАБОТЕ'}
             </span>
-            <h2 className="text-base font-bold text-slate-800">
+            <h2 className="text-sm sm:text-base font-bold text-slate-800 truncate">
               {form.clientName ? `Заказ: ${form.clientName}` : 'Новая заявка BrightHouse'}
             </h2>
             {!form.id && hasRestoredDraft && (
@@ -494,9 +494,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
         </div>
 
         {/* Контент */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
           {/* Левая колонка */}
-          <div className="w-[55%] p-6 border-r border-slate-100 overflow-y-auto space-y-4">
+          <div className="w-full md:w-[55%] p-4 md:p-6 border-b md:border-b-0 md:border-r border-slate-100 overflow-y-auto space-y-4">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -843,12 +843,25 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Телефон</label>
-                  <input
-                    type="text"
-                    value={form.clientPhone}
-                    onChange={(e) => setForm({ ...form, clientPhone: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-semibold"
-                  />
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={form.clientPhone}
+                      onChange={(e) => setForm({ ...form, clientPhone: e.target.value })}
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-semibold"
+                    />
+                    {form.clientPhone && (
+                      <a
+                        href={`https://wa.me/${form.clientPhone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 transition"
+                        title="Открыть в WhatsApp"
+                      >
+                        💬 WA
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -876,7 +889,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
           </div>
 
           {/* Правая колонка */}
-          <div className="w-[45%] p-6 flex flex-col justify-between bg-slate-50/40 overflow-y-auto space-y-4">
+          <div className="w-full md:w-[45%] p-4 md:p-6 flex flex-col justify-between bg-slate-50/40 overflow-y-auto space-y-4">
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
                 <div>

@@ -356,7 +356,7 @@ export default function SchedulePage() {
   }, {} as Record<number, any[]>);
 
   return (
-    <div className="space-y-6 max-w-full mx-auto pb-12 px-4">
+    <div className="space-y-4 sm:space-y-6 max-w-full mx-auto pb-12 px-0 sm:px-4">
       {/* Шапка */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>

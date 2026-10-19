@@ -260,7 +260,7 @@ export default function CalculatorPage() {
             <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
               1. Категория помещения и тариф
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {[
                 { type: 'STANDARD', label: 'Стандарт' },
                 { type: 'STANDARD_PLUS', label: 'Стандарт +' },
@@ -530,17 +530,28 @@ export default function CalculatorPage() {
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap justify-between items-center gap-2">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 💬 Текст сообщения клиенту ({lang})
               </span>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1 shadow-2xs"
-              >
-                {copied ? '✅ Скопировано!' : '📋 Копировать текст'}
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(generateProposalText())}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1 shadow-2xs"
+                  title="Отправить расчет в WhatsApp"
+                >
+                  💬 WhatsApp
+                </a>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1 shadow-2xs"
+                >
+                  {copied ? '✅ Скопировано!' : '📋 Копировать'}
+                </button>
+              </div>
             </div>
 
             <textarea

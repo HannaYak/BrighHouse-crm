@@ -265,7 +265,21 @@ export default function ClientsPage() {
                 >
                   <div>
                     <div className="font-bold text-xs text-slate-900">{client.name || 'Без имени'}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">📞 {client.phone || 'Нет телефона'}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                      <span>📞 {client.phone || 'Нет телефона'}</span>
+                      {client.phone && (
+                        <a
+                          href={`https://wa.me/${client.phone.replace(/\D/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[9px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded font-bold transition"
+                          title="Открыть в WhatsApp"
+                        >
+                          💬 WA
+                        </a>
+                      )}
+                    </div>
                     <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[220px]">
                       📍 {client.address || 'Адрес не указан'}
                     </div>
@@ -287,13 +301,36 @@ export default function ClientsPage() {
         {/* Детальная карточка клиента (справа) */}
         <div className="md:col-span-7 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
           {selectedClient ? (
-            <div className="flex flex-col h-full overflow-y-auto p-6 space-y-6">
+            <div className="flex flex-col h-full overflow-y-auto p-4 sm:p-6 space-y-6">
               {/* Шапка клиента */}
-              <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+              <div className="flex flex-wrap sm:flex-nowrap justify-between items-start border-b border-slate-100 pb-4 gap-3">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900">{selectedClient.name}</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    📞 {selectedClient.phone} • 📍 {selectedClient.address || 'Адрес не указан'}
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900">{selectedClient.name}</h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <span className="text-xs text-slate-500 font-mono">📞 {selectedClient.phone || 'Без телефона'}</span>
+                    {selectedClient.phone && (
+                      <a
+                        href={`https://wa.me/${selectedClient.phone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition shadow-2xs"
+                        title="Написать клиенту в WhatsApp"
+                      >
+                        💬 WhatsApp
+                      </a>
+                    )}
+                    {selectedClient.phone && (
+                      <a
+                        href={`tel:${selectedClient.phone}`}
+                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 transition"
+                        title="Позвонить клиенту"
+                      >
+                        📞 Звонок
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    📍 {selectedClient.address || 'Адрес не указан'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
