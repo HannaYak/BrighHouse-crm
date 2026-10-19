@@ -15,6 +15,7 @@ let isStarting = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 let authStateHelper = null;
+let isSuperseded = false;
 
 // Кэш для getMessage (требуется Baileys для обработки Retry / PreKey запросов)
 const messageStore = new Map();
@@ -406,20 +407,13 @@ async function startWhatsAppListener() {
         const statusCode = error?.output?.statusCode || error?.statusCode;
 
         if (statusCode === DisconnectReason.connectionReplaced) {
-          reconnectAttempts++;
-          if (reconnectAttempts <= 3) {
-            console.log(`⚠️ Сессия перехвачена (код 440). Возможно, завершается предыдущий контейнер Render. Повторная попытка #${reconnectAttempts} через 25 сек...`);
-            if (!reconnectTimer) {
-              reconnectTimer = setTimeout(() => {
-                reconnectTimer = null;
-                startWhatsAppListener().catch(console.error);
-              }, 25000);
-            }
-            return;
-          } else {
-            console.log('⚠️ Сессия стабильно удерживается другим процессом (код 440). Ожидание heartbeat...');
-            return;
+          isSuperseded = true;
+          console.log('⚠️ Сессия перехвачена более новым процессом (код 440). Уступаем подключение новому контейнеру.');
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
           }
+          return;
         }
 
         if (statusCode === DisconnectReason.loggedOut) {
@@ -547,6 +541,7 @@ const server = http.createServer(async (req, res) => {
 
   if ((req.method === 'POST' || req.method === 'GET') && req.url === '/reconnect') {
     console.log('🔄 Принудительный запрос на переподключение WhatsApp сокета...');
+    isSuperseded = false;
     isStarting = false;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -562,6 +557,7 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
+        isSuperseded = false;
         // Если сокет не активен, пробуем инициировать подключение и подождать до 6 секунд
         if (!activeSock) {
           console.log('⚠️ Запрос на отправку при неактивном сокете. Пробуем подключиться...');
@@ -716,7 +712,7 @@ process.on('SIGINT', shutdown);
 
 // Фоновый Heartbeat для гарантии постоянного подключения
 setInterval(() => {
-  if (!activeSock && !isStarting && !reconnectTimer) {
+  if (!activeSock && !isStarting && !reconnectTimer && !isSuperseded) {
     console.log('💓 [HEARTBEAT] Сокет WhatsApp не активен, инициируем авто-подключение...');
     startWhatsAppListener().catch(console.error);
   }
