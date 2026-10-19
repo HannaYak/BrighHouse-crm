@@ -23,13 +23,35 @@ let authStateHelper = null;
 const messageStore = new Map();
 const MAX_STORED_MESSAGES = 5000;
 
-function storeMessage(key, message) {
+// Карта сопоставления LID -> реальный телефонный номер (без плюса, например '48123456789')
+const lidToPhoneMap = new Map();
+
+function recordLidMapping(lid, phone) {
+  if (!lid || !phone) return;
+  const cleanPhone = phone.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+  if (!cleanPhone) return;
+  const cleanLid = lid.replace('@lid', '').split(':')[0];
+  lidToPhoneMap.set(cleanLid, cleanPhone);
+  lidToPhoneMap.set(`${cleanLid}@lid`, cleanPhone);
+}
+
+// Сохранение сообщения в оперативную память и персистентную сессию в PostgreSQL
+async function storeMessage(key, message) {
   if (!key?.id || !message) return;
   if (messageStore.size >= MAX_STORED_MESSAGES) {
     const oldestKey = messageStore.keys().next().value;
     messageStore.delete(oldestKey);
   }
   messageStore.set(key.id, message);
+
+  try {
+    const serialized = JSON.stringify(message);
+    await prisma.whatsAppSession.upsert({
+      where: { id: `msg-${key.id}` },
+      update: { data: serialized },
+      create: { id: `msg-${key.id}`, data: serialized }
+    });
+  } catch {}
 }
 
 // Кэш счетчика повторов для предотвращения зацикливания повторов
@@ -43,22 +65,34 @@ const msgRetryCounterCache = {
   del: (key) => retryMap.delete(key)
 };
 
-// Извлечение номера телефона отправителя с полной поддержкой @lid
+// Извлечение номера телефона отправителя с полной поддержкой @lid и кэша маппинга
 function extractPhone(msg, remoteJid) {
   if (msg.key?.senderPn && msg.key.senderPn.endsWith('@s.whatsapp.net')) {
-    return msg.key.senderPn.replace('@s.whatsapp.net', '');
+    const pn = msg.key.senderPn.replace('@s.whatsapp.net', '');
+    if (remoteJid?.endsWith('@lid')) recordLidMapping(remoteJid, pn);
+    return pn;
   }
   if (msg.key?.participantPn && msg.key.participantPn.endsWith('@s.whatsapp.net')) {
-    return msg.key.participantPn.replace('@s.whatsapp.net', '');
+    const pn = msg.key.participantPn.replace('@s.whatsapp.net', '');
+    if (remoteJid?.endsWith('@lid')) recordLidMapping(remoteJid, pn);
+    return pn;
   }
-  if (remoteJid.endsWith('@s.whatsapp.net')) {
+  if (remoteJid?.endsWith('@s.whatsapp.net')) {
     return remoteJid.replace('@s.whatsapp.net', '');
   }
   if (msg.key?.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
-    return msg.key.remoteJidAlt.replace('@s.whatsapp.net', '');
+    const pn = msg.key.remoteJidAlt.replace('@s.whatsapp.net', '');
+    if (remoteJid?.endsWith('@lid')) recordLidMapping(remoteJid, pn);
+    return pn;
   }
   if (msg.key?.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
-    return msg.key.participant.replace('@s.whatsapp.net', '');
+    const pn = msg.key.participant.replace('@s.whatsapp.net', '');
+    if (remoteJid?.endsWith('@lid')) recordLidMapping(remoteJid, pn);
+    return pn;
+  }
+  if (remoteJid?.endsWith('@lid')) {
+    const mapped = lidToPhoneMap.get(remoteJid) || lidToPhoneMap.get(remoteJid.split('@')[0]);
+    if (mapped) return mapped;
   }
   return '';
 }
@@ -113,16 +147,27 @@ async function processMessage(msg) {
 
     let clientPhone = extractPhone(msg, remoteJid);
 
-    // Если это LID и номер пока не определился — проверяем сохраненный диалог в БД
+    // Если это LID и номер пока не определился — проверяем сохраненный диалог в БД и кэш
     if (!clientPhone && remoteJid.endsWith('@lid')) {
-      try {
-        const existingConv = await prisma.conversation.findFirst({
-          where: { externalId: remoteJid }
-        });
-        if (existingConv?.phone) {
-          clientPhone = existingConv.phone.replace(/\D/g, '');
-        }
-      } catch {}
+      const cached = lidToPhoneMap.get(remoteJid) || lidToPhoneMap.get(remoteJid.split('@')[0]);
+      if (cached) {
+        clientPhone = cached;
+      } else {
+        try {
+          const existingConv = await prisma.conversation.findFirst({
+            where: {
+              OR: [
+                { externalId: remoteJid },
+                { externalId: `${remoteJid.split('@')[0]}@lid` }
+              ]
+            }
+          });
+          if (existingConv?.phone) {
+            clientPhone = existingConv.phone.replace(/\D/g, '');
+            recordLidMapping(remoteJid, clientPhone);
+          }
+        } catch {}
+      }
     }
 
     const isFromMe = Boolean(msg.key.fromMe);
@@ -154,7 +199,27 @@ async function processMessage(msg) {
 
     const currentUnread = existingConv?.unreadCount || 0;
     const newUnread = isIncoming ? currentUnread + 1 : 0;
-    const convExternalId = existingConv ? existingConv.externalId : targetExternalId;
+    
+    // Всегда переводим диалог на номер телефона @s.whatsapp.net, если телефон известен
+    let convExternalId = clientPhone 
+      ? `${clientPhone}@s.whatsapp.net` 
+      : (existingConv ? existingConv.externalId : targetExternalId);
+
+    // Если ранее диалог был записан под @lid, обновляем его на номер телефона
+    if (existingConv && clientPhone && existingConv.externalId.endsWith('@lid')) {
+      try {
+        await prisma.conversation.update({
+          where: { id: existingConv.id },
+          data: {
+            externalId: convExternalId,
+            phone: `+${clientPhone}`,
+            ...(isIncoming && clientName ? { clientName } : {})
+          }
+        });
+        existingConv.externalId = convExternalId;
+        existingConv.phone = `+${clientPhone}`;
+      } catch {}
+    }
 
     const conversation = await prisma.conversation.upsert({
       where: { externalId: convExternalId },
@@ -163,14 +228,12 @@ async function processMessage(msg) {
         lastActivity: new Date(),
         updatedAt: new Date(),
         unreadCount: newUnread,
-        ...(isIncoming ? { 
-          clientName, 
-          phone: clientPhone ? `+${clientPhone}` : existingConv?.phone 
-        } : {})
+        ...(clientPhone ? { phone: `+${clientPhone}` } : {}),
+        ...(isIncoming ? { clientName } : {})
       },
       create: {
         channel: 'WHATSAPP',
-        externalId: targetExternalId,
+        externalId: convExternalId,
         senderName: clientName,
         clientName: clientName,
         phone: clientPhone ? `+${clientPhone}` : null,
@@ -263,30 +326,46 @@ async function startWhatsAppListener() {
       keepAliveIntervalMs: 25000,
       syncFullHistory: false,
       markOnlineOnConnect: true,
+      msgRetryCounterCache,
       browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
       getMessage: async (key) => {
-        if (key?.id) {
-          if (messageStore.has(key.id)) {
-            return messageStore.get(key.id);
-          }
-          try {
-            const dbMsg = await prisma.message.findFirst({
-              where: {
-                OR: [
-                  { id: key.id },
-                  { conversation: { externalId: key.remoteJid } }
-                ]
-              },
-              orderBy: { createdAt: 'desc' }
-            });
-            if (dbMsg?.text) {
-              return {
-                conversation: dbMsg.text,
-                extendedTextMessage: { text: dbMsg.text }
-              };
-            }
-          } catch {}
+        if (!key?.id) return undefined;
+
+        // 1. Быстрый оперативный кэш
+        if (messageStore.has(key.id)) {
+          return messageStore.get(key.id);
         }
+
+        // 2. Персистентный кэш в PostgreSQL
+        try {
+          const row = await prisma.whatsAppSession.findUnique({
+            where: { id: `msg-${key.id}` }
+          });
+          if (row?.data) {
+            const parsed = JSON.parse(row.data);
+            messageStore.set(key.id, parsed);
+            return parsed;
+          }
+        } catch {}
+
+        // 3. Fallback: поиск по тексту в таблице Message базы CRM (только conversation, без двойных полей)
+        try {
+          const dbMsg = await prisma.message.findFirst({
+            where: {
+              OR: [
+                { id: key.id },
+                { conversation: { externalId: key.remoteJid } }
+              ]
+            },
+            orderBy: { createdAt: 'desc' }
+          });
+          if (dbMsg?.text) {
+            return {
+              conversation: dbMsg.text
+            };
+          }
+        } catch {}
+
         return undefined;
       }
     });
@@ -395,6 +474,55 @@ async function startWhatsAppListener() {
         }
       }
     });
+
+    // Обработка события раскрытия телефонного номера из LID в WhatsApp
+    sock.ev.on('chats.phoneNumberShare', async ({ lid, jid }) => {
+      console.log(`📱 [PHONE SHARE EVENT] LID: ${lid} -> JID: ${jid}`);
+      recordLidMapping(lid, jid);
+      const cleanPhone = jid?.replace('@s.whatsapp.net', '')?.replace(/\D/g, '');
+      if (cleanPhone) {
+        try {
+          const conv = await prisma.conversation.findFirst({
+            where: {
+              OR: [
+                { externalId: lid },
+                { externalId: `${lid.split('@')[0]}@lid` }
+              ]
+            }
+          });
+          if (conv) {
+            const newExternalId = `${cleanPhone}@s.whatsapp.net`;
+            await prisma.conversation.update({
+              where: { id: conv.id },
+              data: {
+                phone: `+${cleanPhone}`,
+                externalId: newExternalId
+              }
+            });
+            console.log(`✅ [PHONE SHARE] Диалог ${conv.id} переведен на номер +${cleanPhone}`);
+          }
+        } catch (e) {
+          console.error('Ошибка в chats.phoneNumberShare:', e.message);
+        }
+      }
+    });
+
+    // Извлечение связок LID -> PN из контактов
+    sock.ev.on('contacts.upsert', (contacts) => {
+      for (const c of contacts || []) {
+        if (c.lid && (c.id || c.jid)) {
+          recordLidMapping(c.lid, c.jid || c.id);
+        }
+      }
+    });
+
+    sock.ev.on('contacts.update', (updates) => {
+      for (const u of updates || []) {
+        if (u.lid && (u.id || u.jid)) {
+          recordLidMapping(u.lid, u.jid || u.id);
+        }
+      }
+    });
   } catch (err) {
     isStarting = false;
     console.error('Ошибка инициализации WhatsApp слушателя:', err.message);
@@ -436,8 +564,6 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
-        const { to, text } = JSON.parse(body);
-
         // Если сокет не активен, пробуем инициировать подключение и подождать до 6 секунд
         if (!activeSock) {
           console.log('⚠️ Запрос на отправку при неактивном сокете. Пробуем подключиться...');
@@ -455,12 +581,23 @@ const server = http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'WhatsApp сокет сейчас не подключен. Повторите попытку через пару секунд.' }));
         }
 
+        let { to, text, phone, conversationId } = JSON.parse(body);
+
         let targetJid = to;
 
-        // Ищем диалог в базе данных
+        // 1. Если явно передан телефон, используем его в первую очередь
+        if (phone) {
+          const cleanPhone = phone.replace(/\D/g, '');
+          if (cleanPhone) {
+            targetJid = `${cleanPhone}@s.whatsapp.net`;
+          }
+        }
+
+        // 2. Ищем диалог в базе данных
         const conv = await prisma.conversation.findFirst({
           where: {
             OR: [
+              ...(conversationId ? [{ id: conversationId }] : []),
               { externalId: to },
               { id: to }
             ]
@@ -470,14 +607,33 @@ const server = http.createServer(async (req, res) => {
         if (conv) {
           if (conv.phone) {
             const cleanPhone = conv.phone.replace(/\D/g, '');
-            targetJid = `${cleanPhone}@s.whatsapp.net`;
-          } else if (conv.externalId) {
+            if (cleanPhone) targetJid = `${cleanPhone}@s.whatsapp.net`;
+          } else if (conv.externalId && !conv.externalId.endsWith('@lid')) {
             targetJid = conv.externalId;
           }
-        } else if (to.endsWith('@lid') || to.endsWith('@s.whatsapp.net')) {
-          targetJid = to;
-        } else {
-          const cleanDigits = to.replace(/\D/g, '');
+        }
+
+        // 3. Если JID все еще @lid, проверяем кэш сопоставления LID -> PN
+        if (targetJid.endsWith('@lid')) {
+          const resolved = lidToPhoneMap.get(targetJid) || lidToPhoneMap.get(targetJid.split('@')[0]);
+          if (resolved) {
+            console.log(`🎯 [LID RESOLVED] Заменен LID ${targetJid} на реальный номер ${resolved}@s.whatsapp.net`);
+            targetJid = `${resolved}@s.whatsapp.net`;
+            if (conv) {
+              prisma.conversation.update({
+                where: { id: conv.id },
+                data: {
+                  phone: `+${resolved}`,
+                  externalId: targetJid
+                }
+              }).catch(() => {});
+            }
+          }
+        }
+
+        // 4. Если это простой номер телефона без суффикса
+        if (!targetJid.includes('@')) {
+          const cleanDigits = targetJid.replace(/\D/g, '');
           if (!cleanDigits) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ error: 'Не найден реальный номер телефона получателя' }));
@@ -488,11 +644,11 @@ const server = http.createServer(async (req, res) => {
         console.log(`🚀 Отправка в WhatsApp на ${targetJid}: "${text}"`);
         const sent = await activeSock.sendMessage(targetJid, { text });
         if (sent?.key?.id && sent?.message) {
-          storeMessage(sent.key, sent.message);
+          await storeMessage(sent.key, sent.message);
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true }));
+        res.end(JSON.stringify({ success: true, jid: targetJid }));
       } catch (e) {
         console.error('Ошибка отправки в шлюзе:', e);
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -566,7 +722,43 @@ setInterval(() => {
   }
 }, 30000);
 
+// Предзагрузка существующих телефонных номеров из диалогов базы данных в кэш маппинга
+async function preloadMappings() {
+  try {
+    const convs = await prisma.conversation.findMany({
+      where: { phone: { not: null } },
+      select: { externalId: true, phone: true }
+    });
+    for (const c of convs) {
+      if (c.externalId && c.phone) {
+        recordLidMapping(c.externalId, c.phone);
+      }
+    }
+    console.log(`📋 [INIT] Загружено ${lidToPhoneMap.size} связок LID/номеров из базы CRM`);
+  } catch (e) {
+    console.warn('Не удалось предзагрузить маппинги:', e.message);
+  }
+}
+
+// Очистка старых кэшированных сообщений (> 48 часов) из PostgreSQL раз в сутки
+setInterval(async () => {
+  try {
+    const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000);
+    const deleted = await prisma.whatsAppSession.deleteMany({
+      where: {
+        id: { startsWith: 'msg-' },
+        updatedAt: { lt: twoDaysAgo }
+      }
+    });
+    if (deleted.count > 0) {
+      console.log(`🧹 [CLEANUP] Удалено ${deleted.count} устаревших сообщений из кэша retry`);
+    }
+  } catch {}
+}, 24 * 3600 * 1000);
+
 server.listen(3001, '127.0.0.1', () => {
   console.log('🚀 Локальный шлюз отправки WhatsApp запущен на порту 3001');
-  startWhatsAppListener().catch(console.error);
+  preloadMappings().then(() => {
+    startWhatsAppListener().catch(console.error);
+  });
 });

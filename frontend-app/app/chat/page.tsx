@@ -626,8 +626,39 @@ export default function ChatPage() {
                       {PLATFORM_CONFIG[selectedContact.platform].icon} {PLATFORM_CONFIG[selectedContact.platform].label}
                     </span>
                   </h3>
-                  <div className="text-[11px] text-slate-400">
-                    {selectedContact.phone || 'Без телефона'} • {selectedContact.district || 'Варшава'}
+                  <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                    <span>{selectedContact.phone || 'Без телефона'}</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const newPhone = window.prompt('Введите номер телефона клиента (например, +48...):', selectedContact.phone || '+48');
+                        if (newPhone && newPhone.trim() && newPhone.trim() !== '+48') {
+                          try {
+                            const res = await fetch('/api/chat/status', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                conversationId: selectedContact.id,
+                                phone: newPhone.trim(),
+                              }),
+                            });
+                            if (res.ok) {
+                              const updated = await res.json();
+                              setSelectedContact((prev) => prev ? { ...prev, phone: updated.phone } : null);
+                              await loadConversations();
+                            } else {
+                              alert('Ошибка обновления номера телефона');
+                            }
+                          } catch (e: any) {
+                            alert(e.message);
+                          }
+                        }
+                      }}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer"
+                    >
+                      {selectedContact.phone ? '✏️ Изменить' : '➕ Указать телефон'}
+                    </button>
+                    <span>• {selectedContact.district || 'Варшава'}</span>
                   </div>
                 </div>
               </div>

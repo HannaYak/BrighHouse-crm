@@ -76,7 +76,11 @@ export async function POST(request: Request) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: conversation.externalId,
+            to: conversation.phone 
+              ? `${conversation.phone.replace(/\D/g, '')}@s.whatsapp.net` 
+              : conversation.externalId,
+            phone: conversation.phone,
+            conversationId: conversation.id,
             text,
           }),
         });
