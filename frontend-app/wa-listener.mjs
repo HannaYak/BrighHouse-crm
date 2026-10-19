@@ -326,6 +326,16 @@ async function startWhatsAppListener() {
       markOnlineOnConnect: true,
       msgRetryCounterCache,
       browser: Browsers.ubuntu('Chrome'),
+      shouldIgnoreJid: (jid) => {
+        if (!jid) return true;
+        if (jid === 'status@broadcast' || jid.endsWith('@broadcast')) return true;
+        const myLid = state.creds?.me?.lid;
+        if (myLid) {
+          const rawLid = myLid.split(':')[0].split('@')[0];
+          if (jid.includes(rawLid)) return true;
+        }
+        return false;
+      },
       getMessage: async (key) => {
         if (!key?.id) return { conversation: '' };
 
