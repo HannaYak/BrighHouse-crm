@@ -19,8 +19,14 @@ export const prisma = globalThis.__prismaClient || (globalThis.__prismaClient = 
 export function restoreBuffers(obj) {
   if (!obj || typeof obj !== 'object') return obj;
   if (Buffer.isBuffer(obj)) return obj;
-  if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
-    return Buffer.from(obj.data);
+  if (obj.type === 'Buffer' || obj.buffer === true) {
+    const val = obj.data ?? obj.value;
+    if (typeof val === 'string') {
+      return Buffer.from(val, 'base64');
+    }
+    if (Array.isArray(val) || val instanceof Uint8Array) {
+      return Buffer.from(val);
+    }
   }
   if (Array.isArray(obj)) {
     return obj.map(restoreBuffers);

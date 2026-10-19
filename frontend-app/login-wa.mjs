@@ -21,7 +21,8 @@ async function startLogin() {
     logger: pino({ level: 'silent' }),
     auth: state,
     connectTimeoutMs: 60000,
-    syncFullHistory: false
+    syncFullHistory: false,
+    browser: ['Ubuntu', 'Chrome', '124.0.0.0']
   });
 
   sock.ev.on('creds.update', saveCreds);

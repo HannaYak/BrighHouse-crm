@@ -18,9 +18,9 @@ let reconnectTimer = null;
 let reconnectAttempts = 0;
 let authStateHelper = null;
 
-// Кэш последних сырых сообщений для getMessage (требуется Baileys для обработки Retry/PreKey запросов)
+// Кэш для getMessage (требуется Baileys для обработки Retry / PreKey запросов)
 const messageStore = new Map();
-const MAX_STORED_MESSAGES = 200;
+const MAX_STORED_MESSAGES = 1000;
 
 function storeMessage(key, message) {
   if (!key?.id || !message) return;
@@ -29,6 +29,174 @@ function storeMessage(key, message) {
     messageStore.delete(oldestKey);
   }
   messageStore.set(key.id, message);
+}
+
+// Кэш счетчика повторов для предотвращения зацикливания повторов
+const retryMap = new Map();
+const msgRetryCounterCache = {
+  get: (key) => retryMap.get(key),
+  set: (key, val) => {
+    if (retryMap.size > 2000) retryMap.clear();
+    retryMap.set(key, val);
+  },
+  del: (key) => retryMap.delete(key)
+};
+
+// Извлечение номера телефона отправителя с полной поддержкой @lid
+function extractPhone(msg, remoteJid) {
+  if (msg.key?.senderPn && msg.key.senderPn.endsWith('@s.whatsapp.net')) {
+    return msg.key.senderPn.replace('@s.whatsapp.net', '');
+  }
+  if (msg.key?.participantPn && msg.key.participantPn.endsWith('@s.whatsapp.net')) {
+    return msg.key.participantPn.replace('@s.whatsapp.net', '');
+  }
+  if (remoteJid.endsWith('@s.whatsapp.net')) {
+    return remoteJid.replace('@s.whatsapp.net', '');
+  }
+  if (msg.key?.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
+    return msg.key.remoteJidAlt.replace('@s.whatsapp.net', '');
+  }
+  if (msg.key?.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
+    return msg.key.participant.replace('@s.whatsapp.net', '');
+  }
+  return '';
+}
+
+// Единый обработчик сохранения сообщения в базу данных CRM
+async function processMessage(msg) {
+  try {
+    const remoteJid = msg.key?.remoteJid;
+    if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) {
+      return;
+    }
+
+    if (msg.message) {
+      storeMessage(msg.key, msg.message);
+    }
+
+    // Служебные заглушки без контента не сохраняем в CRM
+    if (msg.messageStubType) {
+      console.log(`ℹ️ [MSG STUB] remoteJid: ${remoteJid}, stubType: ${msg.messageStubType}, params:`, msg.messageStubParameters);
+      return;
+    }
+
+    // Распаковываем текст из сообщения
+    const msgObj = msg.message || {};
+    const content = 
+      msgObj.ephemeralMessage?.message ||
+      msgObj.viewOnceMessage?.message ||
+      msgObj.viewOnceMessageV2?.message ||
+      msgObj.documentWithCaptionMessage?.message ||
+      msgObj;
+
+    const text = 
+      content.conversation || 
+      content.extendedTextMessage?.text || 
+      content.imageMessage?.caption || 
+      content.videoMessage?.caption ||
+      content.documentMessage?.caption ||
+      content.buttonsResponseMessage?.selectedDisplayText ||
+      content.templateButtonReplyMessage?.selectedDisplayText ||
+      content.listResponseMessage?.title ||
+      (content.imageMessage ? '📷 Фотография' : '') ||
+      (content.videoMessage ? '📹 Видео' : '') ||
+      (content.audioMessage ? '🎤 Голосовое' : '') ||
+      (content.documentMessage ? `📄 Документ: ${content.documentMessage.fileName || 'файл'}` : '') ||
+      (content.contactMessage ? `👤 Контакт: ${content.contactMessage.displayName || ''}` : '') ||
+      (content.locationMessage ? '📍 Локация' : '') ||
+      '';
+
+    if (!text) {
+      return;
+    }
+
+    let clientPhone = extractPhone(msg, remoteJid);
+
+    // Если это LID и номер пока не определился — проверяем сохраненный диалог в БД
+    if (!clientPhone && remoteJid.endsWith('@lid')) {
+      try {
+        const existingConv = await prisma.conversation.findFirst({
+          where: { externalId: remoteJid }
+        });
+        if (existingConv?.phone) {
+          clientPhone = existingConv.phone.replace(/\D/g, '');
+        }
+      } catch {}
+    }
+
+    const isFromMe = Boolean(msg.key.fromMe);
+    const isIncoming = !isFromMe;
+
+    console.log(`📥 [MSG RECV] От: ${clientPhone ? `+${clientPhone}` : remoteJid} | isIncoming: ${isIncoming} | Текст: "${text.slice(0, 80)}"`);
+
+    // Отмечаем прочитанным входящее сообщение
+    if (isIncoming && activeSock) {
+      try {
+        await activeSock.readMessages([msg.key]);
+      } catch {}
+    }
+
+    const targetExternalId = clientPhone ? `${clientPhone}@s.whatsapp.net` : remoteJid;
+    const clientName = isIncoming 
+      ? (msg.pushName || (clientPhone ? `+${clientPhone}` : 'Клиент WhatsApp'))
+      : 'Менеджер';
+
+    const existingConv = await prisma.conversation.findFirst({
+      where: {
+        OR: [
+          { externalId: targetExternalId },
+          { externalId: remoteJid },
+          ...(clientPhone ? [{ phone: `+${clientPhone}` }] : [])
+        ]
+      }
+    });
+
+    const currentUnread = existingConv?.unreadCount || 0;
+    const newUnread = isIncoming ? currentUnread + 1 : 0;
+    const convExternalId = existingConv ? existingConv.externalId : targetExternalId;
+
+    const conversation = await prisma.conversation.upsert({
+      where: { externalId: convExternalId },
+      update: {
+        lastMessage: text,
+        lastActivity: new Date(),
+        updatedAt: new Date(),
+        unreadCount: newUnread,
+        ...(isIncoming ? { 
+          clientName, 
+          phone: clientPhone ? `+${clientPhone}` : existingConv?.phone 
+        } : {})
+      },
+      create: {
+        channel: 'WHATSAPP',
+        externalId: targetExternalId,
+        senderName: clientName,
+        clientName: clientName,
+        phone: clientPhone ? `+${clientPhone}` : null,
+        lastMessage: text,
+        lastActivity: new Date(),
+        updatedAt: new Date(),
+        unreadCount: isIncoming ? 1 : 0,
+        status: 'NONE',
+      },
+    });
+
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        senderId: isIncoming ? (clientPhone || remoteJid) : 'manager',
+        senderName: clientName,
+        senderType: isIncoming ? 'CLIENT' : 'MANAGER',
+        text: text,
+        isIncoming: isIncoming,
+        timestamp: new Date((msg.messageTimestamp || Date.now() / 1000) * 1000),
+      },
+    });
+
+    console.log(`✅ [CRM OK] Сохранено в диалог ${conversation.id}`);
+  } catch (err) {
+    console.error('Ошибка сохранения сообщения в БД:', err.message);
+  }
 }
 
 // Запуск слушателя WhatsApp
@@ -55,7 +223,7 @@ async function startWhatsAppListener() {
   console.log('⏳ Подготовка сессии WhatsApp из PostgreSQL...');
 
   authStateHelper = await usePrismaAuthState(prisma);
-  const { state, saveCreds, removeSessionKey } = authStateHelper;
+  const { state, saveCreds } = authStateHelper;
 
   let version = [2, 2413, 51];
   try {
@@ -73,20 +241,11 @@ async function startWhatsAppListener() {
     syncFullHistory: false,
     markOnlineOnConnect: true,
     browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
+    msgRetryCounterCache,
     getMessage: async (key) => {
       if (key?.id && messageStore.has(key.id)) {
         return messageStore.get(key.id);
       }
-      try {
-        if (key?.id) {
-          const dbMsg = await prisma.message.findFirst({
-            where: { id: key.id }
-          });
-          if (dbMsg?.text) {
-            return { conversation: dbMsg.text };
-          }
-        }
-      } catch {}
       return undefined;
     }
   });
@@ -127,9 +286,13 @@ async function startWhatsAppListener() {
 
       const error = lastDisconnect?.error;
       const statusCode = error?.output?.statusCode || error?.statusCode;
-      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-      if (isLoggedOut) {
+      if (statusCode === DisconnectReason.connectionReplaced) {
+        console.log('⚠️ Сессия перехвачена другим процессом (код 440). Реконнект остановлен для предотвращения конфликта.');
+        return;
+      }
+
+      if (statusCode === DisconnectReason.loggedOut) {
         console.log('❌ Сессия WhatsApp закрыта (Logged Out). Нужен повторный вход через QR.');
         try {
           await authStateHelper?.clearAllAuth();
@@ -139,7 +302,7 @@ async function startWhatsAppListener() {
         return;
       }
 
-      // Экспоненциальный backoff: от 2 сек до макс. 60 сек (код 515 перезапускает быстрее)
+      // Экспоненциальный backoff: от 2 сек до макс. 60 сек
       reconnectAttempts++;
       const delay = statusCode === 515 
         ? 1500 
@@ -163,170 +326,21 @@ async function startWhatsAppListener() {
     const { messages, type } = upsert;
     console.log(`[UPSERT TYPE] Режим: ${type}, сообщений: ${messages?.length || 0}`);
     for (const msg of messages || []) {
-
-      try {
-        const remoteJid = msg.key?.remoteJid;
-        if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) {
-          continue;
-        }
-
-        // Сохраняем сообщение в локальный кэш для getMessage
-        if (msg.message) {
-          storeMessage(msg.key, msg.message);
-        }
-
-        // Перехват stub-сообщений об ошибке дешифрования Signal (Ciphertext Decryption Error)
-        if (msg.messageStubType) {
-          console.warn(`⚠️ [MSG STUB] remoteJid: ${remoteJid}, stubType: ${msg.messageStubType}`);
-          if (msg.messageStubType === 2 || String(msg.messageStubType).includes('CIPHER')) {
-            console.warn(`🔄 Сброс поврежденной ветки ratchet для ${remoteJid}...`);
-            await removeSessionKey(remoteJid);
-          }
-          continue;
-        }
-
-        // Извлекаем реальный номер телефона (с учетом LID)
-        let clientPhone = '';
-        if (remoteJid.endsWith('@s.whatsapp.net')) {
-          clientPhone = remoteJid.replace('@s.whatsapp.net', '');
-        } else if (msg.key?.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
-          clientPhone = msg.key.remoteJidAlt.replace('@s.whatsapp.net', '');
-        } else if (msg.key?.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
-          clientPhone = msg.key.participant.replace('@s.whatsapp.net', '');
-        } else if (sock.signalRepository?.lidMapping?.getPNForLID) {
-          try {
-            const pn = await sock.signalRepository.lidMapping.getPNForLID(remoteJid);
-            if (pn && pn.endsWith('@s.whatsapp.net')) {
-              clientPhone = pn.replace('@s.whatsapp.net', '');
-            }
-          } catch {}
-        }
-
-        // Если это LID и номер пока не определился — проверяем сохраненный диалог в БД
-        if (!clientPhone && remoteJid.endsWith('@lid')) {
-          try {
-            const existingConv = await prisma.conversation.findFirst({
-              where: { externalId: remoteJid }
-            });
-            if (existingConv?.phone) {
-              clientPhone = existingConv.phone.replace(/\D/g, '');
-            }
-          } catch {}
-        }
-
-        // Распаковываем текст из сообщения
-        const msgObj = msg.message || {};
-        const content = 
-          msgObj.ephemeralMessage?.message ||
-          msgObj.viewOnceMessage?.message ||
-          msgObj.viewOnceMessageV2?.message ||
-          msgObj.documentWithCaptionMessage?.message ||
-          msgObj;
-
-        const text = 
-          content.conversation || 
-          content.extendedTextMessage?.text || 
-          content.imageMessage?.caption || 
-          content.videoMessage?.caption ||
-          content.documentMessage?.caption ||
-          content.buttonsResponseMessage?.selectedDisplayText ||
-          content.templateButtonReplyMessage?.selectedDisplayText ||
-          content.listResponseMessage?.title ||
-          (content.imageMessage ? '📷 Фотография' : '') ||
-          (content.videoMessage ? '📹 Видео' : '') ||
-          (content.audioMessage ? '🎤 Голосовое' : '') ||
-          (content.documentMessage ? `📄 Документ: ${content.documentMessage.fileName || 'файл'}` : '') ||
-          (content.contactMessage ? `👤 Контакт: ${content.contactMessage.displayName || ''}` : '') ||
-          (content.locationMessage ? '📍 Локация' : '') ||
-          '';
-
-        const isFromMe = Boolean(msg.key.fromMe);
-        const isIncoming = !isFromMe;
-
-        // Если текст пустой (служебное, зашифрованное или пустое сообщение)
-        if (!text) {
-          // Не отправляем read receipt, чтобы WhatsApp мог повторить попытку расшифровки
-          continue;
-        }
-
-        console.log(`📥 [MSG RECV] От: ${clientPhone ? `+${clientPhone}` : remoteJid} | isIncoming: ${isIncoming} | Текст: "${text.slice(0, 80)}"`);
-
-        // Отмечаем прочитанным только успешно распакованное входящее сообщение
-        if (isIncoming) {
-          try {
-            await sock.readMessages([msg.key]);
-          } catch {}
-        }
-
-        const targetExternalId = clientPhone ? `${clientPhone}@s.whatsapp.net` : remoteJid;
-        const clientName = isIncoming 
-          ? (msg.pushName || (clientPhone ? `+${clientPhone}` : 'Клиент WhatsApp'))
-          : 'Менеджер';
-
-        const existingConv = await prisma.conversation.findFirst({
-          where: {
-            OR: [
-              { externalId: targetExternalId },
-              { externalId: remoteJid },
-              ...(clientPhone ? [{ phone: `+${clientPhone}` }] : [])
-            ]
-          }
-        });
-
-        const currentUnread = existingConv?.unreadCount || 0;
-        const newUnread = isIncoming ? currentUnread + 1 : 0;
-        const convExternalId = existingConv ? existingConv.externalId : targetExternalId;
-
-        const conversation = await prisma.conversation.upsert({
-          where: { externalId: convExternalId },
-          update: {
-            lastMessage: text,
-            lastActivity: new Date(),
-            updatedAt: new Date(),
-            unreadCount: newUnread,
-            ...(isIncoming ? { 
-              clientName, 
-              phone: clientPhone ? `+${clientPhone}` : existingConv?.phone 
-            } : {})
-          },
-          create: {
-            channel: 'WHATSAPP',
-            externalId: targetExternalId,
-            senderName: clientName,
-            clientName: clientName,
-            phone: clientPhone ? `+${clientPhone}` : null,
-            lastMessage: text,
-            lastActivity: new Date(),
-            updatedAt: new Date(),
-            unreadCount: isIncoming ? 1 : 0,
-            status: 'NONE',
-          },
-        });
-
-        await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            senderId: isIncoming ? (clientPhone || remoteJid) : 'manager',
-            senderName: clientName,
-            senderType: isIncoming ? 'CLIENT' : 'MANAGER',
-            text: text,
-            isIncoming: isIncoming,
-            timestamp: new Date((msg.messageTimestamp || Date.now() / 1000) * 1000),
-          },
-        });
-
-        console.log(`✅ [CRM OK] Сохранено в диалог ${conversation.id}`);
-      } catch (err) {
-        console.error('Ошибка сохранения сообщения в БД:', err.message);
-      }
+      await processMessage(msg);
     }
   });
 
-  sock.ev.on('messages.update', (updates) => {
+  // Обработка сообщений из очереди/дешифрованных повторов
+  sock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
       if (update.update?.message) {
         storeMessage(update.key, update.update.message);
         console.log('🔄 Синхронизировано сообщение из очереди:', update.key?.remoteJid);
+        await processMessage({
+          key: update.key,
+          message: update.update.message,
+          messageTimestamp: update.update.messageTimestamp || Math.floor(Date.now() / 1000)
+        });
       }
     }
   });
@@ -362,7 +376,6 @@ const server = http.createServer(async (req, res) => {
           const cleanPhone = conv.phone.replace(/\D/g, '');
           targetJid = `${cleanPhone}@s.whatsapp.net`;
         } else if (to.endsWith('@lid')) {
-          // Если телефон неизвестен, Baileys может отправить напрямую на LID
           targetJid = to;
         } else if (to.endsWith('@s.whatsapp.net')) {
           targetJid = to;
@@ -403,10 +416,18 @@ server.on('error', (err) => {
 
 // Глобальные обработчики необработанных исключений (предотвращают крах процесса на Render)
 process.on('uncaughtException', (err) => {
+  if (err?.message?.includes('Bad MAC')) {
+    console.warn('⚠️ Перехвачена некритическая ошибка Bad MAC при дешифровке, процесс продолжает работу.');
+    return;
+  }
   console.error('💥 [CRITICAL] Uncaught Exception в wa-listener:', err);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
+  if (String(reason)?.includes('Bad MAC')) {
+    console.warn('⚠️ Перехвачен некритический Unhandled Rejection Bad MAC, процесс продолжает работу.');
+    return;
+  }
   console.error('💥 [CRITICAL] Unhandled Rejection в wa-listener:', reason);
 });
 
