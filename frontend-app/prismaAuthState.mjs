@@ -12,6 +12,26 @@ const {
 export const prisma = globalThis.__prismaClient || (globalThis.__prismaClient = new PrismaClient());
 
 /**
+ * Глубокое рекурсивное восстановление NodeJS Buffer.
+ * Предотвращает ошибку "Bad MAC at verifyMAC" в libsignal, восстанавливая
+ * десериализованные объекты { type: 'Buffer', data: [...] } в настоящие Buffer.
+ */
+export function restoreBuffers(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Buffer.isBuffer(obj)) return obj;
+  if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+    return Buffer.from(obj.data);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(restoreBuffers);
+  }
+  for (const key of Object.keys(obj)) {
+    obj[key] = restoreBuffers(obj[key]);
+  }
+  return obj;
+}
+
+/**
  * Высокопроизводительное хранилище сессий Baileys в PostgreSQL через Prisma.
  * Полностью устраняет проблему потери файлов сессии на эфемерных дисках (Render.com).
  * Включает in-memory кэш для быстрой дешифровки сообщений и снижения нагрузки на БД.
@@ -34,7 +54,8 @@ export async function usePrismaAuthState(prismaClient) {
         memoryCache.set(id, null);
         return null;
       }
-      const parsed = JSON.parse(row.data, BufferJSON.reviver);
+      let parsed = JSON.parse(row.data, BufferJSON.reviver);
+      parsed = restoreBuffers(parsed);
       memoryCache.set(id, parsed);
       return parsed;
     } catch (e) {
@@ -44,8 +65,9 @@ export async function usePrismaAuthState(prismaClient) {
   };
 
   const writeData = async (id, data, retries = 3) => {
-    memoryCache.set(id, data);
-    const serialized = JSON.stringify(data, BufferJSON.replacer);
+    const restored = restoreBuffers(data);
+    memoryCache.set(id, restored);
+    const serialized = JSON.stringify(restored, BufferJSON.replacer);
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         await db.whatsAppSession.upsert({
@@ -85,6 +107,8 @@ export async function usePrismaAuthState(prismaClient) {
   if (!creds) {
     creds = initAuthCreds();
     await writeData('creds', creds);
+  } else {
+    creds = restoreBuffers(creds);
   }
 
   return {
@@ -130,6 +154,7 @@ export async function usePrismaAuthState(prismaClient) {
               const rawData = rowMap.get(key);
               if (rawData) {
                 let parsed = JSON.parse(rawData, BufferJSON.reviver);
+                parsed = restoreBuffers(parsed);
                 memoryCache.set(key, parsed);
                 if (type === 'app-state-sync-key' && parsed) {
                   parsed = proto.Message.AppStateSyncKeyData.fromObject(parsed);
@@ -160,8 +185,9 @@ export async function usePrismaAuthState(prismaClient) {
               const key = `${category}-${id}`;
 
               if (value) {
-                memoryCache.set(key, value);
-                upsertTasks.push([key, value]);
+                const restored = restoreBuffers(value);
+                memoryCache.set(key, restored);
+                upsertTasks.push([key, restored]);
               } else {
                 memoryCache.delete(key);
                 deleteIds.push(key);
