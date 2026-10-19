@@ -1,12 +1,9 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
 import { PrismaClient } from '@prisma/client';
-
-const { 
+import { 
   initAuthCreds, 
   BufferJSON, 
   proto 
-} = require('@whiskeysockets/baileys');
+} from '@whiskeysockets/baileys';
 
 // Синглтон PrismaClient для предотвращения создания множественных пулов соединений
 export const prisma = globalThis.__prismaClient || (globalThis.__prismaClient = new PrismaClient());

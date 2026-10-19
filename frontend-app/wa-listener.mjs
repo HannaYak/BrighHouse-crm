@@ -1,12 +1,9 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-
-const { 
-  default: makeWASocket, 
+import makeWASocket, { 
   DisconnectReason,
   fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore
-} = require('@whiskeysockets/baileys');
+  makeCacheableSignalKeyStore,
+  Browsers
+} from '@whiskeysockets/baileys';
 
 import http from 'http';
 import pino from 'pino';
@@ -327,9 +324,9 @@ async function startWhatsAppListener() {
       syncFullHistory: false,
       markOnlineOnConnect: true,
       msgRetryCounterCache,
-      browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
+      browser: Browsers.ubuntu('Chrome'),
       getMessage: async (key) => {
-        if (!key?.id) return undefined;
+        if (!key?.id) return { conversation: '' };
 
         // 1. Быстрый оперативный кэш
         if (messageStore.has(key.id)) {
@@ -348,13 +345,13 @@ async function startWhatsAppListener() {
           }
         } catch {}
 
-        // 3. Fallback: поиск по тексту в таблице Message базы CRM (только conversation, без двойных полей)
+        // 3. Fallback: поиск по тексту в таблице Message базы CRM
         try {
           const dbMsg = await prisma.message.findFirst({
             where: {
               OR: [
                 { id: key.id },
-                { conversation: { externalId: key.remoteJid } }
+                ...(key.remoteJid ? [{ conversation: { externalId: key.remoteJid } }] : [])
               ]
             },
             orderBy: { createdAt: 'desc' }
@@ -366,7 +363,8 @@ async function startWhatsAppListener() {
           }
         } catch {}
 
-        return undefined;
+        // Возвращаем fallback-структуру, чтобы Baileys не сжигал попытку retry
+        return { conversation: '' };
       }
     });
 
@@ -585,53 +583,55 @@ const server = http.createServer(async (req, res) => {
 
         let targetJid = to;
 
-        // 1. Если явно передан телефон, используем его в первую очередь
+        // 1. Если явно передан телефон, проверяем и находим точный JID/LID через onWhatsApp
         if (phone) {
           const cleanPhone = phone.replace(/\D/g, '');
           if (cleanPhone) {
             targetJid = `${cleanPhone}@s.whatsapp.net`;
-          }
-        }
-
-        // 2. Ищем диалог в базе данных
-        const conv = await prisma.conversation.findFirst({
-          where: {
-            OR: [
-              ...(conversationId ? [{ id: conversationId }] : []),
-              { externalId: to },
-              { id: to }
-            ]
-          }
-        });
-
-        if (conv) {
-          if (conv.phone) {
-            const cleanPhone = conv.phone.replace(/\D/g, '');
-            if (cleanPhone) targetJid = `${cleanPhone}@s.whatsapp.net`;
-          } else if (conv.externalId && !conv.externalId.endsWith('@lid')) {
-            targetJid = conv.externalId;
-          }
-        }
-
-        // 3. Если JID все еще @lid, проверяем кэш сопоставления LID -> PN
-        if (targetJid.endsWith('@lid')) {
-          const resolved = lidToPhoneMap.get(targetJid) || lidToPhoneMap.get(targetJid.split('@')[0]);
-          if (resolved) {
-            console.log(`🎯 [LID RESOLVED] Заменен LID ${targetJid} на реальный номер ${resolved}@s.whatsapp.net`);
-            targetJid = `${resolved}@s.whatsapp.net`;
-            if (conv) {
-              prisma.conversation.update({
-                where: { id: conv.id },
-                data: {
-                  phone: `+${resolved}`,
-                  externalId: targetJid
+            try {
+              const [waCheck] = await activeSock.onWhatsApp(cleanPhone);
+              if (waCheck?.exists) {
+                targetJid = waCheck.jid;
+                if (waCheck.lid) {
+                  recordLidMapping(waCheck.lid, cleanPhone);
                 }
-              }).catch(() => {});
+              }
+            } catch {}
+          }
+        } else {
+          // 2. Ищем диалог в базе данных
+          const conv = await prisma.conversation.findFirst({
+            where: {
+              OR: [
+                ...(conversationId ? [{ id: conversationId }] : []),
+                { externalId: to },
+                { id: to }
+              ]
+            }
+          });
+
+          if (conv) {
+            if (conv.phone) {
+              const cleanPhone = conv.phone.replace(/\D/g, '');
+              if (cleanPhone) {
+                targetJid = `${cleanPhone}@s.whatsapp.net`;
+                try {
+                  const [waCheck] = await activeSock.onWhatsApp(cleanPhone);
+                  if (waCheck?.exists) {
+                    targetJid = waCheck.jid;
+                    if (waCheck.lid) {
+                      recordLidMapping(waCheck.lid, cleanPhone);
+                    }
+                  }
+                } catch {}
+              }
+            } else if (conv.externalId) {
+              targetJid = conv.externalId;
             }
           }
         }
 
-        // 4. Если это простой номер телефона без суффикса
+        // 3. Если это простой номер без @, добавляем @s.whatsapp.net
         if (!targetJid.includes('@')) {
           const cleanDigits = targetJid.replace(/\D/g, '');
           if (!cleanDigits) {
