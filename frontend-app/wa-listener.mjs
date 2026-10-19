@@ -4,7 +4,8 @@ const require = createRequire(import.meta.url);
 const { 
   default: makeWASocket, 
   DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys');
 
 import http from 'http';
@@ -20,7 +21,7 @@ let authStateHelper = null;
 
 // Кэш для getMessage (требуется Baileys для обработки Retry / PreKey запросов)
 const messageStore = new Map();
-const MAX_STORED_MESSAGES = 1000;
+const MAX_STORED_MESSAGES = 5000;
 
 function storeMessage(key, message) {
   if (!key?.id || !message) return;
@@ -181,6 +182,24 @@ async function processMessage(msg) {
       },
     });
 
+    // Предотвращение дублирования исходящих сообщений, уже записанных API /api/chat/send
+    if (!isIncoming) {
+      const recentDuplicate = await prisma.message.findFirst({
+        where: {
+          conversationId: conversation.id,
+          isIncoming: false,
+          text: text,
+          createdAt: {
+            gte: new Date(Date.now() - 15000)
+          }
+        }
+      });
+      if (recentDuplicate) {
+        console.log(`ℹ️ [DEDUP] Исходящее сообщение уже сохранено в CRM: ${conversation.id}`);
+        return;
+      }
+    }
+
     await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -235,17 +254,38 @@ async function startWhatsAppListener() {
     const sock = makeWASocket({
       version,
       logger: pino({ level: 'silent' }),
-      auth: state,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+      },
       printQRInTerminal: false,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       syncFullHistory: false,
       markOnlineOnConnect: true,
       browser: ['Ubuntu', 'Chrome', '124.0.0.0'],
-      msgRetryCounterCache,
       getMessage: async (key) => {
-        if (key?.id && messageStore.has(key.id)) {
-          return messageStore.get(key.id);
+        if (key?.id) {
+          if (messageStore.has(key.id)) {
+            return messageStore.get(key.id);
+          }
+          try {
+            const dbMsg = await prisma.message.findFirst({
+              where: {
+                OR: [
+                  { id: key.id },
+                  { conversation: { externalId: key.remoteJid } }
+                ]
+              },
+              orderBy: { createdAt: 'desc' }
+            });
+            if (dbMsg?.text) {
+              return {
+                conversation: dbMsg.text,
+                extendedTextMessage: { text: dbMsg.text }
+              };
+            }
+          } catch {}
         }
         return undefined;
       }
@@ -334,6 +374,9 @@ async function startWhatsAppListener() {
       const { messages, type } = upsert;
       console.log(`[UPSERT TYPE] Режим: ${type}, сообщений: ${messages?.length || 0}`);
       for (const msg of messages || []) {
+        if (msg.key?.id && msg.message) {
+          storeMessage(msg.key, msg.message);
+        }
         await processMessage(msg);
       }
     });
@@ -443,7 +486,10 @@ const server = http.createServer(async (req, res) => {
         }
 
         console.log(`🚀 Отправка в WhatsApp на ${targetJid}: "${text}"`);
-        await activeSock.sendMessage(targetJid, { text });
+        const sent = await activeSock.sendMessage(targetJid, { text });
+        if (sent?.key?.id && sent?.message) {
+          storeMessage(sent.key, sent.message);
+        }
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));

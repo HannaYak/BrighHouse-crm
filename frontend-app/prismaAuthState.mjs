@@ -48,7 +48,10 @@ export async function usePrismaAuthState(prismaClient) {
 
   const readData = async (id) => {
     if (memoryCache.has(id)) {
-      return memoryCache.get(id);
+      const cached = memoryCache.get(id);
+      if (cached !== null && cached !== undefined) {
+        return cached;
+      }
     }
     try {
       let row = await db.whatsAppSession.findUnique({ where: { id } });
@@ -57,7 +60,7 @@ export async function usePrismaAuthState(prismaClient) {
         row = await db.whatsAppSession.findUnique({ where: { id: `${id}.json` } });
       }
       if (!row?.data) {
-        memoryCache.set(id, null);
+        memoryCache.delete(id);
         return null;
       }
       let parsed = JSON.parse(row.data, BufferJSON.reviver);
@@ -125,18 +128,20 @@ export async function usePrismaAuthState(prismaClient) {
           const data = {};
           const missingIds = [];
 
-          // 1. Проверяем кэш в оперативной памяти
+          // 1. Проверяем кэш в оперативной памяти (только валидные значения, не null)
           for (const id of ids) {
             const key = `${type}-${id}`;
             if (memoryCache.has(key)) {
               let val = memoryCache.get(key);
-              if (type === 'app-state-sync-key' && val) {
-                val = proto.Message.AppStateSyncKeyData.fromObject(val);
+              if (val !== null && val !== undefined) {
+                if (type === 'app-state-sync-key' && val) {
+                  val = proto.Message.AppStateSyncKeyData.fromObject(val);
+                }
+                data[id] = val;
+                continue;
               }
-              data[id] = val;
-            } else {
-              missingIds.push(id);
             }
+            missingIds.push(id);
           }
 
           if (missingIds.length === 0) {
@@ -167,7 +172,7 @@ export async function usePrismaAuthState(prismaClient) {
                 }
                 data[id] = parsed;
               } else {
-                memoryCache.set(key, null);
+                memoryCache.delete(key);
                 data[id] = null;
               }
             }
