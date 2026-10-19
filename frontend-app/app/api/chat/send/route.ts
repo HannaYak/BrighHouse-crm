@@ -69,36 +69,73 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Отправка в WhatsApp через локальный шлюз (порт 3001)
+    // 2. Отправка в WhatsApp (Meta Cloud API с fallback на локальный шлюз)
     if (conversation.channel === 'WHATSAPP') {
-      try {
-        const waRes = await fetch('http://127.0.0.1:3001/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: conversation.phone 
-              ? `${conversation.phone.replace(/\D/g, '')}@s.whatsapp.net` 
-              : conversation.externalId,
-            phone: conversation.phone,
-            conversationId: conversation.id,
-            text,
-          }),
-        });
+      const waToken = process.env.WHATSAPP_ACCESS_TOKEN;
+      const waPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      const cleanPhone = (conversation.phone || conversation.externalId || '').replace(/\D/g, '');
 
-        if (!waRes.ok) {
-          const errData = await waRes.json().catch(() => ({}));
-          console.error('WhatsApp Gateway error:', errData);
+      if (waToken && waPhoneId && cleanPhone) {
+        try {
+          const metaRes = await fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${waToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              to: cleanPhone,
+              type: 'text',
+              text: { body: text },
+            }),
+          });
+
+          if (!metaRes.ok) {
+            const errData = await metaRes.json().catch(() => ({}));
+            console.error('Meta WhatsApp API error:', errData);
+            return NextResponse.json(
+              { error: errData.error?.message || 'Ошибка отправки через WhatsApp Cloud API' },
+              { status: 500 }
+            );
+          }
+        } catch (metaErr: any) {
+          console.error('Ошибка вызова Meta API:', metaErr.message);
           return NextResponse.json(
-            { error: errData.error || 'Ошибка отправки в WhatsApp' },
+            { error: 'Сетевая ошибка при отправке через WhatsApp Cloud API' },
             { status: 500 }
           );
         }
-      } catch (err: any) {
-        console.error('Не удалось связаться со шлюзом WhatsApp:', err.message);
-        return NextResponse.json(
-          { error: 'Слушатель WhatsApp не отвечает или сокет отключен' },
-          { status: 503 }
-        );
+      } else {
+        try {
+          const waRes = await fetch('http://127.0.0.1:3001/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: conversation.phone 
+                ? `${conversation.phone.replace(/\D/g, '')}@s.whatsapp.net` 
+                : conversation.externalId,
+              phone: conversation.phone,
+              conversationId: conversation.id,
+              text,
+            }),
+          });
+
+          if (!waRes.ok) {
+            const errData = await waRes.json().catch(() => ({}));
+            console.error('WhatsApp Gateway error:', errData);
+            return NextResponse.json(
+              { error: errData.error || 'Ошибка отправки в WhatsApp' },
+              { status: 500 }
+            );
+          }
+        } catch (err: any) {
+          console.error('Не удалось связаться со шлюзом WhatsApp:', err.message);
+          return NextResponse.json(
+            { error: 'Слушатель WhatsApp не отвечает или сокет отключен' },
+            { status: 503 }
+          );
+        }
       }
     }
 

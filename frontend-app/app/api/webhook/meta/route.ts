@@ -80,6 +80,63 @@ export async function POST(request: Request) {
       return NextResponse.json({ status: 'ok' }, { status: 200 });
     }
 
+    if (body.object === 'whatsapp_business_account') {
+      const entries = body.entry || [];
+      for (const entry of entries) {
+        for (const change of entry.changes || []) {
+          if (change.field === 'messages') {
+            const value = change.value || {};
+            const contacts = value.contacts || [];
+            for (const msg of value.messages || []) {
+              const senderPhone = (msg.from || '').replace(/\D/g, '');
+              if (!senderPhone) continue;
+
+              const contact = contacts.find((c: any) => c.wa_id === msg.from);
+              const clientName = contact?.profile?.name || `+${senderPhone}`;
+              const text = msg.text?.body || msg.image?.caption || (msg.type === 'image' ? '📷 Фотография' : `[${msg.type}]`);
+              if (!text) continue;
+
+              const targetExternalId = `${senderPhone}@s.whatsapp.net`;
+              const conversation = await prisma.conversation.upsert({
+                where: { externalId: targetExternalId },
+                update: {
+                  lastMessage: text,
+                  lastActivity: new Date(),
+                  updatedAt: new Date(),
+                  unreadCount: { increment: 1 },
+                  phone: `+${senderPhone}`,
+                },
+                create: {
+                  channel: 'WHATSAPP',
+                  externalId: targetExternalId,
+                  senderName: clientName,
+                  clientName: clientName,
+                  phone: `+${senderPhone}`,
+                  lastMessage: text,
+                  unreadCount: 1,
+                  status: 'NONE',
+                },
+              });
+
+              await prisma.message.create({
+                data: {
+                  conversationId: conversation.id,
+                  senderId: senderPhone,
+                  senderName: clientName,
+                  senderType: 'CLIENT',
+                  text,
+                  isIncoming: true,
+                  timestamp: new Date(),
+                },
+              });
+              console.log(`📩 [META WA] Сообщение от ${clientName} (+${senderPhone}): ${text}`);
+            }
+          }
+        }
+      }
+      return NextResponse.json({ status: 'ok' }, { status: 200 });
+    }
+
     return NextResponse.json({ status: 'ignored' }, { status: 200 });
   } catch (error) {
     console.error('Ошибка при обработке сообщения Meta:', error);
