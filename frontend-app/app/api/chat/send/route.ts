@@ -50,26 +50,51 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 });
     }
 
-    // 1. Отправка в Telegram
+    // 1. Отправка в Telegram (если настроен бот)
     if (conversation.channel === 'TELEGRAM' && TELEGRAM_BOT_TOKEN) {
-      const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: conversation.externalId,
-          text,
-          parse_mode: 'HTML',
-        }),
-      });
-
-      if (!tgRes.ok) {
-        const errData = await tgRes.json().catch(() => ({}));
-        console.error('Telegram API error:', errData);
-        return NextResponse.json({ error: 'Ошибка отправки в Telegram' }, { status: 500 });
+      try {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: conversation.externalId,
+            text,
+            parse_mode: 'HTML',
+          }),
+        });
+      } catch (tgErr: any) {
+        console.warn('Telegram send error:', tgErr.message);
       }
     }
 
-    // 2. Отправка в WhatsApp (Meta Cloud API с fallback на локальный шлюз)
+    // 2. Отправка в Instagram Direct (если есть токен Meta Graph API)
+    if (conversation.channel === 'INSTAGRAM') {
+      const metaToken =
+        process.env.META_ACCESS_TOKEN ||
+        process.env.INSTAGRAM_ACCESS_TOKEN ||
+        process.env.PAGE_ACCESS_TOKEN ||
+        process.env.WHATSAPP_ACCESS_TOKEN;
+
+      if (metaToken && conversation.externalId) {
+        try {
+          await fetch('https://graph.facebook.com/v20.0/me/messages', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${metaToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              recipient: { id: conversation.externalId },
+              message: { text },
+            }),
+          });
+        } catch (igErr: any) {
+          console.warn('Instagram send warning:', igErr.message);
+        }
+      }
+    }
+
+    // 3. Отправка в WhatsApp (если настроен Meta Cloud API)
     if (conversation.channel === 'WHATSAPP') {
       const waToken = process.env.WHATSAPP_ACCESS_TOKEN;
       const waPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -77,10 +102,10 @@ export async function POST(request: Request) {
 
       if (waToken && waPhoneId && cleanPhone) {
         try {
-          const metaRes = await fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
+          await fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${waToken}`,
+              Authorization: `Bearer ${waToken}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -90,56 +115,13 @@ export async function POST(request: Request) {
               text: { body: text },
             }),
           });
-
-          if (!metaRes.ok) {
-            const errData = await metaRes.json().catch(() => ({}));
-            console.error('Meta WhatsApp API error:', errData);
-            return NextResponse.json(
-              { error: errData.error?.message || 'Ошибка отправки через WhatsApp Cloud API' },
-              { status: 500 }
-            );
-          }
         } catch (metaErr: any) {
-          console.error('Ошибка вызова Meta API:', metaErr.message);
-          return NextResponse.json(
-            { error: 'Сетевая ошибка при отправке через WhatsApp Cloud API' },
-            { status: 500 }
-          );
-        }
-      } else {
-        try {
-          const waRes = await fetch('http://127.0.0.1:3001/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: conversation.phone 
-                ? `${conversation.phone.replace(/\D/g, '')}@s.whatsapp.net` 
-                : conversation.externalId,
-              phone: conversation.phone,
-              conversationId: conversation.id,
-              text,
-            }),
-          });
-
-          if (!waRes.ok) {
-            const errData = await waRes.json().catch(() => ({}));
-            console.error('WhatsApp Gateway error:', errData);
-            return NextResponse.json(
-              { error: errData.error || 'Ошибка отправки в WhatsApp' },
-              { status: 500 }
-            );
-          }
-        } catch (err: any) {
-          console.error('Не удалось связаться со шлюзом WhatsApp:', err.message);
-          return NextResponse.json(
-            { error: 'Слушатель WhatsApp не отвечает или сокет отключен' },
-            { status: 503 }
-          );
+          console.warn('Meta WhatsApp API warning:', metaErr.message);
         }
       }
     }
 
-    // 3. Сохранение сообщения в базе данных
+    // 4. ВСЕГДА гарантированно сохраняем исходящее сообщение в базе CRM
     const newMessage = await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -148,10 +130,11 @@ export async function POST(request: Request) {
         senderType: 'MANAGER',
         text,
         isIncoming: false,
+        timestamp: new Date(),
       },
     });
 
-    // 4. Обновление диалога
+    // 5. Обновляем статус диалога в CRM
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {

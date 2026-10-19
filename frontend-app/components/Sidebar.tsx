@@ -63,7 +63,7 @@ export default function Sidebar() {
       {/* =========================================
           1. МОБИЛЬНАЯ ВЕРХНЯЯ ШАПКА (только < md)
       ========================================= */}
-      <header className="md:hidden sticky top-0 z-30 bg-white border-b border-slate-200 px-3.5 py-2.5 flex items-center justify-between shrink-0 shadow-2xs">
+      <header className="md:hidden sticky top-0 z-30 bg-white border-b border-slate-200 px-3.5 py-2 safe-p-top flex items-center justify-between shrink-0 shadow-2xs">
         <Link href="/" className="flex items-center gap-1.5">
           <span className="text-base font-extrabold tracking-tight text-slate-900">
             BrightHouse <span className="text-blue-600">CRM</span>
@@ -151,7 +151,7 @@ export default function Sidebar() {
       {/* =========================================
           3. МОБИЛЬНАЯ НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (< md)
       ========================================= */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 flex items-center justify-around shadow-lg">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1 safe-p-bottom flex items-center justify-around shadow-lg">
         {mobileBottomTabs.map((tab) => {
           const isActive = pathname === tab.href;
           return (

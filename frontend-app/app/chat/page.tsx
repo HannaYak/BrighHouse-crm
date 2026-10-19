@@ -430,7 +430,7 @@ export default function ChatPage() {
   const currentPlatformLabel = selectedContact ? PLATFORM_CONFIG[selectedContact.platform].label : 'чат';
 
   return (
-    <div className="flex h-[calc(100vh-8.5rem)] md:h-[calc(100vh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+    <div className="flex h-full min-h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-4.5rem)] bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
       {/* Левая колонка */}
       <div className={`w-full md:w-80 lg:w-96 border-r border-slate-200 flex flex-col bg-slate-50/50 ${mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-3.5 border-b border-slate-200 bg-white space-y-2.5">
@@ -623,124 +623,130 @@ export default function ChatPage() {
       </div>
 
       {/* Правая колонка: Окно активного чата */}
-      <div className={`flex-1 flex flex-col bg-slate-50/40 ${mobileShowChat ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`flex-1 flex flex-col bg-slate-50/40 min-w-0 ${mobileShowChat ? 'flex' : 'hidden md:flex'}`}>
         {selectedContact ? (
           <>
-            <div className="p-3 bg-white border-b border-slate-200 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 shadow-2xs">
-              <div className="flex items-center gap-2.5 min-w-0">
-                {/* Кнопка "Назад к списку" для мобильных телефонов */}
-                <button
-                  type="button"
-                  onClick={() => setMobileShowChat(false)}
-                  className="md:hidden p-1.5 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg text-base font-bold shrink-0 transition cursor-pointer"
-                  title="Назад к списку чатов"
-                >
-                  ←
-                </button>
+            {/* Адаптивная шапка активного чата: 2 аккуратные строки без перекрытия и прячущихся кнопок */}
+            <div className="bg-white border-b border-slate-200 px-3 py-2 shadow-2xs shrink-0 space-y-1.5">
+              {/* Строка 1: Кнопка назад + аватар + имя + статус + заказ */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobileShowChat(false)}
+                    className="md:hidden p-1 -ml-1 text-slate-600 hover:bg-slate-100 rounded-lg text-lg font-bold shrink-0 transition"
+                    title="Назад к списку чатов"
+                  >
+                    ←
+                  </button>
 
-                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm shrink-0 ${
-                  selectedContact.role === 'cleaner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {selectedContact.name.slice(0, 2).toUpperCase()}
+                  <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm shrink-0 ${
+                    selectedContact.role === 'cleaner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {selectedContact.name.slice(0, 2).toUpperCase()}
+                  </div>
+
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5 truncate">
+                      <span className="truncate">{selectedContact.name}</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border shrink-0 ${PLATFORM_CONFIG[selectedContact.platform].badgeClass}`}>
+                        {PLATFORM_CONFIG[selectedContact.platform].icon} {PLATFORM_CONFIG[selectedContact.platform].label}
+                      </span>
+                    </h3>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5 truncate">
-                    <span className="truncate">{selectedContact.name}</span>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border shrink-0 ${PLATFORM_CONFIG[selectedContact.platform].badgeClass}`}>
-                      {PLATFORM_CONFIG[selectedContact.platform].icon} {PLATFORM_CONFIG[selectedContact.platform].label}
-                    </span>
-                  </h3>
-                  <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
-                    <span className="font-mono">{selectedContact.phone || 'Без телефона'}</span>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {selectedContact.role === 'client' && (
+                    <select
+                      value={selectedContact.status || 'NONE'}
+                      onChange={(e) => handleChangeStatus(e.target.value as ConvStatus)}
+                      className="text-[11px] font-bold border border-slate-300 rounded-lg px-2 py-1 bg-white text-slate-700 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="NONE">⚪ Без статуса</option>
+                      <option value="IN_PROGRESS">🟡 В процессе</option>
+                      <option value="BOOKED">🟢 Записан</option>
+                      <option value="REMIND">🔵 Напомнить</option>
+                      <option value="THINKING">🟣 Думает</option>
+                      <option value="CLOSED">⚫ Архив</option>
+                    </select>
+                  )}
+
+                  {selectedContact.role === 'client' && (
                     <button
                       type="button"
-                      onClick={async () => {
-                        const newPhone = window.prompt('Введите номер телефона клиента (например, +48...):', selectedContact.phone || '+48');
-                        if (newPhone && newPhone.trim() && newPhone.trim() !== '+48') {
-                          try {
-                            const res = await fetch('/api/chat/status', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                conversationId: selectedContact.id,
-                                phone: newPhone.trim(),
-                              }),
-                            });
-                            if (res.ok) {
-                              const updated = await res.json();
-                              setSelectedContact((prev) => prev ? { ...prev, phone: updated.phone } : null);
-                              await loadConversations();
-                            } else {
-                              alert('Ошибка обновления номера телефона');
-                            }
-                          } catch (e: any) {
-                            alert(e.message);
-                          }
-                        }
-                      }}
-                      className="text-blue-600 hover:text-blue-800 underline font-semibold cursor-pointer shrink-0"
+                      onClick={handleCreateOrderFromChat}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1 rounded-lg text-xs transition shadow-2xs flex items-center gap-1 shrink-0"
                     >
-                      {selectedContact.phone ? '✏️' : '➕ Указать'}
+                      <span>📝</span>
+                      <span className="hidden sm:inline">Заказ</span>
                     </button>
-                    <span className="truncate">• {selectedContact.district || 'Варшава'}</span>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0 flex-wrap sm:flex-nowrap">
-                {/* 1. Прямая ссылка на WhatsApp на телефоне */}
-                {selectedContact.phone && (
-                  <a
-                    href={`https://wa.me/${selectedContact.phone.replace(/\D/g, '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1.5 rounded-xl transition shadow-xs flex items-center gap-1 shrink-0"
-                    title="Открыть диалог в приложении WhatsApp"
-                  >
-                    <span>💬</span>
-                    <span className="hidden sm:inline">WhatsApp</span>
-                  </a>
-                )}
-
-                {/* 2. Быстрый звонок по телефону */}
-                {selectedContact.phone && (
-                  <a
-                    href={`tel:${selectedContact.phone}`}
-                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1.5 rounded-xl transition flex items-center gap-1 shrink-0"
-                    title="Позвонить клиенту"
-                  >
-                    <span>📞</span>
-                    <span className="hidden sm:inline">Звонок</span>
-                  </a>
-                )}
-
-                {/* 3. Выпадающий список статуса */}
-                {selectedContact.role === 'client' && (
-                  <select
-                    value={selectedContact.status || 'NONE'}
-                    onChange={(e) => handleChangeStatus(e.target.value as ConvStatus)}
-                    className="text-[11px] font-bold border border-slate-300 rounded-xl px-2 py-1.5 bg-white text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                  >
-                    <option value="NONE">⚪ Без статуса</option>
-                    <option value="IN_PROGRESS">🟡 В процессе</option>
-                    <option value="BOOKED">🟢 Записан</option>
-                    <option value="REMIND">🔵 Напомнить</option>
-                    <option value="THINKING">🟣 Думает</option>
-                    <option value="CLOSED">⚫ Архив</option>
-                  </select>
-                )}
-
-                {/* 4. Оформить заказ */}
-                {selectedContact.role === 'client' && (
+              {/* Строка 2: Телефон с крупной кнопкой изменения + WhatsApp + Позвонить */}
+              <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100 text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono text-slate-700 font-bold text-[11px]">
+                    {selectedContact.phone || 'Нет номера'}
+                  </span>
                   <button
                     type="button"
-                    onClick={handleCreateOrderFromChat}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1.5 rounded-xl text-xs transition shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
+                    onClick={async () => {
+                      const newPhone = window.prompt('Введите номер телефона клиента (например, +48...):', selectedContact.phone || '+48');
+                      if (newPhone && newPhone.trim() && newPhone.trim() !== '+48') {
+                        try {
+                          const res = await fetch('/api/chat/status', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              conversationId: selectedContact.id,
+                              phone: newPhone.trim(),
+                            }),
+                          });
+                          if (res.ok) {
+                            const updated = await res.json();
+                            setSelectedContact((prev) => prev ? { ...prev, phone: updated.phone } : null);
+                            await loadConversations();
+                          } else {
+                            alert('Ошибка обновления номера телефона');
+                          }
+                        } catch (e: any) {
+                          alert(e.message);
+                        }
+                      }
+                    }}
+                    className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md text-[10px] font-bold border border-blue-200 transition cursor-pointer"
                   >
-                    <span>📝</span>
-                    <span className="hidden sm:inline">Заказ</span>
+                    {selectedContact.phone ? '✏️ Изменить' : '➕ Указать номер'}
                   </button>
-                )}
+                  <span className="text-[10px] text-slate-400">• {selectedContact.district || 'Варшава'}</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 ml-auto">
+                  {selectedContact.phone && (
+                    <a
+                      href={`https://wa.me/${selectedContact.phone.replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded-md text-[11px] transition shadow-2xs flex items-center gap-1"
+                      title="Открыть диалог в приложении WhatsApp"
+                    >
+                      <span>💬 WA</span>
+                    </a>
+                  )}
+
+                  {selectedContact.phone && (
+                    <a
+                      href={`tel:${selectedContact.phone}`}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-md text-[11px] transition flex items-center gap-1"
+                      title="Позвонить клиенту"
+                    >
+                      <span>📞 Звонок</span>
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -866,8 +872,14 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Панель ввода */}
-            <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
+            {/* Панель ввода сообщения */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              className="p-2.5 sm:p-3 bg-white border-t border-slate-200 flex items-center gap-1.5 sm:gap-2 shrink-0"
+            >
               <input
                 type="file"
                 ref={fileInputRef}
@@ -884,30 +896,30 @@ export default function ChatPage() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="Прикрепить фото или видео"
-                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer text-base"
+                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer text-base shrink-0"
               >
                 📎
               </button>
 
               {isRecording ? (
-                <div className="flex-1 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2">
-                  <div className="flex items-center gap-2 text-xs font-bold text-red-600 animate-pulse">
-                    🔴 Идет запись: {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                <div className="flex-1 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-3 py-1.5 min-w-0">
+                  <div className="text-xs font-bold text-red-600 animate-pulse truncate">
+                    🔴 {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={cancelRecording}
                       className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1"
                     >
-                      Отмена
+                      ✕
                     </button>
                     <button
                       type="button"
                       onClick={stopRecording}
-                      className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1 rounded-lg"
+                      className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg"
                     >
-                      Готово & Отправить
+                      Готово
                     </button>
                   </div>
                 </div>
@@ -918,35 +930,48 @@ export default function ChatPage() {
                     placeholder={`Ответить в ${currentPlatformLabel}...`}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                    className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-blue-500"
                   />
 
                   <button
                     type="button"
                     onClick={startRecording}
                     title="Записать голосовое сообщение"
-                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition cursor-pointer text-base"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition cursor-pointer text-base shrink-0"
                   >
                     🎙
                   </button>
 
+                  {/* Быстрый переход в официальный WhatsApp с набранным текстом */}
+                  {selectedContact.phone && inputText.trim() && (
+                    <a
+                      href={`https://wa.me/${selectedContact.phone.replace(/\D/g, '')}?text=${encodeURIComponent(inputText.trim())}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-2 rounded-xl text-xs font-bold transition shadow-2xs shrink-0 flex items-center gap-1"
+                      title="Открыть диалог в приложении WhatsApp с этим текстом"
+                    >
+                      <span>💬</span>
+                      <span className="hidden sm:inline">В WhatsApp</span>
+                    </a>
+                  )}
+
                   <button
-                    type="button"
-                    onClick={() => handleSendMessage()}
+                    type="submit"
                     disabled={sending || (!inputText.trim() && !selectedFile)}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
+                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1 shrink-0"
+                    title="Отправить сообщение"
                   >
-                    {sending ? '...' : `Отправить в ${currentPlatformLabel}`}
+                    {sending ? '...' : (
+                      <>
+                        <span className="sm:hidden text-sm">➤</span>
+                        <span className="hidden sm:inline">Отправить</span>
+                      </>
+                    )}
                   </button>
                 </>
               )}
-            </div>
+            </form>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-slate-400 text-xs">

@@ -17,6 +17,14 @@ export default function ClientsPage() {
   const [editingOrder, setEditingOrder] = useState<OrderDetail | null>(null);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
 
+  // Мобильная навигация: список / детали
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
+
+  // Модалка импорта клиентов
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+
   useEffect(() => {
     fetch('/api/cleaners')
       .then((r) => (r.ok ? r.json() : []))
@@ -72,6 +80,98 @@ export default function ClientsPage() {
 
   const handleSelectClient = (client: any) => {
     applyClientData(client);
+    setMobileShowDetail(true);
+  };
+
+  const parseImportData = () => {
+    if (!importText.trim()) return [];
+    const lines = importText.trim().split('\n');
+    const result: any[] = [];
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      // Пропуск заголовка таблицы
+      if (line.toLowerCase().startsWith('имя') || line.toLowerCase().startsWith('name')) continue;
+
+      // Разделение по табуляции, точке с запятой или запятой
+      const parts = line.includes('\t')
+        ? line.split('\t')
+        : line.includes(';')
+        ? line.split(';')
+        : line.split(',');
+
+      if (parts.length >= 2) {
+        const name = parts[0]?.trim() || 'Клиент';
+        const phone = parts[1]?.trim() || '';
+        const address = parts[2]?.trim() || 'Варшава';
+        const notes = parts[3]?.trim() || '';
+        const cleaner = parts[4]?.trim() || '';
+        const count = parts[5] ? parseInt(parts[5].trim(), 10) : 0;
+        const total = parts[6] ? parseFloat(parts[6].trim().replace(/\s/g, '')) : 0;
+
+        if (phone) {
+          result.push({
+            name,
+            phone,
+            address,
+            notes,
+            favoriteCleaner: cleaner,
+            ordersCount: count,
+            totalSpent: total,
+          });
+        }
+      }
+    }
+    return result;
+  };
+
+  const handleDownloadTemplate = () => {
+    const csvContent = '\uFEFF' + [
+      'Имя;Телефон;Адрес;Заметки;Любимый клинер;Количество прошлых заказов;Общая сумма LTV (zł)',
+      'Анна Новак;+48 514 564 785;ul. Marszalkowska 10/4;Код домофона 1234;Ольга;3;650',
+      'Павел Ковальски;+48 888 123 456;ul. Mokotowska 15;Есть собака корги;Татьяна;1;220',
+      'Ольга Шевченко;+48 501 222 333;ul. Grzybowska 4;Уборка раз в 2 недели;Елена;5;1100',
+    ].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'brighthouse_clients_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExecuteImport = async () => {
+    const clientsToImport = parseImportData();
+    if (clientsToImport.length === 0) {
+      alert('Нет распознанных строк для импорта. Убедитесь, что в каждой строке указаны как минимум Имя и Телефон.');
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      const res = await fetch('/api/clients/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clients: clientsToImport }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ Успешно импортировано!\n• Создано новых клиентов: ${data.createdCount}\n• Обновлено существующих: ${data.updatedCount}\n• Создано архивных нарядов: ${data.ordersCreatedCount}`);
+        setIsImportModalOpen(false);
+        setImportText('');
+        fetchClients();
+      } else {
+        alert(`Ошибка импорта: ${data.error || 'Неизвестная ошибка'}`);
+      }
+    } catch (e: any) {
+      alert(`Ошибка: ${e.message}`);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const handleSaveNotes = async () => {
@@ -224,29 +324,41 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col pb-6">
+    <div className="space-y-4 max-w-7xl mx-auto h-full min-h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-4.5rem)] flex flex-col">
       {/* Шапка */}
-      <div className="flex justify-between items-center shrink-0">
+      <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-3 shrink-0">
         <div>
           <h1 className="text-xl font-bold text-slate-900">👥 База клиентов и LTV</h1>
           <p className="text-xs text-slate-500">
             История заказов, быстрый повтор заказа, предпочтения и клинеры
           </p>
         </div>
-        <div className="w-72">
-          <input
-            type="text"
-            placeholder="🔍 Поиск по имени, телефону, адресу..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 shadow-xs"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span>📥</span>
+            <span>Импорт клиентов</span>
+          </button>
+          <div className="flex-1 sm:w-72">
+            <input
+              type="text"
+              placeholder="🔍 Поиск по имени, телефону, адресу..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 shadow-xs"
+            />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 flex-1 overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 flex-1 overflow-hidden min-h-0">
         {/* Список клиентов (слева) */}
-        <div className="md:col-span-5 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
+        <div className={`md:col-span-5 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden ${
+          mobileShowDetail ? 'hidden md:flex' : 'flex'
+        }`}>
           <div className="p-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center text-xs font-bold text-slate-600">
             <span>Клиенты ({filteredClients.length})</span>
             <span>Сумма LTV</span>
@@ -299,9 +411,22 @@ export default function ClientsPage() {
         </div>
 
         {/* Детальная карточка клиента (справа) */}
-        <div className="md:col-span-7 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
+        <div className={`md:col-span-7 bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden ${
+          mobileShowDetail ? 'flex' : 'hidden md:flex'
+        }`}>
           {selectedClient ? (
             <div className="flex flex-col h-full overflow-y-auto p-4 sm:p-6 space-y-6">
+              {/* Кнопка "Назад к списку" для мобильных */}
+              <div className="md:hidden flex items-center pb-2 border-b border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setMobileShowDetail(false)}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 py-1"
+                >
+                  ← Назад к списку клиентов
+                </button>
+              </div>
+
               {/* Шапка клиента */}
               <div className="flex flex-wrap sm:flex-nowrap justify-between items-start border-b border-slate-100 pb-4 gap-3">
                 <div>
@@ -562,6 +687,97 @@ export default function ClientsPage() {
           )}
         </div>
       </div>
+
+      {/* Модалка импорта клиентов */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            {/* Заголовок модалки */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📥</span>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm sm:text-base">Импорт базы клиентов и истории</h3>
+                  <p className="text-[11px] text-slate-500">Вставьте данные из Excel / Google Таблиц или CSV</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Тело модалки */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-800 space-y-2">
+                <div className="font-bold flex items-center justify-between">
+                  <span>📋 Формат колонок (через Tab, запятую или точку с запятой):</span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplate}
+                    className="text-blue-700 underline hover:text-blue-900 text-[11px] font-bold cursor-pointer"
+                  >
+                    📥 Скачать шаблон CSV
+                  </button>
+                </div>
+                <div className="text-[11px] font-mono bg-white/80 p-2 rounded border border-blue-100 overflow-x-auto whitespace-pre">
+                  Имя ; Телефон ; Адрес ; Заметки ; Любимый клинер ; Количество уборок ; LTV (zł)
+                </div>
+                <p className="text-[11px] text-blue-600">
+                  💡 Можно просто скопировать строки из Excel / Google Sheets и нажать <b>Ctrl+V</b> в поле ниже.
+                  Если клиент уже есть в базе, его данные и LTV обновятся без дубликатов!
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Вставьте строки из таблицы:
+                </label>
+                <textarea
+                  rows={8}
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder={`Анна Новак\t+48 514 564 785\tul. Marszalkowska 10/4\tКод домофона 1234\tОльга\t3\t650\nПавел Ковальски\t+48 888 123 456\tul. Mokotowska 15\tЕсть собака\tТатьяна\t1\t220`}
+                  className="w-full font-mono text-[11px] bg-slate-50 border border-slate-300 rounded-xl p-3 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {importText.trim() && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">
+                    Распознано записей для импорта:
+                  </span>
+                  <span className="font-bold text-emerald-600 text-sm">
+                    {parseImportData().length} клиентов
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Футер */}
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-100 transition cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={isImporting || parseImportData().length === 0}
+                onClick={handleExecuteImport}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                {isImporting ? '⏳ Импортируем...' : `✅ Загрузить (${parseImportData().length})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Модалка заказа */}
       <OrderModal

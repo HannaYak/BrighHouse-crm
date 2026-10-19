@@ -37,42 +37,46 @@ export async function POST(request: Request) {
         // Обработка сообщений
         const messaging = entry.messaging || [];
         for (const event of messaging) {
-          const senderId = event.sender?.id;
-          const messageText = event.message?.text;
+          const isEcho = Boolean(event.message?.is_echo);
+          // Если это ответ менеджера из приложения Instagram (is_echo: true), получатель - это клиент
+          const clientId = isEcho ? event.recipient?.id : event.sender?.id;
+          const messageText = event.message?.text || (event.message?.attachments ? '📎 [Медиафайл / Фото]' : '');
 
-          // Игнорируем эхо-сообщения (отправленные нами же)
-          if (event.message?.is_echo) continue;
-
-          if (senderId && messageText) {
+          if (clientId && messageText) {
             // Ищем или создаем диалог с этим клиентом
             const conversation = await prisma.conversation.upsert({
-              where: { externalId: String(senderId) },
+              where: { externalId: String(clientId) },
               update: {
                 lastMessage: messageText,
                 lastActivity: new Date(),
-                unreadCount: { increment: 1 },
+                updatedAt: new Date(),
+                ...(isEcho ? {} : { unreadCount: { increment: 1 } }),
               },
               create: {
                 channel: 'INSTAGRAM',
-                externalId: String(senderId),
-                senderName: `Instagram User (${senderId.slice(-4)})`,
+                externalId: String(clientId),
+                senderName: `Instagram Клиент (${String(clientId).slice(-4)})`,
+                clientName: `Instagram Клиент`,
                 lastMessage: messageText,
-                unreadCount: 1,
+                unreadCount: isEcho ? 0 : 1,
+                status: 'NONE',
               },
             });
 
-            // Сохраняем входящее сообщение
+            // Сохраняем сообщение (входящее или исходящее с телефона)
             await prisma.message.create({
-  data: {
-    conversationId: conversation.id,
-    senderId: String(senderId),
-    senderType: 'CLIENT',
-    text: messageText,
-    isIncoming: true,
-  },
-});
+              data: {
+                conversationId: conversation.id,
+                senderId: isEcho ? 'manager' : String(clientId),
+                senderName: isEcho ? 'Менеджер (Instagram App)' : (conversation.senderName || 'Клиент'),
+                senderType: isEcho ? 'MANAGER' : 'CLIENT',
+                text: messageText,
+                isIncoming: !isEcho,
+                timestamp: new Date(event.timestamp || Date.now()),
+              },
+            });
 
-            console.log(`📩 Новое сообщение из Instagram от ${senderId}: ${messageText}`);
+            console.log(`📩 [META IG] ${isEcho ? 'Исходящее с телефона' : 'Входящее'} от/для ${clientId}: ${messageText}`);
           }
         }
       }
