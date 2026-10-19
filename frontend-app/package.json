@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "node tg-listener.mjs & node wa-listener.mjs & next start",
     "lint": "next lint"
   },
