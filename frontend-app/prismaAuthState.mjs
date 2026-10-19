@@ -230,8 +230,28 @@ export async function usePrismaAuthState(prismaClient) {
       await writeData('creds', creds);
     },
     removeSessionKey: async (jid) => {
-      console.log(`[AUTH] Сброс Signal сессии для JID: ${jid}`);
-      await removeData(`session-${jid}`);
+      if (!jid) return;
+      const clean = jid.replace('@s.whatsapp.net', '').replace('@lid', '').split(':')[0];
+      console.log(`[AUTH] Сброс Signal сессий для: ${jid} (clean: ${clean})`);
+      memoryCache.delete(`session-${jid}`);
+      memoryCache.delete(`session-${clean}.0`);
+      for (const k of Array.from(memoryCache.keys())) {
+        if (k.startsWith(`session-${clean}`)) {
+          memoryCache.delete(k);
+        }
+      }
+      try {
+        await db.whatsAppSession.deleteMany({
+          where: {
+            OR: [
+              { id: `session-${jid}` },
+              { id: { startsWith: `session-${clean}.` } }
+            ]
+          }
+        });
+      } catch (e) {
+        console.error(`[AUTH] Ошибка удаления сессий для ${clean}:`, e.message);
+      }
     },
     clearAllAuth: async () => {
       memoryCache.clear();

@@ -110,6 +110,9 @@ async function processMessage(msg) {
     // Служебные заглушки без контента не сохраняем в CRM
     if (msg.messageStubType) {
       console.log(`ℹ️ [MSG STUB] remoteJid: ${remoteJid}, stubType: ${msg.messageStubType}, params:`, msg.messageStubParameters);
+      if (msg.key?.senderPn) {
+        recordLidMapping(remoteJid, msg.key.senderPn);
+      }
       return;
     }
 
@@ -329,11 +332,6 @@ async function startWhatsAppListener() {
       shouldIgnoreJid: (jid) => {
         if (!jid) return true;
         if (jid === 'status@broadcast' || jid.endsWith('@broadcast')) return true;
-        const myLid = state.creds?.me?.lid;
-        if (myLid) {
-          const rawLid = myLid.split(':')[0].split('@')[0];
-          if (jid.includes(rawLid)) return true;
-        }
         return false;
       },
       getMessage: async (key) => {
@@ -451,14 +449,58 @@ async function startWhatsAppListener() {
 
     // Слушаем входящие сообщения
     sock.ev.on('messages.upsert', async (upsert) => {
+      const { messages, type, requestId } = upsert;
+      if (requestId) {
+        console.log(`📥 [PDO RESOLVED] Получено расшифрованное сообщение от телефона по запросу ${requestId}`);
+      }
       console.log('RAW UPSERT:', JSON.stringify(upsert, null, 2));
-      const { messages, type } = upsert;
       console.log(`[UPSERT TYPE] Режим: ${type}, сообщений: ${messages?.length || 0}`);
       for (const msg of messages || []) {
         if (msg.key?.id && msg.message) {
           storeMessage(msg.key, msg.message);
         }
         await processMessage(msg);
+      }
+    });
+
+    // Перехват retry receipts от клиентов (исправляет проблему "Ожидание этого сообщения")
+    sock.ws.on('CB:receipt', async (node) => {
+      try {
+        if (node?.attrs?.type === 'retry') {
+          const msgId = node.attrs.id;
+          const remoteJid = node.attrs.from;
+          const participant = node.attrs.participant || remoteJid;
+          console.log(`🔄 [RETRY INTERCEPT] Запрос повторной отправки от ${participant} для сообщения ${msgId}`);
+
+          let savedMsg = messageStore.get(msgId);
+          if (!savedMsg) {
+            const row = await prisma.whatsAppSession.findUnique({
+              where: { id: `msg-${msgId}` }
+            });
+            if (row?.data) {
+              savedMsg = JSON.parse(row.data);
+              messageStore.set(msgId, savedMsg);
+            }
+          }
+
+          if (savedMsg) {
+            console.log(`🚀 [RETRY RESEND] Переотправляем сообщение ${msgId} для ${remoteJid}...`);
+            if (participant && authStateHelper) await authStateHelper.removeSessionKey(participant);
+            if (remoteJid && remoteJid !== participant && authStateHelper) await authStateHelper.removeSessionKey(remoteJid);
+
+            const retryNode = node.content?.find?.(c => c?.tag === 'retry');
+            const retryCount = +(retryNode?.attrs?.count || 1);
+
+            await sock.relayMessage(remoteJid, savedMsg, {
+              messageId: msgId,
+              useUserDevicesCache: false,
+              participant: participant ? { jid: participant, count: retryCount } : undefined
+            });
+            console.log(`✅ [RETRY OK] Сообщение ${msgId} успешно переотправлено!`);
+          }
+        }
+      } catch (err) {
+        console.error('Ошибка обработки CB:receipt retry:', err.message);
       }
     });
 
@@ -646,6 +688,27 @@ const server = http.createServer(async (req, res) => {
           }
           targetJid = `${cleanDigits}@s.whatsapp.net`;
         }
+
+        // Проверяем сессию перед отправкой. Если она зависла в pendingPreKey с 0 цепочек, сбрасываем её
+        const cleanTarget = targetJid.replace('@s.whatsapp.net', '').replace('@lid', '').split(':')[0];
+        try {
+          const existingSession = await prisma.whatsAppSession.findUnique({
+            where: { id: `session-${cleanTarget}.0` }
+          });
+          if (existingSession?.data) {
+            const parsed = JSON.parse(existingSession.data);
+            const sessions = parsed._sessions || {};
+            const sessionValues = Object.values(sessions);
+            const hasActiveChains = sessionValues.some(s => Object.keys(s.chains || s._chains || {}).length > 0);
+            const hasPendingPreKey = sessionValues.some(s => !!s.pendingPreKey);
+            if (!hasActiveChains && hasPendingPreKey) {
+              console.log(`🧹 [AUTO-CLEAR] Зависшая сессия (pendingPreKey с 0 цепочек) для ${cleanTarget}. Сбрасываем перед отправкой...`);
+              if (authStateHelper) {
+                await authStateHelper.removeSessionKey(cleanTarget);
+              }
+            }
+          }
+        } catch {}
 
         console.log(`🚀 Отправка в WhatsApp на ${targetJid}: "${text}"`);
         const sent = await activeSock.sendMessage(targetJid, { text });
