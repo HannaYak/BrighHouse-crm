@@ -7,12 +7,9 @@ const {
   DisconnectReason
 } = require('@whiskeysockets/baileys');
 
-import { PrismaClient } from '@prisma/client';
 import qrcode from 'qrcode-terminal';
 import pino from 'pino';
-import { usePrismaAuthState } from './prismaAuthState.mjs';
-
-const prisma = new PrismaClient();
+import { prisma, usePrismaAuthState } from './prismaAuthState.mjs';
 
 async function startLogin() {
   console.log('⏳ Подключение и ожидание QR...');

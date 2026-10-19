@@ -1,5 +1,6 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
+import { PrismaClient } from '@prisma/client';
 
 const { 
   initAuthCreds, 
@@ -7,12 +8,16 @@ const {
   proto 
 } = require('@whiskeysockets/baileys');
 
+// Синглтон PrismaClient для предотвращения создания множественных пулов соединений
+export const prisma = globalThis.__prismaClient || (globalThis.__prismaClient = new PrismaClient());
+
 /**
  * Высокопроизводительное хранилище сессий Baileys в PostgreSQL через Prisma.
  * Полностью устраняет проблему потери файлов сессии на эфемерных дисках (Render.com).
  * Включает in-memory кэш для быстрой дешифровки сообщений и снижения нагрузки на БД.
  */
-export async function usePrismaAuthState(prisma) {
+export async function usePrismaAuthState(prismaClient) {
+  const db = prismaClient || prisma;
   const memoryCache = new Map();
 
   const readData = async (id) => {
@@ -20,10 +25,10 @@ export async function usePrismaAuthState(prisma) {
       return memoryCache.get(id);
     }
     try {
-      let row = await prisma.whatsAppSession.findUnique({ where: { id } });
+      let row = await db.whatsAppSession.findUnique({ where: { id } });
       // Fallback для совместимости со старыми записями с суффиксом .json
       if (!row && !id.endsWith('.json')) {
-        row = await prisma.whatsAppSession.findUnique({ where: { id: `${id}.json` } });
+        row = await db.whatsAppSession.findUnique({ where: { id: `${id}.json` } });
       }
       if (!row?.data) {
         memoryCache.set(id, null);
@@ -43,7 +48,7 @@ export async function usePrismaAuthState(prisma) {
     const serialized = JSON.stringify(data, BufferJSON.replacer);
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        await prisma.whatsAppSession.upsert({
+        await db.whatsAppSession.upsert({
           where: { id },
           update: { data: serialized },
           create: { id, data: serialized }
@@ -62,7 +67,7 @@ export async function usePrismaAuthState(prisma) {
   const removeData = async (id) => {
     memoryCache.delete(id);
     try {
-      await prisma.whatsAppSession.deleteMany({
+      await db.whatsAppSession.deleteMany({
         where: {
           OR: [
             { id },
@@ -111,7 +116,7 @@ export async function usePrismaAuthState(prisma) {
           // 2. Один батч-запрос к БД для всех недостающих ключей
           try {
             const fullKeys = missingIds.map(id => `${type}-${id}`);
-            const rows = await prisma.whatsAppSession.findMany({
+            const rows = await db.whatsAppSession.findMany({
               where: { id: { in: fullKeys } }
             });
 
@@ -167,7 +172,7 @@ export async function usePrismaAuthState(prisma) {
           // Удаление пачкой
           if (deleteIds.length > 0) {
             try {
-              await prisma.whatsAppSession.deleteMany({
+              await db.whatsAppSession.deleteMany({
                 where: { id: { in: deleteIds } }
               });
             } catch (e) {
@@ -196,7 +201,7 @@ export async function usePrismaAuthState(prisma) {
     },
     clearAllAuth: async () => {
       memoryCache.clear();
-      await prisma.whatsAppSession.deleteMany();
+      await db.whatsAppSession.deleteMany();
       console.log('[AUTH] Все сессии очищены из БД.');
     }
   };

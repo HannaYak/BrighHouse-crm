@@ -7,13 +7,10 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-import { PrismaClient } from '@prisma/client';
 import http from 'http';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
-import { usePrismaAuthState } from './prismaAuthState.mjs';
-
-const prisma = new PrismaClient();
+import { prisma, usePrismaAuthState } from './prismaAuthState.mjs';
 
 let activeSock = null;
 let isStarting = false;

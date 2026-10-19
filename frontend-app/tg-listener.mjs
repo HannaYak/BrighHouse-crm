@@ -1,11 +1,9 @@
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "./prismaAuthState.mjs";
 import fs from "fs";
 import path from "path";
-
-const prisma = new PrismaClient();
 
 const apiId = 24697673;
 const apiHash = "5f1649ea00d1db0b7ba211bd9f8b1ed8";
