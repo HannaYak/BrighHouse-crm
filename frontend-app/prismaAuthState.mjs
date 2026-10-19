@@ -38,17 +38,24 @@ export async function usePrismaAuthState(prisma) {
     }
   };
 
-  const writeData = async (id, data) => {
+  const writeData = async (id, data, retries = 3) => {
     memoryCache.set(id, data);
-    try {
-      const serialized = JSON.stringify(data, BufferJSON.replacer);
-      await prisma.whatsAppSession.upsert({
-        where: { id },
-        update: { data: serialized },
-        create: { id, data: serialized }
-      });
-    } catch (e) {
-      console.error(`[AUTH] Ошибка записи ключа ${id}:`, e.message);
+    const serialized = JSON.stringify(data, BufferJSON.replacer);
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        await prisma.whatsAppSession.upsert({
+          where: { id },
+          update: { data: serialized },
+          create: { id, data: serialized }
+        });
+        return;
+      } catch (e) {
+        if (attempt === retries) {
+          console.error(`[AUTH] Ошибка записи ключа ${id} (попытка ${attempt}/${retries}):`, e.message);
+        } else {
+          await new Promise(r => setTimeout(r, 300 * attempt));
+        }
+      }
     }
   };
 
@@ -168,10 +175,10 @@ export async function usePrismaAuthState(prisma) {
             }
           }
 
-          // Запись частями по 10 для предотвращения исчерпания пула соединений Prisma
+          // Запись частями по 3 для предотвращения исчерпания пула соединений Prisma/Supabase
           if (upsertTasks.length > 0) {
-            for (let i = 0; i < upsertTasks.length; i += 10) {
-              const chunk = upsertTasks.slice(i, i + 10);
+            for (let i = 0; i < upsertTasks.length; i += 3) {
+              const chunk = upsertTasks.slice(i, i + 3);
               await Promise.all(
                 chunk.map(([key, value]) => writeData(key, value))
               );
