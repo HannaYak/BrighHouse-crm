@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Функция очистки и приведения телефона к формату +48...
+// Очистка и приведение номера телефона к формату +48...
 function cleanPhone(raw) {
   if (!raw) return null;
   const digits = String(raw).replace(/\D/g, '');
@@ -17,105 +17,124 @@ function cleanPhone(raw) {
   return `+${digits}`;
 }
 
+// Конвертация русских названий уборок в ServiceType enum CRM
+function mapServiceType(serviceName, objectType) {
+  const s = String(serviceName || '').toLowerCase();
+  const obj = String(objectType || '').toLowerCase();
+
+  if (obj.includes('офис') || obj.includes('ресторан') || obj.includes('магазин')) {
+    return s.includes('генеральн') ? 'OFFICE_GENERAL' : 'OFFICE_REGULAR';
+  }
+  if (s.includes('после ремонта') || s.includes('ремонт')) return 'AFTER_REPAIR';
+  if (s.includes('генеральн')) return 'GENERAL';
+  if (s.includes('комплексн')) return 'STANDARD_PLUS';
+  return 'STANDARD';
+}
+
 // Парсинг даты
 function parseDate(raw) {
   if (!raw) return new Date();
-  if (raw instanceof Date) return raw;
+  if (raw instanceof Date && !isNaN(raw.getTime())) return raw;
   const d = new Date(raw);
   return isNaN(d.getTime()) ? new Date() : d;
+}
+
+// Очистка целых чисел (комнаты, санузлы)
+function parseCount(val) {
+  if (!val) return null;
+  const num = parseInt(String(val).replace(/\D/g, ''), 10);
+  return isNaN(num) ? null : num;
 }
 
 async function runImport() {
   console.log('🚀 Открываем файл BRIGHT-CRM.xlsx...');
   const workbook = XLSX.readFile('./BRIGHT-CRM.xlsx');
-  const sheetName = 'СРМ';
-  const worksheet = workbook.Sheets[sheetName];
+  const worksheet = workbook.Sheets['СРМ'];
 
   if (!worksheet) {
-    console.error(`❌ Лист "${sheetName}" не найден в файле!`);
+    console.error('❌ Лист "СРМ" не найден в файле!');
     return;
   }
 
   const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-  console.log(`📊 Всего строк найдено в таблице: ${rows.length}`);
+  console.log(`📊 Всего записей об уборках в таблице: ${rows.length}`);
 
   let clientsCreated = 0;
-  let clientsUpdated = 0;
   let ordersCreated = 0;
   let skippedRows = 0;
+
+  // Кэш клиентов в памяти, чтобы не долбить базу лишними SELECT
+  const clientCache = new Map();
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
 
-    // Берем телефон из колонки phone или Контакт
     const rawPhone = row['phone'] || row['Контакт'];
     const phone = cleanPhone(rawPhone);
 
-    const name = String(row['ФИО + Ник'] || row['fn'] || 'Клиент').trim();
-    const address = String(row['Адрес'] || '').trim();
-    const service = String(row['Услуга'] || 'Уборка').trim();
-    const price = parseFloat(row['Цена: PLN']) || 0;
-    const date = parseDate(row['Дата']);
-    
-    // Собираем все детали и заметки
-    const notesArr = [];
-    if (row['Объект']) notesArr.push(`Объект: ${row['Объект']}`);
-    if (row['Комнат']) notesArr.push(`Комнат: ${row['Комнат']}`);
-    if (row['Санузлов']) notesArr.push(`Санузлов: ${row['Санузлов']}`);
-    if (row['Описание']) notesArr.push(`Заметка: ${row['Описание']}`);
-    if (row['Примечание']) notesArr.push(`Примечание: ${row['Примечание']}`);
-    if (row['Тип клиента']) notesArr.push(`Тип: ${row['Тип клиента']}`);
-    const fullNotes = notesArr.join(' | ');
-
-    // Если нет телефона, пропускаем строку, так как клиента невозможно идентифицировать
+    // Если у строки вообще нет контактного телефона, пропускаем
     if (!phone) {
       skippedRows++;
       continue;
     }
 
-    try {
-      // 1. Ищем или создаем клиента
-      let client = await prisma.client.findFirst({
-        where: { phone: phone }
-      });
+    const name = String(row['ФИО + Ник'] || row['fn'] || 'Клиент').trim();
+    const address = String(row['Адрес'] || '').trim();
+    const serviceType = mapServiceType(row['Услуга'], row['Объект']);
+    const price = parseFloat(row['Цена: PLN']) || 0;
+    const date = parseDate(row['Дата']);
+    const rooms = parseCount(row['Комнат']);
+    const bathrooms = parseCount(row['Санузлов']);
 
-      if (!client) {
-        client = await prisma.client.create({
-          data: {
-            name: name || 'Клиент WhatsApp',
-            phone: phone,
-            address: address || 'Варшава',
-            notes: fullNotes,
-            createdAt: date,
-          }
+    // Склеиваем описание, пожелания и примечания
+    const notesList = [];
+    if (row['Объект']) notesList.push(`Объект: ${row['Объект']}`);
+    if (row['Описание']) notesList.push(String(row['Описание']).trim());
+    if (row['Примечание']) notesList.push(String(row['Примечание']).trim());
+    const fullNotes = notesList.join(' | ');
+
+    try {
+      // 1. Проверяем кэш или ищем/создаем клиента
+      let clientId = clientCache.get(phone);
+
+      if (!clientId) {
+        let client = await prisma.client.findFirst({
+          where: { phone: phone }
         });
-        clientsCreated++;
-      } else {
-        // Дополняем адрес, если ранее его не было
-        if (!client.address && address) {
-          await prisma.client.update({
-            where: { id: client.id },
-            data: { address }
+
+        if (!client) {
+          client = await prisma.client.create({
+            data: {
+              name: name || 'Клиент WhatsApp',
+              phone: phone,
+              address: address || 'Warszawa',
+              notes: row['Тип клиента'] ? `Тип: ${row['Тип клиента']}` : null,
+              createdAt: date,
+            }
           });
-          clientsUpdated++;
+          clientsCreated++;
         }
+        clientId = client.id;
+        clientCache.set(phone, clientId);
       }
 
-      // 2. Создаем заказ / историю уборки
-      const orderNumber = `BH-${Date.now().toString().slice(-6)}-${i + 1}`;
-      
+      // 2. Создаем заказ (историю уборки) с привязкой к клиенту
+      const orderNumber = `ORD-${Date.now().toString().slice(-4)}-${i + 1}`;
+
       await prisma.order.create({
         data: {
           orderNumber: orderNumber,
           date: date,
-          serviceType: service,
-          clientName: name || client.name,
+          serviceType: serviceType,
+          status: 'COMPLETED', // Вся история — это выполненные уборки
+          clientName: name,
           clientPhone: phone,
-          addressLine1: address || 'Варшава',
+          addressLine1: address || 'Warszawa',
           price: price,
-          notes: fullNotes,
-          status: 'COMPLETED', // Исторические заказы уже выполнены
-          clientId: client.id,
+          roomsCount: rooms,
+          bathroomsCount: bathrooms,
+          notes: fullNotes || null,
+          clientId: clientId, // <--- ЖЕЛЕЗНАЯ ПРИВЯЗКА К ИСТОРИИ КЛИЕНТА!
           createdAt: date,
           updatedAt: date
         }
@@ -123,20 +142,18 @@ async function runImport() {
 
       ordersCreated++;
 
-      if (i % 200 === 0 && i > 0) {
-        console.log(`⏳ Обработано ${i} из ${rows.length} строк...`);
+      if (ordersCreated % 250 === 0) {
+        console.log(`⏳ Загружено в историю: ${ordersCreated} уборок...`);
       }
     } catch (err) {
-      // Игнорируем единичные сбои, если попались битые символы
       skippedRows++;
     }
   }
 
-  console.log('\n🎉 ИМПОРТ УСПЕШНО ЗАВЕРШЁН!');
-  console.log(`👤 Новых клиентов добавлено: ${clientsCreated}`);
-  console.log(`📝 Клиентов обновлено: ${clientsUpdated}`);
-  console.log(`📦 Заказов / уборок в истории создано: ${ordersCreated}`);
-  console.log(`⚠️ Пропущено пустых строк: ${skippedRows}`);
+  console.log('\n🎉 ИМПОРТ ИСТОРИИ ПОЛНОСТЬЮ ЗАВЕРШЁН!');
+  console.log(`👤 Уникальных клиентов в базе: ${clientCache.size} (новых добавлено: ${clientsCreated})`);
+  console.log(`🧹 Создано уборок в истории клиентов: ${ordersCreated}`);
+  console.log(`⚠️ Пропущено невалидных строк: ${skippedRows}`);
 }
 
 runImport()
