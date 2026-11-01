@@ -53,6 +53,44 @@ export default function SchedulePage() {
     };
   };
 
+  // Извлекает индивидуальный временной слот клинера для заказа (если задан в notes)
+  const getCleanerSlotForOrder = (order: any, cleanerId: number | string) => {
+    const defaultSlot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
+    const parts = defaultSlot.split('—').map((s: string) => s.trim());
+    let startTime = parts[0] || order.startTime || '10:00';
+    let endTime = parts[1] || order.endTime || '14:00';
+
+    if (order.notes) {
+      const match = order.notes.match(/<!--CLEANER_SLOTS:(.*?)-->/);
+      if (match && match[1]) {
+        try {
+          const slots = JSON.parse(match[1]);
+          const s = slots[cleanerId] || slots[String(cleanerId)];
+          if (s) {
+            if (s.startTime) startTime = s.startTime;
+            if (s.endTime) endTime = s.endTime;
+          }
+        } catch (e) {}
+      }
+    }
+
+    const [sH, sM] = startTime.split(':').map(Number);
+    const [eH, eM] = endTime.split(':').map(Number);
+    const safeStartH = isNaN(sH) ? 10 : sH;
+    const safeStartM = isNaN(sM) ? 0 : sM;
+    const safeEndH = isNaN(eH) ? safeStartH + 3 : eH;
+    const safeEndM = isNaN(eM) ? 0 : eM;
+
+    return {
+      startTime,
+      endTime,
+      startH: safeStartH,
+      startM: safeStartM,
+      endH: safeEndH,
+      endM: safeEndM,
+    };
+  };
+
   const loadData = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
@@ -247,11 +285,7 @@ export default function SchedulePage() {
 
     let hasConflict = false;
     for (const to of targetCleanerOrders) {
-      const slot = to.timeSlot || `${to.startTime || '10:00'} — ${to.endTime || '14:00'}`;
-      const p = slot.split('—').map((s: string) => s.trim());
-      const [sH] = (p[0] || '10:00').split(':').map(Number);
-      const [eH, eM] = (p[1] || '14:00').split(':').map(Number);
-      const existingStart = isNaN(sH) ? 10 : sH;
+      const { startH: existingStart, endH: eH, endM: eM } = getCleanerSlotForOrder(to, targetCleanerId);
       const existingEnd = isNaN(eH) ? 14 : (eM > 0 ? eH + 1 : eH);
 
       const newStart = targetHour;
@@ -471,10 +505,7 @@ export default function SchedulePage() {
                       let isTravel = false;
 
                       cOrders.forEach((order) => {
-                        const slot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
-                        const parts = slot.split('—').map((s: string) => s.trim());
-                        const [startH] = (parts[0] || '10:00').split(':').map(Number);
-                        const [endH, endM] = (parts[1] || '14:00').split(':').map(Number);
+                        const { startH, endH, endM } = getCleanerSlotForOrder(order, cleaner.id);
                         const effectiveEndH = endM > 0 ? endH + 1 : endH;
 
                         if (hour >= startH && hour < effectiveEndH) {
@@ -484,10 +515,7 @@ export default function SchedulePage() {
 
                       if (!isOccupied && !isOffDuty) {
                         cOrders.forEach((order) => {
-                          const slot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
-                          const parts = slot.split('—').map((s: string) => s.trim());
-                          const [startH] = (parts[0] || '10:00').split(':').map(Number);
-                          const [endH, endM] = (parts[1] || '14:00').split(':').map(Number);
+                          const { startH, endH, endM } = getCleanerSlotForOrder(order, cleaner.id);
                           const effectiveEndH = endM > 0 ? endH + 1 : endH;
 
                           if (hour === startH - 1 || hour === effectiveEndH) {
@@ -576,16 +604,14 @@ export default function SchedulePage() {
                 return (
                   <div key={cleaner.id} className="relative border-r border-transparent last:border-r-0">
                     {cleanerOrders.map((order) => {
-                      const slot = order.timeSlot || `${order.startTime || '10:00'} — ${order.endTime || '14:00'}`;
-                      const parts = slot.split('—').map((s: string) => s.trim());
-                      const startTime = parts[0] || order.startTime || '10:00';
-                      const endTime = parts[1] || order.endTime || '14:00';
-                      const [startH, startM] = startTime.split(':').map(Number);
-                      const [endH, endM] = endTime.split(':').map(Number);
-                      const safeStartH = isNaN(startH) ? 10 : startH;
-                      const safeStartM = isNaN(startM) ? 0 : startM;
-                      const safeEndH = isNaN(endH) ? safeStartH + 3 : endH;
-                      const safeEndM = isNaN(endM) ? 0 : endM;
+                      const {
+                        startTime,
+                        endTime,
+                        startH: safeStartH,
+                        startM: safeStartM,
+                        endH: safeEndH,
+                        endM: safeEndM,
+                      } = getCleanerSlotForOrder(order, cleaner.id);
 
                       const startMinutes = (safeStartH - START_HOUR) * 60 + safeStartM;
                       const durationMinutes = Math.max(30, (safeEndH * 60 + safeEndM) - (safeStartH * 60 + safeStartM));
@@ -610,8 +636,8 @@ export default function SchedulePage() {
                               setEditingOrder({
                                 ...order,
                                 date: selectedDate,
-                                startTime,
-                                endTime,
+                                startTime: order.startTime || startTime,
+                                endTime: order.endTime || endTime,
                                 assignedCleaners: (order.assignedCleaners || []).map((ac: any) => ac.cleaner || ac),
                               });
                               setIsModalOpen(true);

@@ -27,10 +27,43 @@ async function start() {
     if (!message.isPrivate) return;
 
     try {
-      const sender = await message.getSender();
-      const senderId = message.senderId ? message.senderId.toString() : "unknown";
-      const senderName = [sender?.firstName, sender?.lastName].filter(Boolean).join(" ") || sender?.username || "Клиент Telegram";
-      const phone = sender?.phone ? `+${sender.phone}` : null;
+      const isOut = Boolean(message.out);
+
+      // В личных сообщениях Telegram:
+      // - если message.out === true (исходящее с телефона), собеседник — это получатель (message.chatId / peerId)
+      // - если message.out === false (входящее от клиента), собеседник — это отправитель (message.senderId)
+      let peer = null;
+      let peerId = null;
+
+      if (isOut) {
+        try {
+          peer = await message.getChat();
+        } catch (e) {
+          console.warn("getChat warning:", e);
+        }
+        peerId = (peer?.id || message.chatId || message.peerId?.userId)?.toString();
+      } else {
+        try {
+          peer = await message.getSender();
+        } catch (e) {
+          console.warn("getSender warning:", e);
+        }
+        peerId = (peer?.id || message.senderId || message.chatId)?.toString();
+      }
+
+      if (!peer && peerId) {
+        try {
+          peer = await client.getEntity(peerId);
+        } catch (e) {}
+      }
+
+      if (!peerId) {
+        console.warn("Не удалось определить ID собеседника:", message);
+        return;
+      }
+
+      const clientName = [peer?.firstName, peer?.lastName].filter(Boolean).join(" ") || peer?.username || "Клиент Telegram";
+      const phone = peer?.phone ? `+${peer.phone}` : null;
       
       let rawText = message.text || message.message || "";
 
@@ -97,46 +130,46 @@ async function start() {
         messageContent = `${replyPrefix}[Ответ на сообщение]`;
       }
 
-      console.log(`📩 Новое сообщение от ${senderName} (${senderId}): ${messageContent}`);
+      console.log(`${isOut ? "📤 Исходящее (с телефона)" : "📩 Входящее"} для ${clientName} (${peerId}): ${messageContent}`);
 
       const conversation = await prisma.conversation.upsert({
-        where: { externalId: senderId },
+        where: { externalId: peerId },
         update: {
           lastMessage: messageContent,
           lastActivity: new Date(),
           updatedAt: new Date(),
-          unreadCount: { increment: message.out ? 0 : 1 },
-          clientName: senderName,
-          phone: phone || undefined,
+          unreadCount: isOut ? undefined : { increment: 1 },
+          ...(clientName && clientName !== "Клиент Telegram" ? { clientName } : {}),
+          ...(phone ? { phone } : {}),
         },
         create: {
           channel: "TELEGRAM",
-          externalId: senderId,
-          senderName: senderName,
-          clientName: senderName,
+          externalId: peerId,
+          senderName: clientName,
+          clientName: clientName,
           phone: phone,
           lastMessage: messageContent,
           lastActivity: new Date(),
           updatedAt: new Date(),
-          unreadCount: message.out ? 0 : 1,
+          unreadCount: isOut ? 0 : 1,
         },
       });
 
       await prisma.message.create({
         data: {
           conversationId: conversation.id,
-          senderId: senderId,
-          senderName: message.out ? "Менеджер" : senderName,
-          senderType: message.out ? "MANAGER" : "CLIENT",
+          senderId: isOut ? "MANAGER" : peerId,
+          senderName: isOut ? "Менеджер (с телефона)" : clientName,
+          senderType: isOut ? "MANAGER" : "CLIENT",
           text: messageContent,
-          isIncoming: !message.out,
+          isIncoming: !isOut,
           timestamp: new Date(message.date * 1000),
         },
       });
 
       console.log(`✅ Сообщение сохранено в CRM для диалога ${conversation.id}`);
     } catch (err) {
-      console.error("❌ Ошибка при обработке входящего сообщения:", err);
+      console.error("❌ Ошибка при обработке сообщения Telegram:", err);
     }
   }, new NewMessage({}));
 }
