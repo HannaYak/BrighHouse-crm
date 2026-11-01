@@ -112,7 +112,7 @@ export default function KanbanPage() {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
 
     try {
-      await fetch('/api/orders', {
+      const res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: orderId, status: newStatus }),
@@ -120,6 +120,7 @@ export default function KanbanPage() {
     } catch (err) {
       console.error('Ошибка при перемещении карточки:', err);
       loadOrders();
+
     }
   };
 
@@ -128,7 +129,7 @@ export default function KanbanPage() {
     e.stopPropagation();
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     try {
-      await fetch('/api/orders', {
+      const res = await fetch('/api/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: orderId, status: newStatus }),
@@ -136,22 +137,30 @@ export default function KanbanPage() {
     } catch (err) {
       console.error(err);
       loadOrders();
+
     }
   };
 
   // --- ЛОГИКА СОХРАНЕНИЯ (ЕДИНОЕ ОКНО) ---
   const handleSaveOrder = async (savedOrder: OrderDetail) => {
     try {
-      await fetch('/api/orders', {
+      const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(savedOrder),
       });
-      setIsModalOpen(false);
-      loadOrders();
+      if (res.ok) {
+        setIsModalOpen(false);
+        await loadOrders();
+        alert('✅ Заказ успешно сохранен!');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Проверьте данные');
+      }
+
     } catch (e) {
       console.error(e);
-      alert('Ошибка при сохранении заказа');
+      throw e;
     }
   };
 

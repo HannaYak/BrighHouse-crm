@@ -197,7 +197,7 @@ export default function ClientsPage() {
       }
     } catch (e) {
       console.error(e);
-      alert('Ошибка соединения');
+      throw e;
     } finally {
       setSaving(false);
     }
@@ -220,7 +220,7 @@ export default function ClientsPage() {
       startTime: start,
       endTime: end,
       timeSlot: `${start} — ${end}`,
-      status: isClone ? 'CONFIRMED' : rawOrder.status || 'CONFIRMED',
+      status: isClone ? 'NEW' : rawOrder.status || 'NEW',
       serviceType: rawOrder.serviceType || 'STANDARD',
       areaM2: Number(rawOrder.areaM2) || 45,
       roomsCount: Number(rawOrder.roomsCount) || 1,
@@ -293,11 +293,12 @@ export default function ClientsPage() {
         setEditingOrder(null);
         fetchClients();
       } else {
-        alert('Ошибка при сохранении заказа');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Ошибка при сохранении заказа');
       }
     } catch (e) {
       console.error(e);
-      alert('Ошибка соединения');
+      throw e;
     }
   };
 

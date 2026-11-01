@@ -145,7 +145,7 @@ export default function SchedulePage() {
       startTime: startStr,
       endTime: endStr,
       timeSlot: `${startStr} — ${endStr}`,
-      status: 'CONFIRMED',
+      status: 'ASSIGNED',
       serviceType: 'STANDARD',
       areaM2: 45,
       roomsCount: 2,
@@ -207,11 +207,12 @@ export default function SchedulePage() {
         setIsModalOpen(false);
         setEditingOrder(null);
       } else {
-        alert('Ошибка сохранения заказа');
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Проверьте данные');
       }
     } catch (e) {
       console.error(e);
-      alert('Ошибка соединения с сервером');
+      throw e;
     }
   };
 
@@ -366,7 +367,18 @@ export default function SchedulePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => {
+              setEditingOrder(null);
+              setIsModalOpen(true);
+            }}
+            className="flex-1 sm:flex-initial bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+          >
+            <span>➕</span>
+            <span>Новый заказ</span>
+          </button>
           <button
             type="button"
             onClick={() => setOnlyWorkingToday(!onlyWorkingToday)}

@@ -12,6 +12,19 @@ function parseServiceType(type?: string): string {
   return 'STANDARD';
 }
 
+function parseOrderStatus(status?: string, cleanersCount = 0): 'NEW' | 'PROCESSING' | 'SELECTING' | 'ASSIGNED' | 'COMPLETED' | 'CANCELLED' {
+  if (!status) return cleanersCount > 0 ? 'ASSIGNED' : 'NEW';
+  const s = status.toUpperCase().trim();
+  if (s === 'COMPLETED' || s === 'PAID' || s === 'ОПЛАЧЕН') return 'COMPLETED';
+  if (s === 'CANCELLED' || s === 'ОТМЕНЕН') return 'CANCELLED';
+  if (s === 'PROCESSING' || s === 'В_РАБОТЕ' || s === 'В РАБОТЕ') return 'PROCESSING';
+  if (s === 'SELECTING') return 'SELECTING';
+  if (s === 'ASSIGNED' || s === 'НАЗНАЧЕН') return 'ASSIGNED';
+  if (s === 'NEW' || s === 'НОВЫЙ') return 'NEW';
+  if (s === 'CONFIRMED' || s === 'ПОДТВЕРЖДЕН') return cleanersCount > 0 ? 'ASSIGNED' : 'NEW';
+  return cleanersCount > 0 ? 'ASSIGNED' : 'NEW';
+}
+
 export async function GET() {
   try {
     const orders = await prisma.order.findMany({
@@ -78,6 +91,13 @@ export async function POST(request: Request) {
 
     const parsedDate = body.date ? new Date(body.date) : new Date();
 
+    const rawCleaners = (body.assignedCleaners || [])
+      .map((c: any) => (typeof c === 'object' ? c?.id : c))
+      .filter(Boolean);
+    const uniqueCleanerIds: number[] = Array.from(new Set(rawCleaners.map((id: any) => Number(id))));
+
+    const orderStatus = parseOrderStatus(body.status, uniqueCleanerIds.length);
+
     const orderData: any = {
       date: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
       timeSlot: body.timeSlot || `${body.startTime || '10:00'} — ${body.endTime || '14:00'}`,
@@ -113,9 +133,9 @@ export async function POST(request: Request) {
       latitude: lat,
       longitude: lng,
       price: Number(body.price) || 0,
-      cleanersCount: (body.assignedCleaners || []).length || 1,
+      cleanersCount: uniqueCleanerIds.length || 1,
       notes: body.notes || '',
-      status: body.status || 'CONFIRMED',
+      status: orderStatus,
       clientId: clientId,
 
       // Фиксация оплаты и ответственного за наличные
@@ -123,11 +143,6 @@ export async function POST(request: Request) {
       paymentNote: body.paymentNote || null,
       cashCollectedById: body.cashCollectedById ? Number(body.cashCollectedById) : null,
     };
-
-    const rawCleaners = (body.assignedCleaners || [])
-      .map((c: any) => (typeof c === 'object' ? c?.id : c))
-      .filter(Boolean);
-    const uniqueCleanerIds: number[] = Array.from(new Set(rawCleaners.map((id: any) => Number(id))));
 
     let order;
 
@@ -186,7 +201,7 @@ export async function PATCH(request: Request) {
     const { id, status, cancelReason, paymentMethod, cashCollectedById } = body;
 
     const updateData: any = {};
-    if (status !== undefined) updateData.status = status;
+    if (status !== undefined) updateData.status = parseOrderStatus(status);
     if (cancelReason !== undefined) updateData.cancelReason = cancelReason;
     if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
     if (cashCollectedById !== undefined) {

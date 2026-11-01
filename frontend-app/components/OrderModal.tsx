@@ -102,7 +102,7 @@ interface OrderModalProps {
   order: OrderDetail | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (savedOrder: OrderDetail) => void;
+  onSave: (savedOrder: OrderDetail) => Promise<void> | void;
 }
 
 const serviceTitles: Record<ServiceType, string> = {
@@ -120,7 +120,7 @@ const getDefaultForm = (): OrderDetail => ({
   date: new Date().toISOString().split('T')[0],
   startTime: '10:00',
   endTime: '13:00',
-  status: 'CONFIRMED',
+  status: 'NEW',
   serviceType: 'STANDARD',
   areaM2: 45,
   roomsCount: 2,
@@ -173,6 +173,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [availabilityMap, setAvailabilityMap] = useState<Record<number, any>>({});
   const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (order) {
@@ -182,7 +183,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       const savedDraft = localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
         try {
-          setForm(JSON.parse(savedDraft));
+          const parsed = JSON.parse(savedDraft);
+          if (parsed && parsed.status === 'CONFIRMED') parsed.status = 'NEW';
+          setForm(parsed);
           setHasRestoredDraft(true);
         } catch {
           setForm(getDefaultForm());
@@ -237,9 +240,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     const checkAvailability = async () => {
       try {
         setLoadingAvailability(true);
-        const dateStr = new Date(form.date).toISOString().slice(0, 10);
-        const startStr = (form.startTime || '10:00').slice(0, 5);
-        const endStr = (form.endTime || '13:00').slice(0, 5);
+        const parsedDate = new Date(form.date);
+        const dateStr = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
 
         // Передаем startTime и endTime на бекэнд, чтобы он учел весь слот, а не только точку старта
         const res = await fetch(`/api/cleaners/available?date=${dateStr}&startTime=${form.startTime}&endTime=${form.endTime}${form.id ? `&excludeOrderId=${form.id}` : ''}`);
@@ -452,9 +454,48 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
     }
   };
 
+  const handleSave = async () => {
+    if (warningMessage?.includes('Занят') || warningMessage?.includes('выходной')) {
+      if (!window.confirm('Один из клинеров занят или на выходном. Вы уверены, что хотите сохранить заказ с накладкой?')) {
+        return;
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(DRAFT_KEY);
+    }
+    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
+      id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+      name: c.name,
+    }));
+
+    const normalizedStatus =
+      form.status === 'COMPLETED' ? 'COMPLETED' :
+      form.status === 'CANCELLED' ? 'CANCELLED' :
+      form.status === 'PROCESSING' ? 'PROCESSING' :
+      cleanerPayload.length > 0 ? 'ASSIGNED' : 'NEW';
+
+    const orderToSave: OrderDetail = {
+      ...form,
+      status: normalizedStatus,
+      assignedCleaners: cleanerPayload as any,
+      timeSlot: `${form.startTime} — ${form.endTime}`,
+    };
+
+    try {
+      setSaving(true);
+      await onSave(orderToSave);
+      onClose();
+    } catch (err: any) {
+      alert('Ошибка при сохранении: ' + (err.message || 'Попробуйте снова'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-6xl h-[96vh] md:h-[92vh] max-h-[920px] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4">
+      <div className="bg-white sm:rounded-2xl border-0 sm:border border-slate-200 shadow-2xl w-full max-w-6xl h-[100dvh] sm:h-[92vh] max-h-[920px] flex flex-col overflow-hidden">
         {/* Шапка */}
         <div className="px-4 py-3 md:px-6 md:py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -462,7 +503,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
               {form.orderNumber || 'НОВЫЙ ЗАКАЗ'}
             </span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${form.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
-              {form.status === 'COMPLETED' ? '✓ ОПЛАЧЕН' : form.status || 'В РАБОТЕ'}
+              {form.status === 'COMPLETED' ? '✓ ОПЛАЧЕН' : form.status === 'ASSIGNED' ? '✅ НАЗНАЧЕН' : form.status || 'НОВЫЙ'}
             </span>
             <h2 className="text-sm sm:text-base font-bold text-slate-800 truncate">
               {form.clientName ? `Заказ: ${form.clientName}` : 'Новая заявка BrightHouse'}
@@ -494,9 +535,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
         </div>
 
         {/* Контент */}
-        <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden overscroll-contain">
           {/* Левая колонка */}
-          <div className="w-full md:w-[55%] p-4 md:p-6 border-b md:border-b-0 md:border-r border-slate-100 overflow-y-auto space-y-4">
+          <div className="w-full md:w-[55%] p-4 md:p-6 border-b md:border-b-0 md:border-r border-slate-100 overflow-visible md:overflow-y-auto space-y-4">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
@@ -889,7 +930,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
           </div>
 
           {/* Правая колонка */}
-          <div className="w-full md:w-[45%] p-4 md:p-6 flex flex-col justify-between bg-slate-50/40 overflow-y-auto space-y-4">
+          <div className="w-full md:w-[45%] p-4 md:p-6 flex flex-col justify-between bg-slate-50/40 overflow-visible md:overflow-y-auto space-y-4">
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
                 <div>
@@ -1141,157 +1182,138 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   />
                 )}
               </div>
-            </div>
 
-            {/* Итог и действия */}
-            <div className="border-t border-slate-200 pt-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500 font-medium">Итоговая стоимость:</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    value={form.price}
-                    onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
-                    className="w-24 bg-white border border-slate-300 rounded-lg p-1.5 text-right font-extrabold text-slate-900 text-base"
-                  />
-                  <span className="text-xs font-bold text-slate-600">zł</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2 flex-wrap">
-                {form.id && (
-                  <>
-                    {form.status !== 'COMPLETED' ? (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!window.confirm(`Завершить заказ ${form.orderNumber} на сумму ${form.price} zł и отметить оплаченным?`)) return;
-
-                          const payload = {
-                            ...form,
-                            status: 'COMPLETED',
-                            timeSlot: `${form.startTime} — ${form.endTime}`,
-                            assignedCleaners: form.assignedCleaners.map((c: any) => ({
-                              id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
-                              name: c.name,
-                            })),
-                          };
-
-                          await fetch('/api/orders', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload),
-                          });
-
-                          if (typeof window !== 'undefined') {
-                            localStorage.removeItem(DRAFT_KEY);
-                          }
-
-                          onSave(payload as any);
-                          onClose();
-                        }}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-3 rounded-xl text-xs transition shadow-xs flex items-center justify-center gap-1"
-                        title="Отметить заказ выполненным и оплаченным"
-                      >
-                        ✅ Оплачен / Закрыть
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const payload = {
-                            ...form,
-                            status: 'CONFIRMED',
-                            timeSlot: `${form.startTime} — ${form.endTime}`,
-                            assignedCleaners: form.assignedCleaners.map((c: any) => ({
-                              id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
-                              name: c.name,
-                            })),
-                          };
-
-                          await fetch('/api/orders', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload),
-                          });
-
-                          if (typeof window !== 'undefined') {
-                            localStorage.removeItem(DRAFT_KEY);
-                          }
-
-                          onSave(payload as any);
-                          onClose();
-                        }}
-                        className="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
-                        title="Вернуть заказ в статус В работе"
-                      >
-                        🔄 Вернуть в работу
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-3 rounded-xl text-xs transition flex items-center justify-center gap-1"
-                      title="Печать счета / Rachunek"
-                    >
-                      📄 Счет
-                    </button>
-
+              {/* Второстепенные действия для существующих заказов */}
+              {form.id && (
+                <div className="flex items-center gap-2 pt-2 flex-wrap border-t border-slate-200">
+                  {form.status !== 'COMPLETED' ? (
                     <button
                       type="button"
                       onClick={async () => {
-                        const reason = prompt('Укажите причину отмены заказа:');
-                        if (reason !== null) {
-                          await fetch('/api/orders', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: form.id, status: 'CANCELLED', cancelReason: reason }),
-                          });
-                          if (typeof window !== 'undefined') localStorage.removeItem(DRAFT_KEY);
-                          onClose();
-                          window.location.reload();
+                        if (!window.confirm(`Завершить заказ ${form.orderNumber} на сумму ${form.price} zł и отметить оплаченным?`)) return;
+
+                        const payload = {
+                          ...form,
+                          status: 'COMPLETED',
+                          timeSlot: `${form.startTime} — ${form.endTime}`,
+                          assignedCleaners: form.assignedCleaners.map((c: any) => ({
+                            id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+                            name: c.name,
+                          })),
+                        };
+
+                        await fetch('/api/orders', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(payload),
+                        });
+
+                        if (typeof window !== 'undefined') {
+                          localStorage.removeItem(DRAFT_KEY);
                         }
+
+                        onSave(payload as any);
+                        onClose();
                       }}
-                      className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-3 rounded-xl text-xs transition"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2.5 rounded-xl text-xs transition shadow-xs flex items-center justify-center gap-1"
+                      title="Отметить заказ выполненным и оплаченным"
                     >
-                      ❌ Отменить
+                      ✅ Оплачен / Закрыть
                     </button>
-                  </>
-                )}
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const payload = {
+                          ...form,
+                          status: 'ASSIGNED',
+                          timeSlot: `${form.startTime} — ${form.endTime}`,
+                          assignedCleaners: form.assignedCleaners.map((c: any) => ({
+                            id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
+                            name: c.name,
+                          })),
+                        };
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Финальная проверка перед сохранением, если игнорируют предупреждение
-                    if (warningMessage?.includes('Занят') || warningMessage?.includes('выходной')) {
-                      if(!window.confirm("Один из клинеров занят или на выходном. Вы уверены, что хотите сохранить заказ с накладкой?")) {
-                        return;
+                        await fetch('/api/orders', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(payload),
+                        });
+
+                        if (typeof window !== 'undefined') {
+                          localStorage.removeItem(DRAFT_KEY);
+                        }
+
+                        onSave(payload as any);
+                        onClose();
+                      }}
+                      className="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                      title="Вернуть заказ в статус В работе"
+                    >
+                      🔄 Вернуть в работу
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1"
+                    title="Печать счета / Rachunek"
+                  >
+                    📄 Счет
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const reason = prompt('Укажите причину отмены заказа:');
+                      if (reason !== null) {
+                        await fetch('/api/orders', {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ id: form.id, status: 'CANCELLED', cancelReason: reason }),
+                        });
+                        if (typeof window !== 'undefined') localStorage.removeItem(DRAFT_KEY);
+                        onClose();
+                        window.location.reload();
                       }
-                    }
-
-                    if (typeof window !== 'undefined') {
-                      localStorage.removeItem(DRAFT_KEY);
-                    }
-                    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
-                      id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
-                      name: c.name,
-                    }));
-
-                    onSave({
-                      ...form,
-                      assignedCleaners: cleanerPayload as any,
-                      timeSlot: `${form.startTime} — ${form.endTime}`,
-                    });
-                    onClose();
-                  }}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs shadow-md transition"
-                >
-                  💾 Сохранить заказ
-                </button>
-              </div>
+                    }}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-2.5 rounded-xl text-xs transition"
+                  >
+                    ❌ Отменить
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+        </div>
+
+        {/* Фиксированный нижний футер: сумма и кнопка сохранения всегда на экране */}
+        <div className="px-4 py-3 bg-white border-t border-slate-200 shrink-0 flex items-center justify-between gap-3 safe-p-bottom shadow-lg z-30">
+          <div className="flex items-center gap-2">
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">К оплате:</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={form.price}
+                  onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+                  className="w-20 sm:w-24 bg-slate-50 border border-slate-300 rounded-lg p-1.5 text-right font-extrabold text-slate-900 text-sm sm:text-base"
+                />
+                <span className="text-xs font-bold text-slate-600">zł</span>
+              </div>
+            </div>
+            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">• {durationText}</span>
+          </div>
+
+          <button
+            type="button"
+            disabled={saving}
+            onClick={handleSave}
+            className="flex-1 sm:flex-initial sm:min-w-[220px] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-5 rounded-xl text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+          >
+            {saving ? '⏳ Сохраняем...' : '💾 Сохранить заказ'}
+          </button>
         </div>
       </div>
     </div>

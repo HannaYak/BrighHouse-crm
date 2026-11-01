@@ -1,10 +1,12 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import OrderModal, { OrderDetail } from '../components/OrderModal';
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
 
   const loadDashboard = async () => {
     try {
@@ -24,6 +26,21 @@ export default function DashboardPage() {
     loadDashboard();
   }, []);
 
+  const handleSaveOrder = async (saved: OrderDetail) => {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(saved),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Проверьте данные');
+    }
+    setIsOrderModalOpen(false);
+    await loadDashboard();
+    alert('✅ Заказ успешно создан!');
+  };
+
   if (loading) return <div className="p-10 text-center text-slate-500 text-xs">Загрузка панели управления...</div>;
 
   return (
@@ -31,21 +48,29 @@ export default function DashboardPage() {
       {/* Приветствие и быстрые действия */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">✨ Панель управления BrightHouse</h1>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">✨ Панель управления BrightHouse</h1>
           <p className="text-xs text-slate-500">Сводка показателей бизнеса и операционные задачи на сегодня</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setIsOrderModalOpen(true)}
+            className="flex-1 sm:flex-initial bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+          >
+            <span>➕</span>
+            <span>Новый заказ</span>
+          </button>
           <Link
             href="/calculator"
             className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5"
           >
-            🧮 Расчет / Заказ
+            🧮 Калькулятор
           </Link>
           <Link
             href="/kanban"
-            className="bg-brand-600 hover:bg-brand-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5"
+            className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5 border border-slate-200"
           >
-            📋 Канбан-доска
+            📋 Канбан
           </Link>
         </div>
       </div>
@@ -64,7 +89,7 @@ export default function DashboardPage() {
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Средний чек</span>
-          <div className="text-2xl font-extrabold text-brand-600 mt-1">
+          <div className="text-2xl font-extrabold text-blue-600 mt-1">
             {data?.avgCheck || 0} zł
           </div>
           <span className="text-[11px] text-slate-500 mt-1 block">
@@ -100,7 +125,7 @@ export default function DashboardPage() {
             <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
               📅 Расписание на сегодня ({data?.todayOrders?.length || 0})
             </h2>
-            <Link href="/schedule" className="text-xs text-brand-600 font-bold hover:underline">
+            <Link href="/schedule" className="text-xs text-blue-600 font-bold hover:underline">
               Все расписание →
             </Link>
           </div>
@@ -112,7 +137,7 @@ export default function DashboardPage() {
                 <div key={order.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center text-xs">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-brand-600">{order.orderNumber}</span>
+                      <span className="font-extrabold text-blue-600">{order.orderNumber}</span>
                       <span className="font-bold text-slate-900">{order.clientName || 'Без имени'}</span>
                       <span className="text-[10px] text-slate-500 bg-white border px-1.5 py-0.5 rounded font-bold">
                         {order.timeSlot?.split('—')[0]?.trim() || order.startTime || '10:00'}
@@ -150,7 +175,7 @@ export default function DashboardPage() {
             <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
               🏆 Рейтинг клинеров
             </h2>
-            <Link href="/cleaners" className="text-xs text-brand-600 font-bold hover:underline">
+            <Link href="/cleaners" className="text-xs text-blue-600 font-bold hover:underline">
               Управление →
             </Link>
           </div>
@@ -192,6 +217,16 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Модалка создания заказа прямо с главной страницы */}
+      {isOrderModalOpen && (
+        <OrderModal
+          order={null}
+          isOpen={isOrderModalOpen}
+          onClose={() => setIsOrderModalOpen(false)}
+          onSave={handleSaveOrder}
+        />
+      )}
     </div>
   );
 }
