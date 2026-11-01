@@ -73,8 +73,9 @@ export async function POST(request: Request) {
     let lng = body.longitude || null;
     if (!lat && body.addressLine1) {
       try {
-        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(body.addressLine1)}&limit=1`, {
-          headers: { 'User-Agent': 'BrightHouse-CRM/1.0' }
+        const query = encodeURIComponent(`${body.addressLine1}, Warsaw, Poland`);
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`, {
+          headers: { 'User-Agent': 'BrightHouseCRM/1.0' }
         });
         const textData = await geoRes.text();
         if (textData.trim().startsWith('[')) {
@@ -98,6 +99,27 @@ export async function POST(request: Request) {
 
     const orderStatus = parseOrderStatus(body.status, uniqueCleanerIds.length);
 
+    // Сохраняем дополнительные опции (витрины, балконные окна, химчистку), отсутствующие в таблице Order, внутри поля notes
+    const extraDetails: string[] = [];
+    if (Number(body.showcaseWindowsCount) > 0) extraDetails.push(`Витрины: ${body.showcaseWindowsCount} шт.`);
+    if (Number(body.balconyWindowsCount) > 0) extraDetails.push(`Балконные окна: ${body.balconyWindowsCount} шт.`);
+    if (Number(body.drySofa2) > 0) extraDetails.push(`Химчистка 2-местн. дивана: ${body.drySofa2} шт.`);
+    if (Number(body.drySofa3) > 0) extraDetails.push(`Химчистка 3-местн. дивана: ${body.drySofa3} шт.`);
+    if (Number(body.drySofaCorner4) > 0) extraDetails.push(`Химчистка угл. дивана: ${body.drySofaCorner4} шт.`);
+    if (Number(body.dryArmchair) > 0) extraDetails.push(`Химчистка кресла: ${body.dryArmchair} шт.`);
+    if (Number(body.dryMattressSide) > 0) extraDetails.push(`Химчистка матраса: ${body.dryMattressSide} ст.`);
+    if (Number(body.dryCarpetM2) > 0) extraDetails.push(`Химчистка ковра: ${body.dryCarpetM2} м²`);
+    if (Number(body.hasDishesHours) > 0) extraDetails.push(`Мытье посуды: ${body.hasDishesHours} ч.`);
+    if (Number(body.hasIroningHours) > 0) extraDetails.push(`Глажка: ${body.hasIroningHours} ч.`);
+
+    const rawNotes = (body.notes || '').trim();
+    const extraText = extraDetails.length > 0 ? `[Дополнительно: ${extraDetails.join(', ')}]` : '';
+    let finalNotes = rawNotes;
+    if (extraText && !rawNotes.includes(extraText)) {
+      finalNotes = rawNotes ? `${rawNotes}\n${extraText}` : extraText;
+    }
+
+    // В orderData передаются ТОЛЬКО поля, реально существующие в схеме Prisma Order
     const orderData: any = {
       date: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
       timeSlot: body.timeSlot || `${body.startTime || '10:00'} — ${body.endTime || '14:00'}`,
@@ -106,8 +128,6 @@ export async function POST(request: Request) {
       roomsCount: Number(body.roomsCount) || 1,
       bathroomsCount: Number(body.bathroomsCount) || 1,
       windowsCount: Number(body.windowsCount) || 0,
-      showcaseWindowsCount: Number(body.showcaseWindowsCount) || 0,
-      balconyWindowsCount: Number(body.balconyWindowsCount) || 0,
       hasOven: Boolean(body.hasOven),
       hasFridge: Boolean(body.hasFridge),
       hasFridgeFreeze: Boolean(body.hasFridgeFreeze),
@@ -121,11 +141,6 @@ export async function POST(request: Request) {
       hasVacuum: Boolean(body.hasVacuum),
       hasPets: Boolean(body.hasPets),
       hasKeys: Boolean(body.hasKeys),
-      drySofa2: Number(body.drySofa2) || 0,
-      drySofa3: Number(body.drySofa3) || 0,
-      drySofaCorner4: Number(body.drySofaCorner4) || 0,
-      dryArmchair: Number(body.dryArmchair) || 0,
-      dryMattressSide: Number(body.dryMattressSide) || 0,
       clientName: (body.clientName || 'Клиент').trim(),
       clientPhone: (body.clientPhone || '').trim(),
       addressLine1: (body.addressLine1 || '').trim(),
@@ -134,7 +149,7 @@ export async function POST(request: Request) {
       longitude: lng,
       price: Number(body.price) || 0,
       cleanersCount: uniqueCleanerIds.length || 1,
-      notes: body.notes || '',
+      notes: finalNotes,
       status: orderStatus,
       clientId: clientId,
 
