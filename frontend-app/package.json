@@ -29,7 +29,8 @@
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.15",
     "telegram": "^2.26.16",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "prisma": "^5.22.0"

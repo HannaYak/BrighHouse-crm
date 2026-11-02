@@ -1,6 +1,24 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 
+function parseClientMetadata(notes: string | null) {
+  if (!notes) return { channel: 'Instagram', clientType: 'разовый', promoCode: null, cleanNotes: '' };
+
+  const channelMatch = notes.match(/\[Канал:\s*([^\]]+)\]/i);
+  const typeMatch = notes.match(/\[Тип:\s*([^\]]+)\]/i);
+  const promoMatch = notes.match(/\[Промокод:\s*([^\]]+)\]/i);
+  const notesMatch = notes.match(/\[Заметки:\s*([^\]]+)\]/i);
+
+  const channel = channelMatch ? channelMatch[1].trim() : 'Instagram';
+  const clientType = typeMatch ? typeMatch[1].trim() : 'разовый';
+  const promoCode = promoMatch ? promoMatch[1].trim() : null;
+  const cleanNotes = notesMatch
+    ? notesMatch[1].trim()
+    : notes.replace(/\[(Канал|Тип|Промокод|Заметки):[^\]]+\]/gi, '').trim();
+
+  return { channel, clientType, promoCode, cleanNotes };
+}
+
 export async function GET() {
   try {
     const clients = await prisma.client.findMany({
@@ -17,35 +35,8 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
-    const allOrders = await prisma.order.findMany({
-      include: {
-        assignedCleaners: {
-          include: { cleaner: true },
-        },
-      },
-      orderBy: { date: 'desc' },
-    });
-
     const formattedClients = clients.map((client) => {
-      const cleanClientPhone = (client.phone || '').replace(/\D/g, '');
-
-      // Собираем заказы: сначала прямые по связи, плюс по совпадению телефона
-      const matchedOrders = allOrders.filter((o) => {
-        if (o.clientId && String(o.clientId) === String(client.id)) return true;
-        const cleanOrderPhone = (o.clientPhone || '').replace(/\D/g, '');
-        return (
-          cleanClientPhone.length >= 6 &&
-          cleanOrderPhone.length >= 6 &&
-          (cleanClientPhone.includes(cleanOrderPhone) || cleanOrderPhone.includes(cleanClientPhone))
-        );
-      });
-
-      // Исключаем дубликаты по id заказа
-      const uniqueOrdersMap = new Map();
-      [...(client.orders || []), ...matchedOrders].forEach((ord) => {
-        uniqueOrdersMap.set(ord.id, ord);
-      });
-      const finalOrders = Array.from(uniqueOrdersMap.values()).sort(
+      const finalOrders = (client.orders || []).sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
 
@@ -53,16 +44,25 @@ export async function GET() {
         .filter((o) => o.status !== ('CANCELLED' as any))
         .reduce((sum, o) => sum + (Number(o.price) || 0), 0);
 
+      const meta = parseClientMetadata(client.notes);
+
       return {
         id: client.id,
         name: client.name,
         phone: client.phone,
         address: client.address,
         notes: client.notes,
+        channel: meta.channel,
+        clientType: meta.clientType,
+        promoCode: meta.promoCode,
+        cleanNotes: meta.cleanNotes,
         favoriteCleaner: client.favoriteCleaner,
         blacklistCleaner: client.blacklistCleaner,
         ordersCount: finalOrders.length,
         totalSpent,
+        averageCheck: finalOrders.length > 0 ? Math.round(totalSpent / finalOrders.length) : 0,
+        firstOrderDate: finalOrders.length > 0 ? finalOrders[finalOrders.length - 1].date : null,
+        lastOrderDate: finalOrders.length > 0 ? finalOrders[0].date : null,
         orders: finalOrders,
       };
     });
