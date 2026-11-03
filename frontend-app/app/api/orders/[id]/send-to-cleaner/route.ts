@@ -48,6 +48,7 @@ export async function POST(
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
+        client: true,
         assignedCleaners: {
           include: { cleaner: true }
         }
@@ -68,6 +69,15 @@ export async function POST(
     const extrasText = extrasList.length > 0
       ? extrasList.map((e) => `• ${e}`).join('\n')
       : 'Нет';
+
+    const rawPhone = order.clientPhone || order.client?.phone || '';
+    const isFakePhone = rawPhone.includes('NO_PHONE') || rawPhone.startsWith('---');
+    const cleanPhone = isFakePhone ? '' : rawPhone.trim();
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+
+    const phoneFormatted = cleanPhone
+      ? `📞 <b>Телефон клиента:</b> <code>${cleanPhone}</code> (<a href="tel:${cleanPhone}">Позвонить</a>${digitsOnly.length >= 9 ? ` | <a href="https://wa.me/${digitsOnly}">WhatsApp</a>` : ''})`
+      : `📞 <b>Телефон клиента:</b> <i>номер уточняйте у менеджера</i>`;
     
     for (const assignment of order.assignedCleaners) {
       const cleaner = assignment.cleaner;
@@ -75,16 +85,20 @@ export async function POST(
         const orderAny = order as any;
         const timeDisplay = order.timeSlot || orderAny.startTime || '10:00';
         
-        const message = `🧹 Новый заказ #${order.orderNumber}
-📅 Дата: ${new Date(order.date).toLocaleDateString('ru-RU')}
-⏱️ Время: ${timeDisplay}
-📍 Адрес: ${order.addressLine1}${order.addressLine2 ? ', ' + order.addressLine2 : ''}
-🏠 Параметры: ${order.roomsCount || 1} комн., ${order.bathroomsCount || 1} сануз., ${order.areaM2 || 40} м²
-✨ Дополнительные услуги:
+        const message = `🧹 <b>Новый заказ #${order.orderNumber}</b>
+📅 <b>Дата:</b> ${new Date(order.date).toLocaleDateString('ru-RU')}
+⏱️ <b>Время:</b> ${timeDisplay}
+📍 <b>Адрес:</b> ${order.addressLine1}${order.addressLine2 ? ', ' + order.addressLine2 : ''}
+👤 <b>Клиент:</b> ${order.clientName || 'Клиент'}
+${phoneFormatted}
+🏠 <b>Параметры:</b> ${order.roomsCount || 1} комн., ${order.bathroomsCount || 1} сануз., ${order.areaM2 || 40} м²
+✨ <b>Дополнительные услуги:</b>
 ${extrasText}
 
-💰 К выплате: ${Math.round((order.price || 0) * 0.4)} zł
-📝 Примечания: ${order.notes || 'Нет'}`;
+💰 <b>К выплате:</b> ${Math.round((order.price || 0) * 0.4)} zł
+📝 <b>Примечания:</b> ${order.notes || 'Нет'}
+
+Пожалуйста, подтвердите получение наряда нажатием кнопки ниже! ✨`;
 
         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
           method: 'POST',
@@ -95,7 +109,7 @@ ${extrasText}
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [
-                [{ text: '🚗 Выехал на объект / Начать', callback_data: `start_order_${order.id}` }]
+                [{ text: '✅ Принял(а) наряд в работу', callback_data: `confirm_order_${order.id}` }]
               ]
             }
           })

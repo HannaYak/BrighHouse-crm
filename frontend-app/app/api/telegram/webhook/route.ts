@@ -40,6 +40,137 @@ export async function POST(request: Request) {
       const data = callback.data as string;
       const chatId = callback.message.chat.id;
 
+      // Клинер: Подтверждение наряда в работу
+      if (data.startsWith('confirm_order_')) {
+        const orderId = data.replace('confirm_order_', '');
+        const cleaner = await prisma.cleaner.findFirst({
+          where: { telegramChatId: String(chatId) },
+        });
+
+        if (cleaner) {
+          await prisma.orderCleaner.updateMany({
+            where: { orderId, cleanerId: cleaner.id },
+            data: { isAccepted: true },
+          });
+        }
+
+        const order = await prisma.order.findUnique({
+          where: { id: orderId },
+          include: { client: true },
+        });
+
+        if (order && (order.status === 'NEW' || order.status === 'SELECTING')) {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { status: 'ASSIGNED' as any },
+          });
+        }
+
+        await answerCallbackQuery(callback.id, '✅ Наряд принят в работу!');
+
+        const rawPhone = order?.clientPhone || order?.client?.phone || '';
+        const isFakePhone = rawPhone.includes('NO_PHONE') || rawPhone.startsWith('---');
+        const cleanPhone = isFakePhone ? '' : rawPhone.trim();
+        const digitsOnly = cleanPhone.replace(/\D/g, '');
+        const phoneDisplay = cleanPhone
+          ? `\n📞 <b>Телефон клиента:</b> <code>${cleanPhone}</code> (<a href="tel:${cleanPhone}">Позвонить</a>${digitsOnly.length >= 9 ? ` | <a href="https://wa.me/${digitsOnly}">WhatsApp</a>` : ''})`
+          : '\n📞 <b>Телефон клиента:</b> <i>номер уточняйте у менеджера</i>';
+
+        const addressText = `${order?.addressLine1 || ''}${order?.addressLine2 ? ', кв/оф ' + order.addressLine2 : ''}`;
+
+        await sendMessage(
+          chatId,
+          `✅ <b>Наряд #${order?.orderNumber || ''} принят в работу!</b>\n` +
+          `📍 <b>Адрес:</b> ${addressText}${phoneDisplay}\n` +
+          `💰 <b>Сумма к оплате:</b> <b>${order?.price || 0} zł</b>\n\n` +
+          `<b>Отметьте способ оплаты при расчете с клиентом:</b>`,
+          {
+            inline_keyboard: [
+              [
+                { text: '💵 Забрала наличными', callback_data: `payment_cash_${orderId}` },
+                { text: '💳 Безнал', callback_data: `payment_cashless_${orderId}` },
+              ],
+              [
+                { text: '🏁 Завершить уборку', callback_data: `done_order_${orderId}` },
+              ],
+            ],
+          }
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      // Клинер: Фиксация оплаты НАЛИЧНЫМИ
+      if (data.startsWith('payment_cash_')) {
+        const orderId = data.replace('payment_cash_', '');
+        const cleaner = await prisma.cleaner.findFirst({
+          where: { telegramChatId: String(chatId) },
+        });
+
+        const order = await prisma.order.update({
+          where: { id: orderId },
+          data: {
+            paymentMethod: 'CASH',
+            cashCollectedById: cleaner?.id || null,
+            paymentNote: `Наличные (${cleaner?.name || 'клинер'} через TG-бот)`,
+          },
+        });
+
+        await answerCallbackQuery(callback.id, '💵 Зафиксировано: Наличные!');
+        await sendMessage(
+          chatId,
+          `💵 <b>Оплата зафиксирована: НАЛИЧНЫМИ (${order.price || 0} zł)</b>\n` +
+          `Деньги находятся у вас (${cleaner?.name || 'клинер'}). Сумма закреплена за вами в расчете кассы.\n\n` +
+          `Когда закончите уборку на объекте, нажмите кнопку:`,
+          {
+            inline_keyboard: [
+              [
+                { text: '💳 Переключить на Безнал', callback_data: `payment_cashless_${orderId}` },
+              ],
+              [
+                { text: '🏁 Завершить уборку', callback_data: `done_order_${orderId}` },
+              ],
+            ],
+          }
+        );
+        return NextResponse.json({ ok: true });
+      }
+
+      // Клинер: Фиксация оплаты БЕЗНАЛ
+      if (data.startsWith('payment_cashless_')) {
+        const orderId = data.replace('payment_cashless_', '');
+        const cleaner = await prisma.cleaner.findFirst({
+          where: { telegramChatId: String(chatId) },
+        });
+
+        await prisma.order.update({
+          where: { id: orderId },
+          data: {
+            paymentMethod: 'CARD',
+            cashCollectedById: null,
+            paymentNote: `Безналичный расчет (отмечено клинером ${cleaner?.name || ''})`,
+          },
+        });
+
+        await answerCallbackQuery(callback.id, '💳 Зафиксировано: Безнал!');
+        await sendMessage(
+          chatId,
+          `💳 <b>Оплата зафиксирована: БЕЗНАЛ</b>\n` +
+          `Оплата поступила на счет / карту компании. Деньги у клиента брать не нужно.\n\n` +
+          `Когда закончите уборку на объекте, нажмите кнопку:`,
+          {
+            inline_keyboard: [
+              [
+                { text: '💵 Переключить на Наличные', callback_data: `payment_cash_${orderId}` },
+              ],
+              [
+                { text: '🏁 Завершить уборку', callback_data: `done_order_${orderId}` },
+              ],
+            ],
+          }
+        );
+        return NextResponse.json({ ok: true });
+      }
+
       // Клинер: Начало выполнения заказа
       if (data.startsWith('start_order_')) {
         const orderId = data.replace('start_order_', '');
@@ -51,10 +182,14 @@ export async function POST(request: Request) {
         await answerCallbackQuery(callback.id, 'Статус обновлен: В работе!');
         await sendMessage(
           chatId,
-          `🚗 <b>Вы начали выполнение заказа!</b>\nСтатус переведен в работу. Удачной уборки! ✨`,
+          `🚗 <b>Вы начали выполнение заказа!</b>\nСтатус переведен в работу. Удачной уборки! ✨\n\n<b>Отметьте способ оплаты при расчете с клиентом:</b>`,
           {
             inline_keyboard: [
-              [{ text: '✅ Завершить уборку', callback_data: `done_order_${orderId}` }]
+              [
+                { text: '💵 Забрала наличными', callback_data: `payment_cash_${orderId}` },
+                { text: '💳 Безнал', callback_data: `payment_cashless_${orderId}` },
+              ],
+              [{ text: '🏁 Завершить уборку', callback_data: `done_order_${orderId}` }]
             ]
           }
         );

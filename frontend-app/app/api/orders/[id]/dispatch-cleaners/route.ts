@@ -22,6 +22,7 @@ export async function POST(
     const order = await prisma.order.findUnique({
       where: { id },
       include: {
+        client: true,
         assignedCleaners: {
           include: { cleaner: true },
         },
@@ -39,6 +40,16 @@ export async function POST(
     const o = order as any;
     const dateFormatted = new Date(order.date).toLocaleDateString('ru-RU');
     const teamList = order.assignedCleaners.map((ac) => ac.cleaner?.name).filter(Boolean).join(' + ');
+
+    // Определение номера телефона клиента
+    const rawPhone = order.clientPhone || order.client?.phone || '';
+    const isFakePhone = rawPhone.includes('NO_PHONE') || rawPhone.startsWith('---');
+    const cleanPhone = isFakePhone ? '' : rawPhone.trim();
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+
+    const phoneFormatted = cleanPhone
+      ? `📞 <b>Телефон клиента:</b> <code>${cleanPhone}</code> (<a href="tel:${cleanPhone}">Позвонить</a>${digitsOnly.length >= 9 ? ` | <a href="https://wa.me/${digitsOnly}">WhatsApp</a>` : ''})`
+      : `📞 <b>Телефон клиента:</b> <i>номер уточняйте у менеджера</i>`;
 
     // 1. Сборка всех дополнительных услуг
     const addOns: string[] = [];
@@ -80,7 +91,7 @@ export async function POST(
     if (o.dryCarpetM2 && o.dryCarpetM2 > 0) addOns.push(`🧶 Химчистка ковра: ${o.dryCarpetM2} м²`);
 
     const addOnsFormatted = addOns.length > 0
-      ? `\n✨ *Дополнительные услуги:*\n${addOns.map((item) => `• ${item}`).join('\n')}\n`
+      ? `\n✨ <b>Дополнительные услуги:</b>\n${addOns.map((item) => `• ${item}`).join('\n')}\n`
       : '';
 
     const timeSlotDisplay = o.timeSlot || (o.startTime && o.endTime ? `${o.startTime} — ${o.endTime}` : '10:00 — 14:00');
@@ -89,8 +100,8 @@ export async function POST(
     // Инструкция по оплате для сотрудника
     const isCash = o.paymentMethod === 'CASH';
     const paymentInstruction = isCash
-      ? `💵 *Оплата на месте НАЛИЧНЫМИ:* *${order.price} zł*\n⚠️ _Пожалуйста, обязательно заберите точную сумму у клиента!_`
-      : `💳 *Оплата:* Безналичный расчет (${order.price} zł уже оплачено / на счет компании).\n_Деньги у клиента брать НЕ нужно._`;
+      ? `💵 <b>Оплата на месте НАЛИЧНЫМИ:</b> <b>${order.price} zł</b>\n⚠️ <i>Пожалуйста, обязательно заберите точную сумму у клиента!</i>`
+      : `💳 <b>Оплата:</b> Безналичный расчет (${order.price} zł на счет компании).\n<i>Деньги у клиента брать НЕ нужно.</i>`;
 
     const results = [];
 
@@ -98,24 +109,25 @@ export async function POST(
       const cleaner = item.cleaner as any;
       const chatId = cleaner?.telegramChatId || cleaner?.telegramId;
 
-      const messageText = `🧹 *НОВЫЙ НАРЯД НА УБОРКУ!*
+      const messageText = `🧹 <b>НОВЫЙ НАРЯД НА УБОРКУ!</b>
 
-📋 *Заказ:* \`${order.orderNumber}\`
-📅 *Дата:* ${dateFormatted}
-⏰ *Время:* ${timeSlotDisplay}
-📍 *Адрес:* ${order.addressLine1} ${order.addressLine2 ? `(кв/оф ${order.addressLine2})` : ''}
-👤 *Клиент:* ${order.clientName || 'Клиент'} (${order.clientPhone || 'номер уточняйте у менеджера'})
+📋 <b>Заказ:</b> <code>${order.orderNumber}</code>
+📅 <b>Дата:</b> ${dateFormatted}
+⏰ <b>Время:</b> ${timeSlotDisplay}
+📍 <b>Адрес:</b> ${order.addressLine1} ${order.addressLine2 ? `(кв/оф ${order.addressLine2})` : ''}
+👤 <b>Клиент:</b> ${order.clientName || 'Клиент'}
+${phoneFormatted}
 
-🏠 *Параметры объекта:*
-• Тариф: *${serviceTitle}*
+🏠 <b>Параметры объекта:</b>
+• Тариф: <b>${serviceTitle}</b>
 • Площадь: ${order.areaM2 || 45} м²
 • Комнат: ${order.roomsCount || 1} | Санузлов: ${order.bathroomsCount || 1}
 ${addOnsFormatted}
-👥 *Состав бригады:* ${teamList}
+👥 <b>Состав бригады:</b> ${teamList}
 
 ${paymentInstruction}
 
-📝 *Особенности / ТЗ от клиента:*
+📝 <b>Особенности / ТЗ от клиента:</b>
 ${order.notes ? order.notes : 'Без особых указаний'}
 
 Пожалуйста, подтвердите получение наряда нажатием кнопки ниже! ✨`;
@@ -128,7 +140,7 @@ ${order.notes ? order.notes : 'Без особых указаний'}
             body: JSON.stringify({
               chat_id: chatId,
               text: messageText,
-              parse_mode: 'Markdown',
+              parse_mode: 'HTML',
               reply_markup: {
                 inline_keyboard: [
                   [
