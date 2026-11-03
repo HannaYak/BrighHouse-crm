@@ -244,6 +244,57 @@ export default function ClientsPage() {
     }
   };
 
+  const handleDeleteClient = async () => {
+    if (!selectedClient) return;
+
+    const confirmed = window.confirm(
+      `Вы уверены, что хотите удалить клиента "${selectedClient.name || 'Без имени'}"?\nКарточка клиента будет удалена из базы.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/clients?id=${selectedClient.id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        alert('🗑️ Клиент успешно удален из базы');
+        setSelectedClient(null);
+        fetchClients();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Ошибка при удалении клиента');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка соединения с сервером');
+    }
+  };
+
+  const handleDispatchOrder = async (orderId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      const res = await fetch(`/api/orders/${orderId}/dispatch-cleaners`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const sentCount = data.results?.filter((r: any) => r.status === 'SENT').length || 0;
+        const noTg = data.results?.filter((r: any) => r.status === 'NO_TELEGRAM_LINKED').map((r: any) => r.cleaner) || [];
+        let msg = `✅ Наряд успешно отправлен в Telegram бот (${sentCount} сотр.)`;
+        if (noTg.length > 0) {
+          msg += `\n⚠️ У сотрудников нет привязанного Telegram: ${noTg.join(', ')}`;
+        }
+        alert(msg);
+      } else {
+        alert(`⚠️ Ошибка: ${data.error || 'Не удалось отправить наряд'}`);
+      }
+    } catch (err) {
+      alert('Ошибка соединения с сервером');
+    }
+  };
+
   const normalizeOrderForModal = (rawOrder: any, isClone = false): OrderDetail => {
     const slot = rawOrder.timeSlot || `${rawOrder.startTime || '10:00'} — ${rawOrder.endTime || '13:00'}`;
     const parts = slot.split('—').map((s: string) => s.trim());
@@ -616,7 +667,7 @@ export default function ClientsPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                   {selectedClient.orders && selectedClient.orders.length > 0 && (
                     <button
                       type="button"
@@ -626,6 +677,15 @@ export default function ClientsPage() {
                       🔁 Повторить заказ
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleDeleteClient}
+                    className="px-3 py-2 text-xs font-bold text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-98"
+                    title="Удалить клиента из базы данных"
+                  >
+                    <span>🗑️</span>
+                    <span>Удалить клиента</span>
+                  </button>
                 </div>
               </div>
 
@@ -861,14 +921,25 @@ export default function ClientsPage() {
                               </span>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={(e) => handleRepeatOrder(order, e)}
-                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 font-bold rounded-lg text-xs transition flex items-center gap-1 shadow-2xs cursor-pointer z-10"
-                              title="Создать новый заказ с такими же параметрами"
-                            >
-                              🔁 Повторить
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => handleDispatchOrder(order.id, e)}
+                                className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-600 text-sky-700 hover:text-white border border-sky-200 hover:border-sky-600 font-bold rounded-lg text-xs transition flex items-center gap-1 shadow-2xs cursor-pointer z-10"
+                                title="Отправить наряд на уборку клинерам в Telegram бот"
+                              >
+                                ✈️ В бот
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => handleRepeatOrder(order, e)}
+                                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 font-bold rounded-lg text-xs transition flex items-center gap-1 shadow-2xs cursor-pointer z-10"
+                                title="Создать новый заказ с такими же параметрами"
+                              >
+                                🔁 Повторить
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );

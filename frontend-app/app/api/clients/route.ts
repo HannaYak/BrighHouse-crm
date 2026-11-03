@@ -117,6 +117,14 @@ export async function DELETE(request: Request) {
 
     const clientWhere = isNaN(Number(id)) ? { id: String(id) } : { id: Number(id) };
 
+    // Отвязываем заказы клиента, чтобы не было ошибки внешнего ключа (foreign key constraint)
+    if (!isNaN(Number(id))) {
+      await prisma.order.updateMany({
+        where: { clientId: Number(id) },
+        data: { clientId: null },
+      });
+    }
+
     await prisma.client.delete({
       where: clientWhere as any,
     });

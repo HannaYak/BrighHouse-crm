@@ -196,6 +196,43 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   const [availabilityMap, setAvailabilityMap] = useState<Record<number, any>>({});
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+
+  const handleDispatchToCleaners = async () => {
+    if (!form.id) {
+      alert('Сначала сохраните заказ, чтобы отправить наряд в Telegram бот.');
+      return;
+    }
+    if (!form.assignedCleaners || form.assignedCleaners.length === 0) {
+      alert('⚠️ На этот заказ не назначены клинеры. Сначала выберите бригаду клинеров.');
+      return;
+    }
+
+    try {
+      setDispatching(true);
+      const res = await fetch(`/api/orders/${form.id}/dispatch-cleaners`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const sentCount = data.results?.filter((r: any) => r.status === 'SENT').length || 0;
+        const noTg = data.results?.filter((r: any) => r.status === 'NO_TELEGRAM_LINKED').map((r: any) => r.cleaner) || [];
+        
+        let msg = `✅ Наряд успешно отправлен в Telegram бот (${sentCount} сотр.)`;
+        if (noTg.length > 0) {
+          msg += `\n⚠️ У сотрудников нет привязанного Telegram: ${noTg.join(', ')}`;
+        }
+        alert(msg);
+      } else {
+        alert(`Ошибка отправки: ${data.error || 'Не удалось отправить наряд'}`);
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert(`Ошибка: ${e.message || 'Ошибка соединения'}`);
+    } finally {
+      setDispatching(false);
+    }
+  };
 
   // Универсальный обработчик числовых полей: убирает ведущие нули (02 -> 2, 050 -> 50)
   const handleNumberInput = (field: keyof OrderDetail, rawValue: string) => {
@@ -1546,6 +1583,17 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
                   <button
                     type="button"
+                    disabled={dispatching}
+                    onClick={handleDispatchToCleaners}
+                    className="bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white font-bold px-3 py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-98"
+                    title="Отправить наряд на уборку назначенным клинерам в Telegram бот"
+                  >
+                    <span>{dispatching ? '⏳' : '✈️'}</span>
+                    <span>{dispatching ? 'Отправляем...' : 'Отправить в TG бот'}</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => window.open(`/api/orders/${form.id}/invoice`, '_blank')}
                     className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-1"
                     title="Печать счета / Rachunek"
@@ -1598,14 +1646,30 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">• {durationText}</span>
           </div>
 
-          <button
-            type="button"
-            disabled={saving}
-            onClick={handleSave}
-            className="flex-1 sm:flex-initial sm:min-w-[220px] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-5 rounded-xl text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-          >
-            {saving ? '⏳ Сохраняем...' : '💾 Сохранить заказ'}
-          </button>
+          <div className="flex items-center gap-2">
+            {form.id && (
+              <button
+                type="button"
+                disabled={dispatching}
+                onClick={handleDispatchToCleaners}
+                className="bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white font-bold py-3 px-3.5 sm:px-4 rounded-xl text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 shrink-0"
+                title="Отправить наряд назначенным клинерам в Telegram бот"
+              >
+                <span>{dispatching ? '⏳' : '✈️'}</span>
+                <span className="hidden sm:inline">{dispatching ? 'Отправка...' : 'Отправить в TG бот'}</span>
+                <span className="sm:hidden">{dispatching ? '...' : 'В TG'}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={handleSave}
+              className="flex-1 sm:flex-initial sm:min-w-[200px] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-5 rounded-xl text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              {saving ? '⏳ Сохраняем...' : '💾 Сохранить заказ'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
