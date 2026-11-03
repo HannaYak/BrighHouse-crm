@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
+import {
+  parseOrderDateTime,
+  sendOrderDispatchToCleaner,
+  sendOrderRescheduledToCleaner,
+  sendOrderCancelledToCleaner,
+  sendOrderUnassignedFromCleaner,
+} from '../../../lib/calendarSync';
 
 function parseServiceType(type?: string): string {
   if (!type) return 'STANDARD';
@@ -162,6 +169,16 @@ export async function POST(request: Request) {
     let order;
 
     if (body.id) {
+      const prevOrder = await prisma.order.findUnique({
+        where: { id: body.id },
+        include: {
+          client: true,
+          assignedCleaners: {
+            include: { cleaner: true },
+          },
+        },
+      });
+
       await prisma.orderCleaner.deleteMany({
         where: { orderId: body.id },
       });
@@ -177,12 +194,80 @@ export async function POST(request: Request) {
           },
         },
         include: {
+          client: true,
           assignedCleaners: {
             include: { cleaner: true },
           },
           cashCollectedBy: true,
         },
       });
+
+      // Автоматические уведомления клинерам об изменениях в заказе
+      if (prevOrder) {
+        const isNowCancelled = order.status === 'CANCELLED' && prevOrder.status !== 'CANCELLED';
+
+        if (isNowCancelled) {
+          const cleanersToNotify = prevOrder.assignedCleaners.map((ac) => ac.cleaner).filter(Boolean);
+          for (const cleaner of cleanersToNotify) {
+            try {
+              await sendOrderCancelledToCleaner(order, cleaner, order.cancelReason || body.cancelReason);
+            } catch (notifyErr) {
+              console.error('Ошибка отправки отмены заказа клинеру:', notifyErr);
+            }
+          }
+        } else {
+          const prevCleaners = prevOrder.assignedCleaners.map((ac) => ac.cleaner).filter(Boolean);
+          const newCleaners = order.assignedCleaners.map((ac: any) => ac.cleaner).filter(Boolean);
+
+          const prevCleanerIds = new Set(prevCleaners.map((c: any) => c.id));
+          const newCleanerIds = new Set(newCleaners.map((c: any) => c.id));
+
+          const removedCleaners = prevCleaners.filter((c: any) => !newCleanerIds.has(c.id));
+          const addedCleaners = newCleaners.filter((c: any) => !prevCleanerIds.has(c.id));
+          const retainedCleaners = newCleaners.filter((c: any) => prevCleanerIds.has(c.id));
+
+          // 1. Клинеры, с которых заказ снят ("передался другому клинеру")
+          for (const cleaner of removedCleaners) {
+            try {
+              await sendOrderUnassignedFromCleaner(order, cleaner);
+            } catch (notifyErr) {
+              console.error('Ошибка отправки уведомления о снятии наряда:', notifyErr);
+            }
+          }
+
+          // 2. Клинеры, которым заказ был передан / назначен
+          for (const cleaner of addedCleaners) {
+            try {
+              await sendOrderDispatchToCleaner(order, cleaner);
+            } catch (notifyErr) {
+              console.error('Ошибка отправки наряда новому клинеру:', notifyErr);
+            }
+          }
+
+          // 3. Изменение времени / даты заказа ("подвинулся" / перенесен)
+          const prevTiming = parseOrderDateTime(prevOrder.date, prevOrder.timeSlot);
+          const newTiming = parseOrderDateTime(order.date, order.timeSlot);
+          const isTimingChanged = (
+            prevTiming.startIcs !== newTiming.startIcs ||
+            prevTiming.endIcs !== newTiming.endIcs
+          );
+
+          if (isTimingChanged) {
+            for (const cleaner of retainedCleaners) {
+              try {
+                await sendOrderRescheduledToCleaner({
+                  order,
+                  cleaner,
+                  oldDateFormatted: prevTiming.dateFormatted,
+                  oldTimeSlot: prevTiming.timeSlotDisplay,
+                });
+              } catch (notifyErr) {
+                console.error('Ошибка отправки переноса времени клинеру:', notifyErr);
+              }
+            }
+          }
+        }
+      }
     } else {
       order = await prisma.order.create({
         data: {
@@ -195,6 +280,7 @@ export async function POST(request: Request) {
           },
         },
         include: {
+          client: true,
           assignedCleaners: {
             include: { cleaner: true },
           },
@@ -215,6 +301,14 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { id, status, cancelReason, paymentMethod, cashCollectedById } = body;
 
+    const prevOrder = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        client: true,
+        assignedCleaners: { include: { cleaner: true } },
+      },
+    });
+
     const updateData: any = {};
     if (status !== undefined) updateData.status = parseOrderStatus(status);
     if (cancelReason !== undefined) updateData.cancelReason = cancelReason;
@@ -226,7 +320,24 @@ export async function PATCH(request: Request) {
     const updated = await prisma.order.update({
       where: { id },
       data: updateData,
+      include: {
+        client: true,
+        assignedCleaners: { include: { cleaner: true } },
+        cashCollectedBy: true,
+      },
     });
+
+    // Если заказ переведен в статус CANCELLED
+    if (prevOrder && updated.status === 'CANCELLED' && prevOrder.status !== 'CANCELLED') {
+      const cleaners = prevOrder.assignedCleaners.map((ac: any) => ac.cleaner).filter(Boolean);
+      for (const cleaner of cleaners) {
+        try {
+          await sendOrderCancelledToCleaner(updated, cleaner, updated.cancelReason);
+        } catch (notifyErr) {
+          console.error('Ошибка отправки отмены заказа клинеру:', notifyErr);
+        }
+      }
+    }
 
     return NextResponse.json(updated);
   } catch (error: any) {
