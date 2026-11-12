@@ -39,6 +39,12 @@ enum ConversationStatus {
   REMIND
   THINKING
   CLOSED
+  NEWBIE
+  SUBSCRIPTION
+  SUBSCRIPTION_SUB
+  RARE
+  REGULAR
+  FREQUENT
 }
 
 model Client {

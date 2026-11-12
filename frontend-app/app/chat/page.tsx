@@ -4,7 +4,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import OrderModal, { OrderDetail } from '../../components/OrderModal';
 
 export type PlatformType = 'TELEGRAM' | 'WHATSAPP' | 'INSTAGRAM' | 'FACEBOOK';
-export type ConvStatus = 'NONE' | 'IN_PROGRESS' | 'BOOKED' | 'REMIND' | 'THINKING' | 'CLOSED';
+export type ConvStatus =
+  | 'NONE'
+  | 'NEWBIE'
+  | 'SUBSCRIPTION'
+  | 'SUBSCRIPTION_SUB'
+  | 'RARE'
+  | 'REGULAR'
+  | 'FREQUENT'
+  | 'IN_PROGRESS'
+  | 'BOOKED'
+  | 'REMIND'
+  | 'THINKING'
+  | 'CLOSED';
+
+export interface QuickReplyItem {
+  title: string;
+  text: string;
+}
 
 interface ChatContact {
   id: string;
@@ -35,13 +52,124 @@ const PLATFORM_CONFIG: Record<PlatformType, { label: string; icon: string; badge
 };
 
 const STATUS_CONFIG: Record<ConvStatus, { label: string; dot: string; pillClass: string }> = {
-  NONE: { label: 'Без статуса', dot: '⚪', pillClass: 'bg-slate-100 text-slate-600 border-slate-200' },
-  IN_PROGRESS: { label: 'В процессе', dot: '🟡', pillClass: 'bg-amber-50 text-amber-700 border-amber-300' },
-  BOOKED: { label: 'Записан', dot: '🟢', pillClass: 'bg-emerald-50 text-emerald-700 border-emerald-300' },
-  REMIND: { label: 'Напомнить', dot: '🔵', pillClass: 'bg-blue-50 text-blue-700 border-blue-300' },
-  THINKING: { label: 'Думает / Оценка', dot: '🟣', pillClass: 'bg-purple-50 text-purple-700 border-purple-300' },
-  CLOSED: { label: 'Архив / Отказ', dot: '⚫', pillClass: 'bg-zinc-100 text-zinc-500 border-zinc-300' },
+  NONE: { label: 'Без маркера', dot: '⚪', pillClass: 'bg-slate-100 text-slate-600 border-slate-200' },
+  NEWBIE: { label: 'Новичок', dot: '🔵', pillClass: 'bg-blue-50 text-blue-700 border-blue-300 font-bold' },
+  SUBSCRIPTION: { label: 'Абонемент', dot: '🟡', pillClass: 'bg-amber-50 text-amber-800 border-amber-300 font-bold' },
+  SUBSCRIPTION_SUB: { label: 'Субабонемент', dot: '🟣', pillClass: 'bg-purple-50 text-purple-700 border-purple-300 font-bold' },
+  RARE: { label: 'Редкий', dot: '⚫', pillClass: 'bg-zinc-800 text-zinc-100 border-zinc-900 font-bold' },
+  REGULAR: { label: 'Постоянный', dot: '🔴', pillClass: 'bg-red-50 text-red-700 border-red-300 font-bold' },
+  FREQUENT: { label: 'Частый', dot: '🟢', pillClass: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold' },
+
+  // Обратная совместимость со старыми записями
+  IN_PROGRESS: { label: 'Абонемент', dot: '🟡', pillClass: 'bg-amber-50 text-amber-800 border-amber-300 font-bold' },
+  BOOKED: { label: 'Частый', dot: '🟢', pillClass: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold' },
+  REMIND: { label: 'Новичок', dot: '🔵', pillClass: 'bg-blue-50 text-blue-700 border-blue-300 font-bold' },
+  THINKING: { label: 'Субабонемент', dot: '🟣', pillClass: 'bg-purple-50 text-purple-700 border-purple-300 font-bold' },
+  CLOSED: { label: 'Редкий', dot: '⚫', pillClass: 'bg-zinc-800 text-zinc-100 border-zinc-900 font-bold' },
 };
+
+const CLIENT_QUICK_REPLIES: QuickReplyItem[] = [
+  {
+    title: '📋 3 варианта уборок',
+    text: `Принято, спасибо! 
+У нас есть три варианта уборок:
+- стандарт, 200 злотых, 4 часа 1 клинер. 
+Лёгкая, освежающая уборка всех открытых поверхностей, на уровне роста клинера 
+
+- стандарт+, 300 злотых, 6 часов 1 клинер. 
+Тоже самое что и стандартная, но увеличено время работы клинеров для устранения сложных застаревших и едких загрязнений, выноса большого количества мусора. 
+
+- генеральная уборка, 650 злотых, 6 часов 2 клинера. 
+Дополнительно включены очистка изнутри холодильника, вытяжки, СВЧ, духовки, посудомойки, стиральной машины, шкафчиков ящиков, мойка стен, высоковисящих люстр и карнизов, отодвигание мебели для уборки под ней, очистка вентиляции. 
+
+Химия, инвентарь (кроме стремянки), доезд по Варшаве уже в цене. 
+
+Химчистка, мойка окон — доп.услуги
+
+К тарифам стандарт и стандарт+ можно добавить опции из генеральной уборки по необходимости ☺️`,
+  },
+  {
+    title: '🧹 Что входит в Стандарт',
+    text: `Стандарт - лёгкая, освежающая уборка всех открытых поверхностей, до которых можно дотянуться без стремянки 
+
+Ванная комната
+ * Моем поверхность стиральной машины, открытые полки, умывальник, душевую кабину, ванну, зеркала, унитаз, дверь, пол, выключатели, розетки.
+
+Кухня
+ * Моем фасады кухонного гарнитура, фартук, столешницы, плиту, раковину, внутри шкафчика под мусор, (выкидываем мусор), дверь, пол, выключатели, розетки.
+
+Комнаты
+ * Моем фасады мебели, протираем или пылесосим мягкую мебель, телевизор, подоконники, батареи, плинтуса, двери, столы и стулья, открытые полки, пол, выключатели, розетки.
+
+Коридор
+* Фасады мебели, открытые полки, зеркало, пол, плинтуса, выключатели, розетки, домофон (прочая техника).
+
+Меняем постельное белье по Вашему желанию.
+Загружаем посуду в посудомойку.`,
+  },
+  {
+    title: '✨ Генуборка: состав',
+    text: `ГЕНУБОРКА:
+Уборка всех открытых поверхностей + очистка изнутри холодильника (без морозилки), вытяжки, СВЧ, духовки, посудомойки, стиральной машины, шкафчиков и ящиков (свободных или с минимумом личных вещей), точечная мойка стен, высоковисящих люстр и карнизов, отодвигание мебели (которую можно легко и безопасно сдвинуть без риска для пола), очистка решётки и фильтра вентиляции.
+
+При необходимости можно добавить:
++ пароочиститель от 70 зл за зону 
++ стремянка от 70 злотых 
++ мойка окон и балконов от 35 злотых (сезонная услуга)`,
+  },
+  {
+    title: '➕ Что входит в Стандарт+',
+    text: `Стандарт+ включает в себя всё тоже самое, но при нём увеличено время работы клинеров для устранения сложных застаревших и едких загрязнений, выноса большого количества грязи и мусора.
+
+Из перечня дополнительных услуг можно дозаказать опции к уборке стандарт/+ (3-4 слайды):
+
+https://www.instagram.com/s/aGlnaGxpZ2h0OjE4MDA0MzQxODM4Njc4NDk5?story_media_id=3143683691820307848_57506920356&igshid=OGQ5ZDc2ODk2ZA==`,
+  },
+  {
+    title: '⭐ Запрос отзыва',
+    text: `Отлично, спасибо за обратную связь,  рады, что Вам понравилось, мы всегда готовы помочь 🥰 
+
+Вы можете поделиться своим отзывом о нашем сервисе, это нам очень поможет :)
+А также клинер с Вашего заказа получит небольшую премию за старания 💸
+https://g.page/r/CQmCteFzMdvWEAI/review`,
+  },
+  {
+    title: '👋 Давно не заказывали',
+    text: `Здравствуйте! ☺️ Заметили, что Вы давно не поручали нам уборку, решили узнать как Ваши дела :)
+
+Если в ближайшее время планируете клининг — будем рады снова помочь навести порядок ✨`,
+  },
+  {
+    title: '💬 Как прошла уборка?',
+    text: `Здравствуйте ☺️ 
+Подскажите, пожалуйста, как прошла уборка, всё ли хорошо?`,
+  },
+  {
+    title: '❓ Метраж и комнаты',
+    text: `Здравствуйте ☺️ 
+Спасибо за обращение :)
+
+Подскажите, пожалуйста, сколько у Вас комнат и санузлов, метраж квартиры?
+
+А также какой примерный адрес и планируемый вид уборки`,
+  },
+  {
+    title: '📍 Данные для заказа',
+    text: `Для подтверждения заказа пришлите, пожалуйста, нам Ваши:
+1. Адрес
+2. Контактный телефон 
+3. Доступен ли в квартире пылесос, живут ли домашние питомцы?`,
+  },
+  {
+    title: '❓ Актуален ли запрос?',
+    text: `Здравствуйте ☺️ 
+Подскажите, пожалуйста, актуален ли ещё Ваш запрос?`,
+  },
+  {
+    title: '🎁 -10% за рекомендацию',
+    text: `Кстати, если порекомендуете нас друзьям с кодом [BRIGHT000] — за каждого дарим вам -10% на следующую уборку, а за пятерых сделаем клининг бесплатно :)`,
+  },
+];
 
 export default function ChatPage() {
   const [contacts, setContacts] = useState<ChatContact[]>([]);
@@ -414,18 +542,13 @@ export default function ChatPage() {
     return true;
   });
 
-  const quickTemplates = selectedContact?.role === 'cleaner'
+  const quickTemplates: QuickReplyItem[] = selectedContact?.role === 'cleaner'
     ? [
-        'Назначен новый наряд на завтра. Подтверди выезд, пожалуйста!',
-        'Уточни статус заказа: клининг завершен? Оплата получена наличными?',
-        'Напоминаем: смена начинается в 10:00. Код домофона в наряде.',
+        { title: '📋 Новый наряд', text: 'Назначен новый наряд на завтра. Подтверди выезд, пожалуйста!' },
+        { title: '❓ Статус заказа', text: 'Уточни статус заказа: клининг завершен? Оплата получена наличными?' },
+        { title: '⏰ Смена 10:00', text: 'Напоминаем: смена начинается в 10:00. Код домофона в наряде.' },
       ]
-    : [
-        'Dzień dobry! Zespół BrightHouse подтверждает время уборки на завтра 🏠✨',
-        'Клинеры закончили уборку! Всё ли вам понравилось по качеству?',
-        '💳 Реквизиты для оплаты: счет Sp. z o.o. или перевод BLIK на номер фирмы.',
-        'Прайс: 1-комн. (до 34м²) — 170 zł, 2-комн. (до 50м²) — 200 zł. Приезжаем со своей химией и инвентарем!',
-      ];
+    : CLIENT_QUICK_REPLIES;
 
   const currentPlatformLabel = selectedContact ? PLATFORM_CONFIG[selectedContact.platform].label : 'чат';
 
@@ -519,7 +642,7 @@ export default function ChatPage() {
             </button>
           </div>
 
-          {/* Фильтр по статусам */}
+          {/* Фильтр по маркерам */}
           <div className="flex gap-1 overflow-x-auto text-[10px] pb-1">
             <button
               type="button"
@@ -528,9 +651,9 @@ export default function ChatPage() {
                 activeStatusFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              Все статусы
+              Все маркеры
             </button>
-            {(['BOOKED', 'IN_PROGRESS', 'REMIND', 'THINKING', 'CLOSED'] as ConvStatus[]).map((st) => (
+            {(['NEWBIE', 'SUBSCRIPTION', 'SUBSCRIPTION_SUB', 'RARE', 'REGULAR', 'FREQUENT'] as ConvStatus[]).map((st) => (
               <button
                 key={st}
                 type="button"
@@ -663,12 +786,13 @@ export default function ChatPage() {
                       onChange={(e) => handleChangeStatus(e.target.value as ConvStatus)}
                       className="text-[11px] font-bold border border-slate-300 rounded-lg px-2 py-1 bg-white text-slate-700 shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
                     >
-                      <option value="NONE">⚪ Без статуса</option>
-                      <option value="IN_PROGRESS">🟡 В процессе</option>
-                      <option value="BOOKED">🟢 Записан</option>
-                      <option value="REMIND">🔵 Напомнить</option>
-                      <option value="THINKING">🟣 Думает</option>
-                      <option value="CLOSED">⚫ Архив</option>
+                      <option value="NONE">⚪ Без маркера</option>
+                      <option value="NEWBIE">🔵 Новичок (Синий)</option>
+                      <option value="SUBSCRIPTION">🟡 Абонемент (Жёлтый)</option>
+                      <option value="SUBSCRIPTION_SUB">🟣 Субабонемент (Фиолетовый)</option>
+                      <option value="RARE">⚫ Редкий (Черный)</option>
+                      <option value="REGULAR">🔴 Постоянный (Красный)</option>
+                      <option value="FREQUENT">🟢 Частый (Зелёный)</option>
                     </select>
                   )}
 
@@ -845,16 +969,31 @@ export default function ChatPage() {
 
             {/* Быстрые шаблоны */}
             <div className="px-4 py-2 bg-white border-t border-slate-100 flex items-center gap-2 overflow-x-auto">
-              <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">⚡ Быстрый ответ:</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0 flex items-center gap-1">
+                ⚡ Быстрый ответ:
+              </span>
               {quickTemplates.map((tmpl, idx) => (
-                <button
+                <div
                   key={idx}
-                  type="button"
-                  onClick={() => handleSendMessage(tmpl)}
-                  className="bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-[11px] font-medium px-2.5 py-1 rounded-lg transition whitespace-nowrap shrink-0 border border-slate-200"
+                  className="inline-flex items-center bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg border border-slate-200 hover:border-blue-300 text-[11px] font-medium whitespace-nowrap shrink-0 overflow-hidden shadow-2xs transition"
                 >
-                  {tmpl.slice(0, 35)}...
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputText(tmpl.text)}
+                    className="px-2.5 py-1 text-left cursor-pointer hover:bg-blue-100/40 transition"
+                    title="Вставить в поле ввода (для проверки и редактирования)"
+                  >
+                    {tmpl.title}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSendMessage(tmpl.text)}
+                    className="px-2 py-1 text-slate-400 hover:text-blue-600 hover:bg-blue-100 border-l border-slate-200 transition cursor-pointer"
+                    title="Отправить сразу"
+                  >
+                    ➤
+                  </button>
+                </div>
               ))}
             </div>
 
