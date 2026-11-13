@@ -478,9 +478,8 @@ export function calculateBrightHouseOrder(input: CalculationInput): CalculationR
   }
 
   if (input.hasVacuum) {
-    const r = getRate('vacuum', 30, 0);
-    price += r.price;
-    addonsTotal += r.price;
+    // Пылесос компании предоставляется клиентам бесплатно
+    price += 0;
   }
 
   // ==========================================

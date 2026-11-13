@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   calculateBrightHouseOrder,
   ServiceType,
@@ -106,6 +106,7 @@ export interface OrderDetail {
   paymentMethod?: string;
   paymentNote?: string;
   cashCollectedById?: number | null;
+  photos?: string[];
 }
 
 interface OrderModalProps {
@@ -183,13 +184,18 @@ const getDefaultForm = (): OrderDetail => ({
   isComboGeneralDryClean: false,
   paymentMethod: 'CASH',
   paymentNote: '',
-  cashCollectedById: null
+  cashCollectedById: null,
+  photos: []
 });
 
 export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModalProps) {
   const [addonRates, setAddonRates] = useState<Record<string, { price: number; durationMins: number }>>({});
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [form, setForm] = useState<OrderDetail>(getDefaultForm());
+  const [isCustomPrice, setIsCustomPrice] = useState(false);
+  const [isCustomDuration, setIsCustomDuration] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [allCleaners, setAllCleaners] = useState<any[]>([]);
   const [durationText, setDurationText] = useState('3 ч');
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
@@ -197,6 +203,19 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
+
+  const sortedCleaners = useMemo(() => {
+    const fullAddr = ((form.addressLine1 || '') + ' ' + (form.notes || '')).toLowerCase();
+    return [...allCleaners].sort((a, b) => {
+      const aDistrict = (a.district || '').toLowerCase();
+      const bDistrict = (b.district || '').toLowerCase();
+      const aMatch = aDistrict && aDistrict !== 'варшава' && fullAddr.includes(aDistrict) ? 100 : 0;
+      const bMatch = bDistrict && bDistrict !== 'варшава' && fullAddr.includes(bDistrict) ? 100 : 0;
+      const aAvail = availabilityMap[a.id]?.available ? 50 : 0;
+      const bAvail = availabilityMap[b.id]?.available ? 50 : 0;
+      return (bMatch + bAvail) - (aMatch + aAvail);
+    });
+  }, [allCleaners, form.addressLine1, form.notes, availabilityMap]);
 
   const handleDispatchToCleaners = async () => {
     if (!form.id) {
@@ -277,9 +296,14 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       setForm({
         ...order,
         assignedCleaners: restoredCleaners,
+        photos: order.photos || [],
       });
+      setIsCustomPrice(true);
+      setIsCustomDuration(Boolean(order.timeSlot));
       setHasRestoredDraft(false);
     } else if (isOpen && typeof window !== 'undefined') {
+      setIsCustomPrice(false);
+      setIsCustomDuration(false);
       const savedDraft = localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
         try {
@@ -432,22 +456,25 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
     setForm((prev) => {
       const prevEndTime = prev.endTime;
+      const targetEndTime = isCustomDuration ? prev.endTime : res.endTime;
       const updatedCleaners = prev.assignedCleaners.map((c) => {
         // Если у клинера стояло стандартное время окончания, обновляем его на новое рассчитанное
         if (!c.endTime || c.endTime === prevEndTime) {
-          return { ...c, endTime: res.endTime, startTime: c.startTime || form.startTime };
+          return { ...c, endTime: targetEndTime, startTime: c.startTime || form.startTime };
         }
         return c;
       });
       return {
         ...prev,
-        price: res.totalPrice,
-        endTime: res.endTime,
+        price: isCustomPrice ? prev.price : res.totalPrice,
+        endTime: targetEndTime,
         cleanersCount: Math.max(1, prev.assignedCleaners.length),
         assignedCleaners: updatedCleaners,
       };
     });
-    setDurationText(res.formattedDuration);
+    if (!isCustomDuration) {
+      setDurationText(res.formattedDuration);
+    }
   }, [
     form.serviceType,
     form.roomsCount,
@@ -577,12 +604,17 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       localStorage.removeItem(DRAFT_KEY);
     }
 
-    const cleanerPayload = form.assignedCleaners.map((c: any) => ({
-      id: typeof c === 'object' ? (c.id || c.cleanerId) : c,
-      name: c.name,
-      startTime: c.startTime || form.startTime,
-      endTime: c.endTime || form.endTime,
-    }));
+    const cleanerPayload = form.assignedCleaners.map((c: any) => {
+      const rawId = typeof c === 'object' ? (c.cleanerId || c.id) : c;
+      const numId = Number(String(rawId).replace(/\D/g, ''));
+      return {
+        id: isNaN(numId) ? rawId : numId,
+        cleanerId: isNaN(numId) ? rawId : numId,
+        name: c.name,
+        startTime: c.startTime || form.startTime,
+        endTime: c.endTime || form.endTime,
+      };
+    });
 
     const normalizedStatus =
       form.status === 'COMPLETED' ? 'COMPLETED' :
@@ -619,6 +651,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
       status: normalizedStatus,
       assignedCleaners: cleanerPayload as any,
       timeSlot: `${form.startTime} — ${form.endTime}`,
+      photos: form.photos || [],
     };
 
     try {
@@ -635,7 +668,7 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
   const cleanPhone = (form.clientPhone || '').replace(/\D/g, '');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-0 sm:p-4">
       <div className="bg-white sm:rounded-2xl border-0 sm:border border-slate-200 shadow-2xl w-full max-w-6xl h-[100dvh] sm:h-[92vh] max-h-[920px] flex flex-col overflow-hidden">
         {/* Шапка */}
         <div className="px-4 py-3 md:px-6 md:py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
@@ -646,8 +679,9 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${form.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
               {form.status === 'COMPLETED' ? '✓ ОПЛАЧЕН' : form.status === 'ASSIGNED' ? '✅ НАЗНАЧЕН' : form.status || 'НОВЫЙ'}
             </span>
-            <h2 className="text-sm sm:text-base font-bold text-slate-800 truncate">
-              {form.clientName ? `Заказ: ${form.clientName}` : 'Новая заявка BrightHouse'}
+            <h2 className="text-sm sm:text-base font-bold text-slate-800 truncate flex items-center gap-1.5">
+              <span>{form.clientName ? `Заказ: ${form.clientName}` : 'Новая заявка BrightHouse'}</span>
+              {form.hasPets && <span title="В помещении есть домашние питомцы" className="text-sm">🐾</span>}
             </h2>
           </div>
 
@@ -904,8 +938,8 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   { key: 'hasBalcony', label: 'Балкон (35 zł)' },
                   { key: 'hasStairs', label: 'Лестница (30 zł)' },
                   { key: 'hasSteamer', label: 'Пароочиститель (75 zł)' },
-                  { key: 'hasVacuum', label: 'Доставка пылесоса (30 zł)' },
-                  { key: 'hasPets', label: '🐾 Есть питомцы (+10%)' },
+                  { key: 'hasVacuum', label: '🧹 Пылесос компании (Бесплатно)' },
+                  { key: 'hasPets', label: '🐾 Есть питомцы (Бесплатно)' },
                   { key: 'hasKeys', label: '🔑 Забрать/отдать ключи (30 zł)' },
                 ].map((addon) => (
                   <label
@@ -1205,12 +1239,42 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Финиш (Авто)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block">
+                      Финиш {isCustomDuration ? '(Ручной)' : '(Авто)'}
+                    </label>
+                    {isCustomDuration && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomDuration(false)}
+                        className="text-[9px] text-blue-600 font-bold hover:underline cursor-pointer"
+                        title="Сбросить к автоматическому расчету"
+                      >
+                        ↺ Авто
+                      </button>
+                    )}
+                  </div>
                   <input
-                    type="text"
-                    disabled
+                    type="time"
                     value={form.endTime}
-                    className="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg p-1.5 text-xs font-extrabold text-center"
+                    onChange={(e) => {
+                      const newEnd = e.target.value;
+                      setIsCustomDuration(true);
+                      setForm((prev) => ({
+                        ...prev,
+                        endTime: newEnd,
+                        assignedCleaners: prev.assignedCleaners.map((c) => ({
+                          ...c,
+                          endTime: newEnd,
+                        })),
+                      }));
+                      setDurationText(calcDuration(form.startTime || '10:00', newEnd));
+                    }}
+                    className={`w-full border rounded-lg p-1.5 text-xs font-extrabold text-center transition ${
+                      isCustomDuration
+                        ? 'bg-amber-50 border-amber-300 text-amber-900'
+                        : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                    }`}
                   />
                 </div>
               </div>
@@ -1239,9 +1303,11 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
 
                 {/* Список клинеров: кликабельны всегда, если смена короче - просто подсказка */}
                 <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                  {allCleaners.map((cleaner) => {
+                  {sortedCleaners.map((cleaner) => {
                     const isSelected = form.assignedCleaners.some((c) => (c.id || c.cleanerId) === cleaner.id);
                     const info = availabilityMap[cleaner.id];
+                    const fullAddr = ((form.addressLine1 || '') + ' ' + (form.notes || '')).toLowerCase();
+                    const isNearby = cleaner.district && cleaner.district.toLowerCase() !== 'варшава' && fullAddr.includes(cleaner.district.toLowerCase());
 
                     return (
                       <button
@@ -1256,10 +1322,15 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
-                        <div className="text-left flex items-center gap-1.5">
+                        <div className="text-left flex items-center gap-1.5 flex-wrap">
                           <span>{isSelected ? '✅' : '➕'}</span>
                           <span className="font-bold">🙋‍♀️ {cleaner.name}</span>
                           <span className="text-[10px] text-slate-400">📍 {cleaner.district || 'Центр'}</span>
+                          {isNearby && (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-300">
+                              🎯 Рядом
+                            </span>
+                          )}
                         </div>
 
                         <div className="text-[10px] font-bold">
@@ -1452,6 +1523,97 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
                 />
               </div>
 
+              {/* Фото объекта для клинеров */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1.5">
+                    <span>📷 Фотографии объекта ({form.photos?.length || 0})</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploadingPhoto}
+                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{uploadingPhoto ? '⏳ Загрузка...' : '➕ Добавить фото'}</span>
+                  </button>
+                </div>
+
+                <input
+                  type="file"
+                  ref={photoInputRef}
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    setUploadingPhoto(true);
+                    try {
+                      const newPhotoUrls: string[] = [];
+                      for (let i = 0; i < files.length; i++) {
+                        const formData = new FormData();
+                        formData.append('file', files[i]);
+                        const res = await fetch('/api/upload', {
+                          method: 'POST',
+                          body: formData,
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          if (data.url) newPhotoUrls.push(data.url);
+                        }
+                      }
+                      if (newPhotoUrls.length > 0) {
+                        setForm((prev) => ({
+                          ...prev,
+                          photos: [...(prev.photos || []), ...newPhotoUrls],
+                        }));
+                      }
+                    } catch (err: any) {
+                      alert('Ошибка загрузки фото: ' + err.message);
+                    } finally {
+                      setUploadingPhoto(false);
+                      if (photoInputRef.current) photoInputRef.current.value = '';
+                    }
+                  }}
+                />
+
+                {form.photos && form.photos.length > 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
+                    {form.photos.map((url, idx) => (
+                      <div
+                        key={idx}
+                        className="relative group rounded-lg overflow-hidden border border-slate-200 bg-slate-50 aspect-video flex items-center justify-center"
+                      >
+                        <img
+                          src={url}
+                          alt={`Фото ${idx + 1}`}
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-90"
+                          onClick={() => window.open(url, '_blank')}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm((prev) => ({
+                              ...prev,
+                              photos: (prev.photos || []).filter((_, i) => i !== idx),
+                            }));
+                          }}
+                          className="absolute top-1 right-1 w-5 h-5 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-md cursor-pointer opacity-90 group-hover:opacity-100"
+                          title="Удалить фото"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 italic">
+                    Прикрепите фото для клинеров (будут отправлены в Telegram-наряд)
+                  </p>
+                )}
+              </div>
+
               {/* Способ оплаты */}
               <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2.5 shadow-xs">
                 <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
@@ -1627,18 +1789,39 @@ export default function OrderModal({ order, isOpen, onClose, onSave }: OrderModa
         </div>
 
         {/* Фиксированный нижний футер: сумма и кнопка сохранения всегда на экране */}
-        <div className="px-4 py-3 bg-white border-t border-slate-200 shrink-0 flex items-center justify-between gap-3 safe-p-bottom shadow-lg z-30">
+        <div className="px-4 py-3 bg-white border-t border-slate-200 shrink-0 flex items-center justify-between gap-3 safe-p-bottom shadow-lg z-[110]">
           <div className="flex items-center gap-2">
             <div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase block">К оплате:</span>
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                  К оплате {isCustomPrice ? '(Вручную)' : ''}:
+                </span>
+                {isCustomPrice && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomPrice(false)}
+                    className="text-[9px] text-blue-600 font-bold hover:underline cursor-pointer"
+                    title="Сбросить цену к автоматическому калькулятору"
+                  >
+                    ↺ Авто
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <input
                   type="number"
                   value={form.price === 0 ? '' : form.price}
                   placeholder="0"
                   onFocus={(e) => e.target.select()}
-                  onChange={(e) => handleNumberInput('price', e.target.value)}
-                  className="w-20 sm:w-24 bg-slate-50 border border-slate-300 rounded-lg p-1.5 text-right font-extrabold text-slate-900 text-sm sm:text-base"
+                  onChange={(e) => {
+                    setIsCustomPrice(true);
+                    handleNumberInput('price', e.target.value);
+                  }}
+                  className={`w-20 sm:w-24 border rounded-lg p-1.5 text-right font-extrabold text-sm sm:text-base ${
+                    isCustomPrice
+                      ? 'bg-amber-50 border-amber-300 text-amber-950 font-black'
+                      : 'bg-slate-50 border-slate-300 text-slate-900'
+                  }`}
                 />
                 <span className="text-xs font-bold text-slate-600">zł</span>
               </div>

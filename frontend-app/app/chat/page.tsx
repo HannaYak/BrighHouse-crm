@@ -204,6 +204,57 @@ export default function ChatPage() {
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [orderFromChat, setOrderFromChat] = useState<OrderDetail | null>(null);
 
+  // Карточка клиента и история заказов
+  const [matchedClient, setMatchedClient] = useState<any | null>(null);
+  const [isClientDrawerOpen, setIsClientDrawerOpen] = useState(false);
+  const [loadingClient, setLoadingClient] = useState(false);
+
+  const lookupClient = async (phoneOrName: string) => {
+    if (!phoneOrName || phoneOrName === '+48') {
+      setMatchedClient(null);
+      return;
+    }
+    try {
+      setLoadingClient(true);
+      const res = await fetch(`/api/clients?phone=${encodeURIComponent(phoneOrName)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setMatchedClient(data[0]);
+          return;
+        }
+      }
+      setMatchedClient(null);
+    } catch {
+      setMatchedClient(null);
+    } finally {
+      setLoadingClient(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedContact?.phone) {
+      lookupClient(selectedContact.phone);
+    } else {
+      setMatchedClient(null);
+    }
+  }, [selectedContact?.id, selectedContact?.phone]);
+
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!window.confirm('Удалить это отправленное сообщение из CRM?')) return;
+    try {
+      const res = await fetch(`/api/chat?messageId=${msgId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setMessages((prev) => prev.filter((m) => m.id !== msgId));
+        await loadConversations();
+      } else {
+        alert('Не удалось удалить сообщение');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   useEffect(() => {
     selectedContactRef.current = selectedContact;
   }, [selectedContact]);
@@ -772,6 +823,36 @@ export default function ChatPage() {
                   <div className="min-w-0">
                     <h3 className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-1.5 truncate">
                       <span className="truncate">{selectedContact.name}</span>
+                      {selectedContact.role === 'client' && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const newName = window.prompt('Укажите имя или Instagram никнейм клиента:', selectedContact.name);
+                            if (newName && newName.trim() && newName.trim() !== selectedContact.name) {
+                              try {
+                                const res = await fetch('/api/chat/status', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    conversationId: selectedContact.id,
+                                    clientName: newName.trim(),
+                                  }),
+                                });
+                                if (res.ok) {
+                                  setSelectedContact((prev) => (prev ? { ...prev, name: newName.trim() } : null));
+                                  await loadConversations();
+                                }
+                              } catch (err: any) {
+                                alert(err.message);
+                              }
+                            }
+                          }}
+                          className="text-slate-400 hover:text-blue-600 p-0.5 rounded transition cursor-pointer text-xs shrink-0"
+                          title="Переименовать клиента / указать имя из Instagram"
+                        >
+                          ✏️
+                        </button>
+                      )}
                       <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border shrink-0 ${PLATFORM_CONFIG[selectedContact.platform].badgeClass}`}>
                         {PLATFORM_CONFIG[selectedContact.platform].icon} {PLATFORM_CONFIG[selectedContact.platform].label}
                       </span>
@@ -846,6 +927,63 @@ export default function ChatPage() {
                     {selectedContact.phone ? '✏️ Изменить' : '➕ Указать номер'}
                   </button>
                   <span className="text-[10px] text-slate-400">• {selectedContact.district || 'Варшава'}</span>
+
+                  {/* Карточка клиента в базе CRM */}
+                  {selectedContact.role === 'client' && (
+                    matchedClient ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsClientDrawerOpen(true)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-md text-[10px] font-bold transition shadow-2xs cursor-pointer"
+                        title="Открыть карточку клиента и историю уборок"
+                      >
+                        <span>👤 Карточка: <b>{matchedClient.name}</b> ({matchedClient.ordersCount || 0} зак., {matchedClient.totalSpent || 0} zł)</span>
+                        <span>↗</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          let p = selectedContact.phone;
+                          if (!p) {
+                            const prompted = window.prompt('Введите телефон для создания клиента в базе:', '+48');
+                            if (!prompted || prompted.trim() === '+48') return;
+                            p = prompted.trim();
+                          }
+                          try {
+                            const res = await fetch('/api/clients', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                name: selectedContact.name || 'Клиент',
+                                phone: p,
+                                address: selectedContact.district || 'Варшава',
+                                channel: selectedContact.platform === 'INSTAGRAM' ? 'Instagram' : selectedContact.platform === 'TELEGRAM' ? 'Telegram' : 'WhatsApp',
+                                instagram: selectedContact.platform === 'INSTAGRAM' ? selectedContact.name.replace(/[^a-zA-Z0-9._]/g, '') : undefined,
+                              }),
+                            });
+                            if (res.ok) {
+                              const newCl = await res.json();
+                              setMatchedClient(newCl);
+                              if (!selectedContact.phone) {
+                                setSelectedContact((prev) => prev ? { ...prev, phone: p } : null);
+                              }
+                              alert(`✅ Клиент "${newCl.name}" успешно добавлен в базу CRM!`);
+                            } else {
+                              const err = await res.json().catch(() => ({}));
+                              alert(err.error || 'Ошибка добавления клиента');
+                            }
+                          } catch (e: any) {
+                            alert(e.message);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-md text-[10px] font-bold transition shadow-2xs cursor-pointer"
+                        title="Добавить клиента в базу CRM"
+                      >
+                        <span>➕ В базу клиентов</span>
+                      </button>
+                    )
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1.5 ml-auto">
@@ -896,8 +1034,19 @@ export default function ChatPage() {
                 return (
                   <div
                     key={msg.id}
-                    className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex group items-end gap-1.5 ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}
                   >
+                    {msg.sender === 'me' && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMessage(msg.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-300 hover:text-rose-500 p-1 text-[11px] cursor-pointer"
+                        title="Удалить это сообщение"
+                      >
+                        🗑️
+                      </button>
+                    )}
+
                     <div
                       className={`max-w-md p-3 rounded-2xl text-xs leading-relaxed shadow-2xs ${
                         msg.sender === 'me'
@@ -951,7 +1100,7 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      {caption && <p>{caption}</p>}
+                      {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
 
                       <span
                         className={`text-[9px] block text-right mt-1 font-mono ${
@@ -1064,12 +1213,19 @@ export default function ChatPage() {
                 </div>
               ) : (
                 <>
-                  <input
-                    type="text"
-                    placeholder={`Ответить в ${currentPlatformLabel}...`}
+                  <textarea
+                    rows={1}
+                    placeholder={`Ответить в ${currentPlatformLabel}... (Enter — отправить, Shift+Enter — перенос строки)`}
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
-                    className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-blue-500"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-blue-500 resize-none max-h-32"
+                    style={{ minHeight: '38px' }}
                   />
 
                   <button
@@ -1255,6 +1411,144 @@ export default function ChatPage() {
             alert('✅ Заказ из переписки успешно создан и отправлен на Канбан!');
           }}
         />
+      )}
+      {/* Боковая карточка клиента с историей уборок */}
+      {isClientDrawerOpen && matchedClient && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right">
+            {/* Шапка карточки */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 font-bold flex items-center justify-center text-sm">
+                  {(matchedClient.name || 'КЛ').slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">{matchedClient.name}</h3>
+                  <p className="text-[11px] text-slate-500 font-mono">{matchedClient.phone}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClientDrawerOpen(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Контент карточки */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Статистика */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-xl text-center">
+                  <span className="text-[10px] text-blue-600 font-bold uppercase block">LTV / Выручка</span>
+                  <span className="text-sm font-black text-blue-900">{matchedClient.totalSpent || 0} zł</span>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block">Заказов</span>
+                  <span className="text-sm font-black text-slate-900">{matchedClient.ordersCount || 0} шт.</span>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block">Ср. чек</span>
+                  <span className="text-sm font-black text-slate-900">{matchedClient.averageCheck || 0} zł</span>
+                </div>
+              </div>
+
+              {/* Инфо */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Адрес:</span>
+                  <span className="font-semibold text-slate-800">{matchedClient.address || 'Не указан'}</span>
+                </div>
+                {matchedClient.instagram && (
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Instagram:</span>
+                    <a
+                      href={matchedClient.instagram.startsWith('http') ? matchedClient.instagram : `https://instagram.com/${matchedClient.instagram.replace(/^@/, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-pink-600 font-bold hover:underline flex items-center gap-1"
+                    >
+                      <span>📸 @{matchedClient.instagram.replace(/^@/, '')}</span>
+                    </a>
+                  </div>
+                )}
+                {matchedClient.favoriteCleaner && (
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Любимый клинер:</span>
+                    <span className="font-bold text-emerald-700">⭐️ {matchedClient.favoriteCleaner}</span>
+                  </div>
+                )}
+                {matchedClient.blacklistCleaner && (
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Черный список:</span>
+                    <span className="font-bold text-rose-700">⛔️ {matchedClient.blacklistCleaner}</span>
+                  </div>
+                )}
+                {matchedClient.cleanNotes && (
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Заметки / Домофон / Ключи:</span>
+                    <p className="text-slate-700 whitespace-pre-wrap">{matchedClient.cleanNotes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* История заказов */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center justify-between">
+                  <span>🗓 История уборок ({matchedClient.orders?.length || 0})</span>
+                </h4>
+                {matchedClient.orders && matchedClient.orders.length > 0 ? (
+                  <div className="space-y-2">
+                    {matchedClient.orders.map((ord: any) => (
+                      <div
+                        key={ord.id}
+                        className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-1 hover:border-blue-300 transition"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-xs font-bold text-slate-700">#{ord.orderNumber}</span>
+                          <span className="text-xs font-black text-slate-900">{ord.price} zł</span>
+                        </div>
+                        <div className="text-[11px] text-slate-600 flex items-center gap-2">
+                          <span>📅 {new Date(ord.date).toLocaleDateString('ru-RU')}</span>
+                          <span>• {ord.timeSlot || ord.startTime}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">📍 {ord.addressLine1}</div>
+                        {ord.assignedCleaners && ord.assignedCleaners.length > 0 && (
+                          <div className="text-[10px] text-blue-700 font-semibold">
+                            🙋‍♀️ {ord.assignedCleaners.map((ac: any) => ac.cleaner?.name || ac.name).join(' + ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">У клиента пока нет оформленных заказов</p>
+                )}
+              </div>
+            </div>
+
+            {/* Футер карточки */}
+            <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center gap-2">
+              <a
+                href="/clients"
+                className="flex-1 py-2 px-3 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl text-center transition"
+              >
+                🔗 В базу клиентов
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsClientDrawerOpen(false);
+                  handleCreateOrderFromChat();
+                }}
+                className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl text-center transition shadow-xs cursor-pointer"
+              >
+                📝 Создать заказ
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

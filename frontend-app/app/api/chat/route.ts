@@ -106,6 +106,7 @@ export async function POST(request: Request) {
       },
     });
 
+    // Отправка в Telegram
     if (conversation.channel === 'TELEGRAM' && conversation.externalId) {
       const client = new TelegramClient(session, apiId, apiHash, {
         connectionRetries: 3,
@@ -140,5 +141,25 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Ошибка отправки:', error);
     return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const messageId = searchParams.get('messageId');
+
+    if (!messageId) {
+      return NextResponse.json({ error: 'messageId обязателен' }, { status: 400 });
+    }
+
+    await prisma.message.delete({
+      where: { id: messageId },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Ошибка удаления сообщения:', error);
+    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 });
   }
 }

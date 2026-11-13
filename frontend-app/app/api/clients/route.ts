@@ -19,9 +19,27 @@ function parseClientMetadata(notes: string | null) {
   return { channel, clientType, promoCode, cleanNotes };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const phoneQuery = searchParams.get('phone');
+    const searchQuery = searchParams.get('q');
+
+    const whereClause: any = {};
+    if (phoneQuery) {
+      const cleanDigits = phoneQuery.replace(/\D/g, '');
+      whereClause.phone = { contains: cleanDigits || phoneQuery };
+    } else if (searchQuery) {
+      whereClause.OR = [
+        { name: { contains: searchQuery, mode: 'insensitive' } },
+        { phone: { contains: searchQuery } },
+        { address: { contains: searchQuery, mode: 'insensitive' } },
+        { instagram: { contains: searchQuery, mode: 'insensitive' } },
+      ];
+    }
+
     const clients = await prisma.client.findMany({
+      where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
       include: {
         orders: {
           orderBy: { date: 'desc' },
@@ -52,6 +70,7 @@ export async function GET() {
         phone: client.phone,
         address: client.address,
         notes: client.notes,
+        instagram: client.instagram || '',
         channel: meta.channel,
         clientType: meta.clientType,
         promoCode: meta.promoCode,
@@ -74,10 +93,49 @@ export async function GET() {
   }
 }
 
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { name, phone, address, notes, instagram, channel, clientType } = body;
+
+    if (!name || !phone) {
+      return NextResponse.json({ error: 'Имя и телефон обязательны' }, { status: 400 });
+    }
+
+    const cleanPhone = phone.trim();
+    let constructedNotes = notes || '';
+    if (channel) constructedNotes = `[Канал: ${channel}] ${constructedNotes}`;
+    if (clientType) constructedNotes = `[Тип: ${clientType}] ${constructedNotes}`;
+
+    // Upsert клиента по номеру телефона
+    const client = await prisma.client.upsert({
+      where: { phone: cleanPhone },
+      update: {
+        name: name.trim(),
+        address: address ? address.trim() : undefined,
+        notes: constructedNotes.trim() ? constructedNotes.trim() : undefined,
+        instagram: instagram !== undefined ? (instagram ? instagram.trim() : null) : undefined,
+      },
+      create: {
+        name: name.trim(),
+        phone: cleanPhone,
+        address: address ? address.trim() : 'Варшава',
+        notes: constructedNotes.trim() || null,
+        instagram: instagram ? instagram.trim() : null,
+      },
+    });
+
+    return NextResponse.json(client, { status: 201 });
+  } catch (error: any) {
+    console.error('Ошибка создания клиента:', error);
+    return NextResponse.json({ error: error.message || 'Ошибка сохранения клиента' }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { id, notes, favoriteCleaner, blacklistCleaner } = body;
+    const { id, notes, favoriteCleaner, blacklistCleaner, instagram, name, phone, address } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'ID клиента обязателен' }, { status: 400 });
@@ -91,6 +149,10 @@ export async function PATCH(request: Request) {
         ...(notes !== undefined ? { notes } : {}),
         ...(favoriteCleaner !== undefined ? { favoriteCleaner } : {}),
         ...(blacklistCleaner !== undefined ? { blacklistCleaner } : {}),
+        ...(instagram !== undefined ? { instagram: instagram ? instagram.trim() : null } : {}),
+        ...(name !== undefined ? { name: name.trim() } : {}),
+        ...(phone !== undefined ? { phone: phone.trim() } : {}),
+        ...(address !== undefined ? { address: address.trim() } : {}),
       },
     });
 

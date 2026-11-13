@@ -1,5 +1,7 @@
 // Helper module for generating iCalendar (.ics) files, Google Calendar URLs,
 // and dispatching notifications with calendar attachments to cleaners in Telegram.
+import fs from 'fs';
+import path from 'path';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -231,6 +233,57 @@ export async function sendTelegramDocument(params: {
 }
 
 /**
+ * Sends a photo to cleaner via Telegram Bot API (supports local files from chat-storage and public URLs)
+ */
+export async function sendTelegramPhoto(params: {
+  chatId: string | number;
+  photoUrlOrPath: string;
+  caption?: string;
+}) {
+  if (!TELEGRAM_BOT_TOKEN) return { ok: false, error: 'No TELEGRAM_BOT_TOKEN' };
+  try {
+    const { chatId, photoUrlOrPath, caption } = params;
+
+    if (photoUrlOrPath.startsWith('/api/media/') || photoUrlOrPath.startsWith('chat-storage/')) {
+      const filename = path.basename(photoUrlOrPath);
+      const filePath = path.resolve(process.cwd(), 'chat-storage', filename);
+
+      if (fs.existsSync(filePath)) {
+        const fileBuffer = fs.readFileSync(filePath);
+        const formData = new FormData();
+        formData.append('chat_id', String(chatId));
+        formData.append('photo', new Blob([fileBuffer]), filename);
+        if (caption) {
+          formData.append('caption', caption);
+          formData.append('parse_mode', 'HTML');
+        }
+        const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+          method: 'POST',
+          body: formData,
+        });
+        return await res.json();
+      }
+    } else if (photoUrlOrPath.startsWith('http')) {
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          photo: photoUrlOrPath,
+          caption: caption || undefined,
+          parse_mode: 'HTML',
+        }),
+      });
+      return await res.json();
+    }
+    return { ok: false, error: 'File not found or invalid format' };
+  } catch (err: any) {
+    console.error('sendTelegramPhoto error:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Builds formatted text and links for client phone.
  */
 export function formatClientPhone(order: any): { cleanPhone: string; phoneFormatted: string; digitsOnly: string } {
@@ -372,7 +425,22 @@ ${order.notes ? order.notes : 'Без особых указаний'}
     ],
   });
 
-  // 2. Отправляем .ics файл с возможностью сохранения в Google / Apple Calendar
+  // 2. Отправляем фотографии объекта (если менеджер прикрепил фото к заказу)
+  if (order.photos && Array.isArray(order.photos) && order.photos.length > 0) {
+    for (let i = 0; i < order.photos.length; i++) {
+      try {
+        await sendTelegramPhoto({
+          chatId,
+          photoUrlOrPath: order.photos[i],
+          caption: `📷 <b>Фото объекта (Заказ #${order.orderNumber})</b> [${i + 1}/${order.photos.length}]`,
+        });
+      } catch (photoErr) {
+        console.warn('Ошибка отправки фото объекта клинеру:', photoErr);
+      }
+    }
+  }
+
+  // 3. Отправляем .ics файл с возможностью сохранения в Google / Apple Calendar
   await sendTelegramDocument({
     chatId,
     filename: `zakaz-${order.orderNumber}.ics`,

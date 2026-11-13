@@ -55,19 +55,19 @@ export async function POST(request: Request) {
     const body = await request.json();
     const orderNumber = body.orderNumber || `ORD-${Math.floor(100 + Math.random() * 900)}`;
 
-    let clientId = null;
-    if (body.clientPhone) {
+    let clientId = body.clientId ? Number(body.clientId) : null;
+    if (!clientId && body.clientPhone && body.clientPhone.trim() && body.clientPhone.trim() !== '+48') {
       try {
         const client = await prisma.client.upsert({
           where: { phone: body.clientPhone.trim() },
           update: { 
             name: body.clientName || 'Клиент',
-            address: body.addressLine1 || '' 
+            address: body.addressLine1 || 'Варшава' 
           },
           create: { 
             name: body.clientName || 'Новый Клиент', 
             phone: body.clientPhone.trim(), 
-            address: body.addressLine1 || '' 
+            address: body.addressLine1 || 'Варшава' 
           }
         });
         clientId = client.id;
@@ -100,11 +100,25 @@ export async function POST(request: Request) {
     const parsedDate = body.date ? new Date(body.date) : new Date();
 
     const rawCleaners = (body.assignedCleaners || [])
-      .map((c: any) => (typeof c === 'object' ? c?.id : c))
-      .filter(Boolean);
-    const uniqueCleanerIds: number[] = Array.from(new Set(rawCleaners.map((id: any) => Number(id))));
+      .map((c: any) => {
+        const rawId = typeof c === 'object' ? (c?.cleanerId || c?.id) : c;
+        const num = Number(String(rawId).replace(/\D/g, ''));
+        return isNaN(num) || num <= 0 ? null : num;
+      })
+      .filter(Boolean) as number[];
+    const uniqueCleanerIds: number[] = Array.from(new Set(rawCleaners));
 
-    const orderStatus = parseOrderStatus(body.status, uniqueCleanerIds.length);
+    // Проверяем существование клинеров в БД, исключая сбои внешнего ключа
+    let validCleanerIds = uniqueCleanerIds;
+    if (uniqueCleanerIds.length > 0) {
+      const foundCleaners = await prisma.cleaner.findMany({
+        where: { id: { in: uniqueCleanerIds } },
+        select: { id: true },
+      });
+      validCleanerIds = foundCleaners.map((c) => c.id);
+    }
+
+    const orderStatus = parseOrderStatus(body.status, validCleanerIds.length);
 
     // Сохраняем дополнительные опции (витрины, балконные окна, химчистку), отсутствующие в таблице Order, внутри поля notes
     const extraDetails: string[] = [];
@@ -155,10 +169,11 @@ export async function POST(request: Request) {
       latitude: lat,
       longitude: lng,
       price: Number(body.price) || 0,
-      cleanersCount: uniqueCleanerIds.length || 1,
+      cleanersCount: validCleanerIds.length || 1,
       notes: finalNotes,
       status: orderStatus,
       clientId: clientId,
+      photos: Array.isArray(body.photos) ? body.photos : [],
 
       // Фиксация оплаты и ответственного за наличные
       paymentMethod: body.paymentMethod || 'CASH',
@@ -188,7 +203,7 @@ export async function POST(request: Request) {
         data: {
           ...orderData,
           assignedCleaners: {
-            create: uniqueCleanerIds.map((cleanerId) => ({
+            create: validCleanerIds.map((cleanerId) => ({
               cleaner: { connect: { id: cleanerId } }
             })),
           },
@@ -274,7 +289,7 @@ export async function POST(request: Request) {
           orderNumber,
           ...orderData,
           assignedCleaners: {
-            create: uniqueCleanerIds.map((cleanerId) => ({
+            create: validCleanerIds.map((cleanerId) => ({
               cleaner: { connect: { id: cleanerId } }
             })),
           },
@@ -313,6 +328,7 @@ export async function PATCH(request: Request) {
     if (status !== undefined) updateData.status = parseOrderStatus(status);
     if (cancelReason !== undefined) updateData.cancelReason = cancelReason;
     if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
+    if (body.photos !== undefined) updateData.photos = Array.isArray(body.photos) ? body.photos : [];
     if (cashCollectedById !== undefined) {
       updateData.cashCollectedById = cashCollectedById ? Number(cashCollectedById) : null;
     }

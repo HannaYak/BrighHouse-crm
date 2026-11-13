@@ -15,6 +15,7 @@ export default function ClientsPage() {
   const [sortBy, setSortBy] = useState<'LTV' | 'ORDERS' | 'RECENT' | 'NAME'>('LTV');
 
   const [notes, setNotes] = useState('');
+  const [instagram, setInstagram] = useState('');
   const [favoriteCleaners, setFavoriteCleaners] = useState<string[]>([]);
   const [blacklistCleaners, setBlacklistCleaners] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -79,6 +80,7 @@ export default function ClientsPage() {
   const applyClientData = (client: any) => {
     setSelectedClient(client);
     setNotes(client.cleanNotes || client.notes || '');
+    setInstagram(client.instagram || '');
     setFavoriteCleaners(parseCleaners(client.favoriteCleaner || client.favoriteCleaners));
     setBlacklistCleaners(parseCleaners(client.blacklistCleaner || client.blacklistedCleaners));
   };
@@ -225,6 +227,7 @@ export default function ClientsPage() {
         body: JSON.stringify({
           id: selectedClient.id,
           notes,
+          instagram: instagram.trim() || null,
           favoriteCleaner: favoriteCleaners.join(', '),
           blacklistCleaner: blacklistCleaners.join(', '),
         }),
@@ -548,6 +551,11 @@ export default function ClientsPage() {
                     <div className="flex items-center gap-1.5 flex-wrap mt-1">
                       {getChannelBadge(client.channel)}
                       {getClientTypeBadge(client.clientType)}
+                      {client.instagram && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-pink-50 text-pink-700 border border-pink-200">
+                          📸 @{client.instagram.replace(/^@/, '').replace(/https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '')}
+                        </span>
+                      )}
                       {client.promoCode && (
                         <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
                           🏷️ {client.promoCode}
@@ -817,6 +825,36 @@ export default function ClientsPage() {
                         </span>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                {/* Instagram аккаунт клиента */}
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5 shadow-2xs">
+                  <label className="text-[10px] font-bold text-pink-700 uppercase flex items-center gap-1.5">
+                    <span>📸 Instagram профиль клиента (юзернейм или ссылка):</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">@</span>
+                      <input
+                        type="text"
+                        value={instagram.replace(/^@/, '')}
+                        onChange={(e) => setInstagram(e.target.value)}
+                        placeholder="username или https://instagram.com/..."
+                        className="w-full pl-7 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-pink-500 font-mono"
+                      />
+                    </div>
+                    {instagram && (
+                      <a
+                        href={instagram.startsWith('http') ? instagram : `https://instagram.com/${instagram.replace(/^@/, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200 rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs"
+                        title="Открыть Instagram профиль"
+                      >
+                        <span>📸 Открыть Instagram</span>
+                      </a>
+                    )}
                   </div>
                 </div>
 

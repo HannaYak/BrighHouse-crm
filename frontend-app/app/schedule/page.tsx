@@ -666,9 +666,9 @@ export default function SchedulePage() {
                                 </span>
                               </div>
                             </div>
-                            <div className="font-semibold text-xs truncate mt-0.5">
-                              {isPair ? '👥 ' : ''}
-                              {order.clientName || 'Без имени'}
+                            <div className="font-semibold text-xs truncate mt-0.5 flex items-center gap-1">
+                              <span>{isPair ? '👥 ' : ''}{order.clientName || 'Без имени'}</span>
+                              {order.hasPets && <span title="В помещении есть домашние питомцы" className="text-xs shrink-0">🐾</span>}
                             </div>
                             <div className="text-[10px] text-white/80 truncate">📍 {order.addressLine1}</div>
                           </div>

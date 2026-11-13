@@ -55,6 +55,7 @@ model Client {
   notes            String?
   favoriteCleaner  String?
   blacklistCleaner String?
+  instagram        String?
   orders           Order[]
   createdAt        DateTime @default(now())
 }
@@ -151,6 +152,7 @@ model Order {
   paymentNote       String?
   cashCollectedById Int?
   cashCollectedBy   Cleaner?     @relation("CashCollector", fields: [cashCollectedById], references: [id], onDelete: SetNull)
+  photos            String[]     @default([])
 }
 
 model OrderCleaner {

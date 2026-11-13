@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../../lib/prisma';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions/index.js';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+const apiId = 24697673;
+const apiHash = "5f1649ea00d1db0b7ba211bd9f8b1ed8";
+const session = new StringSession("1BAAOMTQ5LjE1NC4xNjcuOTEAULXpo//ar2SnhY50EXlbMjoRyak1cPvwTMmG/KZomUPL6U0vtpO/AjpRae2L1NlUEOrdFbKruILe5Q8UW9eQ2S8RutfY55rozrhD75ko6ap8O1l/g7GW1pvwUw7fNlCeYaFhkYnLLzphd4avmCJqyVDUHv/5qa1Au1XRJLMytvpnhH/3PxDHXsfZJbHvL9fzPLSiBL0/ieqOSPO6cRHuQM9STwtqHebDHvtNjRMKXpWGaxRQ0yyekj4TAyFsfFORf2batrqZpOO5RBO1J2A19rprS3/pjrHhuwhG1H5Pe92J3l8+FoDYbjVyFPEtIS/orwj7fKSePZVtu8LC4Xov1jk=");
 
 export async function POST(request: Request) {
   try {
@@ -50,20 +56,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Диалог не найден' }, { status: 404 });
     }
 
-    // 1. Отправка в Telegram (если настроен бот)
-    if (conversation.channel === 'TELEGRAM' && TELEGRAM_BOT_TOKEN) {
+    // 1. Отправка в Telegram (через GramJS UserBot личного аккаунта, либо резерв бота)
+    if (conversation.channel === 'TELEGRAM' && conversation.externalId) {
+      let sentViaGramJs = false;
       try {
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: conversation.externalId,
-            text,
-            parse_mode: 'HTML',
-          }),
+        const client = new TelegramClient(session, apiId, apiHash, {
+          connectionRetries: 2,
+          autoReconnect: false,
         });
-      } catch (tgErr: any) {
-        console.warn('Telegram send error:', tgErr.message);
+        await client.connect();
+        await client.sendMessage(conversation.externalId, { message: text });
+        await client.disconnect().catch(() => {});
+        sentViaGramJs = true;
+        console.log(`✅ [Telegram UserBot] Исходящее успешно отправлено для ${conversation.externalId}`);
+      } catch (tgUserBotErr: any) {
+        console.warn('Telegram UserBot send error:', tgUserBotErr?.message || tgUserBotErr);
+      }
+
+      if (!sentViaGramJs && TELEGRAM_BOT_TOKEN) {
+        try {
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: conversation.externalId,
+              text,
+              parse_mode: 'HTML',
+            }),
+          });
+        } catch (tgErr: any) {
+          console.warn('Telegram Bot send error:', tgErr.message);
+        }
       }
     }
 
@@ -77,7 +100,7 @@ export async function POST(request: Request) {
 
       if (metaToken && conversation.externalId) {
         try {
-          await fetch('https://graph.facebook.com/v20.0/me/messages', {
+          const res = await fetch('https://graph.facebook.com/v20.0/me/messages', {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${metaToken}`,
@@ -88,9 +111,17 @@ export async function POST(request: Request) {
               message: { text },
             }),
           });
+          const resJson = await res.json().catch(() => ({}));
+          if (!res.ok || resJson.error) {
+            console.error('❌ [Instagram Direct] Ошибка Meta API:', resJson.error || res.statusText);
+          } else {
+            console.log('✅ [Instagram Direct] Доставлено через Meta API:', resJson);
+          }
         } catch (igErr: any) {
           console.warn('Instagram send warning:', igErr.message);
         }
+      } else {
+        console.warn('⚠️ Meta Instagram: отсутствует metaToken или externalId диалога');
       }
     }
 

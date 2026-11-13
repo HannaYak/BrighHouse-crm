@@ -279,8 +279,9 @@ export default function KanbanPage() {
 
                         <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0">
-                            <div className="font-bold text-xs text-slate-900 leading-snug truncate">
-                              {order.clientName || 'Клиент без имени'}
+                            <div className="font-bold text-xs text-slate-900 leading-snug truncate flex items-center gap-1">
+                              <span className="truncate">{order.clientName || 'Клиент без имени'}</span>
+                              {order.hasPets && <span title="В помещении есть домашние питомцы" className="text-xs shrink-0">🐾</span>}
                             </div>
                             <div className="text-[10px] text-slate-500 truncate mt-0.5">
                               📍 {order.addressLine1 || 'Адрес не указан'}
