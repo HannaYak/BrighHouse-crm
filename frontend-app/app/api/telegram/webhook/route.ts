@@ -258,6 +258,56 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ ok: true });
       }
+
+      // Клиент: Ответ на опрос о причинах незавершенного заказа / скидке
+      if (data.startsWith('survey_reason_')) {
+        const reasonKey = data.replace('survey_reason_', '');
+        let reasonLabel = 'Другой вариант';
+        let botResponse = '';
+
+        if (reasonKey === 'price') {
+          reasonLabel = '💰 Слишком высокая цена / дорого';
+          botResponse = '🙏 Мы вас услышали! Мы очень ценим честную обратную связь. Напишите нам, какая стоимость для вас была бы комфортной, и мы обязательно подберем оптимальный вариант или спецпредложение! ✨';
+        } else if (reasonKey === 'date') {
+          reasonLabel = '📅 Не подошла дата или время';
+          botResponse = '📅 Поняли вас! На какую дату или время вам было бы удобнее запланировать уборку? Мы проверим расписание клинеров и забронируем за вами слот со скидкой! 🌸';
+        } else if (reasonKey === 'later') {
+          reasonLabel = '⏳ Хочу скидку на потом (не успеваю в 3-4 дня)';
+          botResponse = '🎁 Отличная новость! Мы можем зафиксировать вашу скидку за вашим номером ещё на 30 дней! Просто напишите нам сюда, когда появится потребность в уборке, и скидка применится ☺️';
+        } else {
+          reasonLabel = '✍️ Другой вариант (свой ответ)';
+          botResponse = '✍️ Пожалуйста, напишите прямо сюда в чат, что именно произошло или что вам не подошло. Мы внимательно прочитаем ваш ответ и сделаем всё возможное, чтобы помочь вам! 🌸';
+        }
+
+        await answerCallbackQuery(callback.id, 'Спасибо за обратную связь!');
+        await sendMessage(chatId, botResponse);
+
+        // Ищем диалог и записываем ответ клиента в историю сообщений CRM
+        let clientConv = await prisma.conversation.findFirst({
+          where: { externalId: String(chatId) },
+        });
+
+        if (clientConv) {
+          await prisma.message.create({
+            data: {
+              conversationId: clientConv.id,
+              senderType: 'CLIENT',
+              senderName: clientConv.clientName || 'Клиент',
+              text: `📊 [Опрос]: Выбран ответ: «${reasonLabel}»`,
+            },
+          });
+          await prisma.conversation.update({
+            where: { id: clientConv.id },
+            data: {
+              lastMessage: `📊 Опрос: ${reasonLabel}`,
+              lastActivity: new Date(),
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        return NextResponse.json({ ok: true });
+      }
     }
 
     // 2. Обработка входящих текстовых сообщений

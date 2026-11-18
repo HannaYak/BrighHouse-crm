@@ -34,6 +34,7 @@ const navigationGroups = [
       { name: 'Финансы', href: '/finance', icon: '💰' },
       { name: 'Калькулятор', href: '/calculator', icon: '🧮' },
       { name: 'Скидки', href: '/discounts', icon: '🏷️' },
+    { name: 'Опрос оплат', href: '/survey', icon: '🎯' },
       { name: 'Чек-листы', href: '/checklists', icon: '✅' },
     ],
   },

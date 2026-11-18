@@ -610,13 +610,22 @@ export default function ChatPage() {
         <div className="p-3.5 border-b border-slate-200 bg-white space-y-2.5">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-slate-800">Омниканальные чаты</h2>
-            <button
-              type="button"
-              onClick={() => setIsNewChatModalOpen(true)}
+            <div className="flex items-center gap-1.5">
+              <a
+                href="/survey"
+                className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg font-bold flex items-center gap-1 transition cursor-pointer"
+                title="Опрос клиентов, которые не оплатили или бросили заявку"
+              >
+                🎯 Опрос оплат
+              </a>
+              <button
+                type="button"
+                onClick={() => setIsNewChatModalOpen(true)}
               className="text-[11px] bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition shadow-xs cursor-pointer"
             >
               ➕ Написать
-            </button>
+              </button>
+            </div>
           </div>
 
           {/* Фильтр по платформам */}

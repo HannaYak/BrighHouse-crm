@@ -50,11 +50,22 @@ export async function POST(request: Request) {
           // Если сообщение отправлено с личного телефона из оригинального приложения Instagram (is_echo: true),
           // то sender - это аккаунт клининга, а recipient - клиент.
           const clientId = isEcho ? messaging.recipient?.id : messaging.sender?.id;
-          const text = messaging.message?.text || (messaging.message?.attachments ? '📎 [Медиафайл / Фото]' : '');
+          const rawText =
+            messaging.message?.quick_reply?.payload ||
+            messaging.message?.text ||
+            messaging.postback?.title ||
+            messaging.postback?.payload ||
+            (messaging.message?.attachments ? '📎 [Медиафайл / Фото]' : '');
 
-          if (!clientId || !text) {
+          if (!clientId || !rawText) {
             continue;
           }
+
+          let text = rawText;
+          if (rawText === 'survey_reason_price') text = '📊 [Опрос]: 💰 Не подошла стоимость / дорого';
+          else if (rawText === 'survey_reason_date') text = '📊 [Опрос]: 📅 Не подошла дата или время';
+          else if (rawText === 'survey_reason_later') text = '📊 [Опрос]: ⏳ Мало 3-4 дня (хочу скидку на потом)';
+          else if (rawText === 'survey_reason_other') text = '📊 [Опрос]: ✍️ Другой вариант';
 
           console.log(`Processing ${isEcho ? 'исходящее (с телефона)' : 'входящее'} Instagram сообщение для ${clientId}: "${text}"`);
 

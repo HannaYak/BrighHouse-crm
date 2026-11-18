@@ -26,6 +26,7 @@ export default function Navbar() {
     { href: '/clients', label: '👥 Клиенты' },
     { href: '/cleaners', label: '🧹 Клинеры' },
     { href: '/discounts', label: '🏷 Скидки' },
+    { href: '/survey', label: '🎯 Опрос оплат' },
     { href: '/checklists', label: '✅ Чек-листы' },
     { href: '/inventory', label: '📦 Склад' },
     { href: '/finances', label: '📊 Финансы' },
